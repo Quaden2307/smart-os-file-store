@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    # xcode-27 is the only GitHub-hosted macOS image that ships Xcode 27 (preview status).
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Select Xcode 27.2
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.2.app
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Build
+        run: >
+          xcodebuild -scheme SmartOSFileStore -destination 'platform=macOS'
+          -derivedDataPath build build CODE_SIGNING_ALLOWED=NO
+
+      - name: Test
+        run: >
+          xcodebuild -scheme SmartOSFileStore -destination 'platform=macOS'
+          -derivedDataPath build test CODE_SIGNING_ALLOWED=NO

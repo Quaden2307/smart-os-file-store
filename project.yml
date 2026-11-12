@@ -1,0 +1,87 @@
+name: SmartOSFileStore
+
+options:
+  bundleIdPrefix: com.quaden2307
+  deploymentTarget:
+    macOS: "26.0"
+  developmentLanguage: en
+  xcodeVersion: "27.2"
+  createIntermediateGroups: true
+
+# Applies to every target in every configuration.
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+    GCC_TREAT_WARNINGS_AS_ERRORS: YES
+    ARCHS: arm64
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    ENABLE_APP_SANDBOX: NO
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_IDENTITY: "-"   # Sign to Run Locally
+    DEVELOPMENT_TEAM: ""
+    LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+    SWIFT_EMIT_LOC_STRINGS: YES
+
+targets:
+  SmartOSFileStore:
+    type: application
+    platform: macOS
+    sources:
+      - SmartOSFileStore
+    dependencies:
+      - target: FileStoreCore   # embedded and linked
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.quaden2307.SmartOSFileStore
+        ENABLE_HARDENED_RUNTIME: YES
+    info:
+      path: SmartOSFileStore/Info.plist
+      properties:
+        CFBundleDisplayName: Smart OS File Store
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSApplicationCategoryType: public.app-category.productivity
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        NSPrincipalClass: NSApplication
+        NSDownloadsFolderUsageDescription: Smart OS File Store lists and cleans up files in your Downloads folder only when you ask it to.
+
+  FileStoreCore:
+    type: framework
+    platform: macOS
+    sources:
+      - FileStoreCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.quaden2307.FileStoreCore
+        GENERATE_INFOPLIST_FILE: YES   # a framework bundle needs an Info.plist to be signed
+        SKIP_INSTALL: YES
+
+  FileStoreCoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - FileStoreCoreTests
+    dependencies:
+      - target: FileStoreCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.quaden2307.FileStoreCoreTests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  SmartOSFileStore:
+    build:
+      targets:
+        SmartOSFileStore: all
+        FileStoreCore: all
+        FileStoreCoreTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - FileStoreCoreTests
+    archive:
+      config: Release

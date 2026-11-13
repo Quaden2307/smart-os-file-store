@@ -12,7 +12,14 @@ extension FileRecord {
 
     /// The Size column text. Nil for folders and packages, which show a dash.
     var formattedSize: String? {
-        sizeInBytes?.formatted(.byteCount(style: .file, spellsOutZero: false))
+        sizeInBytes?.formattedFileSize
+    }
+}
+
+extension Int64 {
+    /// A byte count the way Finder shows one, for example "21 bytes" or "209.7 MB".
+    var formattedFileSize: String {
+        formatted(.byteCount(style: .file, spellsOutZero: false))
     }
 }
 

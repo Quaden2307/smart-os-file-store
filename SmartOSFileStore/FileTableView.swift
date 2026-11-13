@@ -87,26 +87,3 @@ struct FileTableView: View {
     }
 }
 
-private struct DateCell: View {
-    let date: Date?
-
-    var body: some View {
-        if let date {
-            Text(date, format: .dateTime.year().month(.abbreviated).day().hour().minute())
-                .monospacedDigit()
-        } else {
-            NoValueCell(label: "No date")
-        }
-    }
-}
-
-/// A dash for a cell that has no value, read out meaningfully by VoiceOver.
-private struct NoValueCell: View {
-    let label: LocalizedStringKey
-
-    var body: some View {
-        Text(verbatim: "—")
-            .foregroundStyle(.secondary)
-            .accessibilityLabel(label)
-    }
-}

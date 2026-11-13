@@ -48,6 +48,10 @@ final class FileListModel {
     /// True when a refresh can do something: the location resolved.
     var canRefresh: Bool { location != nil }
 
+    /// True when the rows on screen are a complete, current listing: loaded without error and no
+    /// scan in flight. Cleanup actions work on those rows, so they wait for this.
+    var isSettled: Bool { hasLoadedOnce && failure == nil && !isLoading }
+
     private var scanTask: Task<Void, Never>?
     private let scanner = FolderScanner()
     private let logger = Logger(subsystem: "com.quaden2307.SmartOSFileStore", category: "FileList")

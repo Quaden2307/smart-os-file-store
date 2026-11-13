@@ -49,13 +49,13 @@ printf 'unicode' > "résumé – final ✓.pdf"
 printf 'spaces' > "file%20name%20with%20junk.txt"
 mkdir "Subfolder"; cp "report.pdf" "Subfolder/report.pdf"
 ln -s "report.pdf" "report-link.pdf"
-printf 'locked' > "locked.txt"; chflags uchg "locked.txt"
+printf 'locked' > "locked.txt"
 
 # One large file so hashing is exercised off the main thread
 mkfile -n 200m "big-video.mov"
 
 # An old file for age-based rules
-printf 'old' > "old-receipt.pdf"; touch -t 202501010900 "old-receipt.pdf"
+printf 'old' > "old-receipt.pdf"
 
 # Optional bulk files, for checking the table with thousands of rows
 count="${EXTRA_FILES:-0}"
@@ -64,6 +64,14 @@ if [ "$count" -gt 0 ]; then
     printf '%d' "$i" > "$(printf 'bulk-%05d.txt' "$i")"
   done
 fi
+
+# Cleanup actions skip files modified in the last few seconds, and this folder is usually scanned
+# right after it is made, so every entry is backdated by a minute. The old receipt is then made old
+# (09:00 UTC, matching the test helper), and the locked file is locked last because an immutable
+# file's date cannot be changed.
+find "$F" -mindepth 1 -maxdepth 1 -exec touch -h -t "$(date -v-60S +%Y%m%d%H%M.%S)" {} +
+TZ=UTC touch -t 202501010900 "old-receipt.pdf"
+chflags uchg "locked.txt"
 
 echo "Test folder: $F"
 echo "Remove with: chflags nouchg \"$F/locked.txt\" && rm -rf \"$F\""

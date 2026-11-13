@@ -9,7 +9,7 @@ struct StatusBar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 8) {
-                Text("^[\(model.itemCount) item](inflect: true), \(model.totalBytes.formatted(.byteCount(style: .file, spellsOutZero: false)))")
+                Text("^[\(model.itemCount) item](inflect: true), \(model.totalBytes.formattedFileSize)")
                 if !model.skippedItems.isEmpty {
                     Text("^[\(model.skippedItems.count) item](inflect: true) could not be read")
                         .foregroundStyle(.secondary)

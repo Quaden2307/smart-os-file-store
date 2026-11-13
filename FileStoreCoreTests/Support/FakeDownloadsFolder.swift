@@ -6,6 +6,10 @@ import Foundation
 ///
 /// One deliberate difference from the script: `big-video.mov` is 1 MiB here instead of 200 MB, so
 /// tests stay fast.
+///
+/// Every file is backdated by a minute (`settledAge`), because cleanup actions skip files modified
+/// in the last few seconds and a fixture is always scanned moments after it is made.
+/// `old-receipt.pdf` is older still.
 struct FakeDownloadsFolder {
     /// File names in the fixture, so tests never retype them.
     enum Names {
@@ -37,6 +41,8 @@ struct FakeDownloadsFolder {
         static let lockedFile = "locked.txt"
         static let bigVideo = "big-video.mov"
         static let oldReceipt = "old-receipt.pdf"
+        /// Not created by `make()`: a test adds it as a fresh copy of `report.pdf`.
+        static let freshReportCopy = "report-fresh.pdf"
     }
 
     /// Everything a top-level scan should list: every item except the hidden file.
@@ -56,6 +62,9 @@ struct FakeDownloadsFolder {
     static let bigVideoSize = 1 << 20
     /// 2025-01-01 09:00 UTC, matching the script's `touch -t 202501010900`.
     static let oldReceiptDate = Date(timeIntervalSince1970: 1_735_722_000)
+    /// How far back every written file's modification date is set, so none looks freshly
+    /// modified. Copies made with `copyItem` inherit the date.
+    static let settledAge: TimeInterval = 60
 
     /// The fake Downloads folder itself.
     let url: URL
@@ -92,9 +101,17 @@ struct FakeDownloadsFolder {
     private static func populate(_ folder: URL) throws {
         let fileManager = FileManager.default
         try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
+        let settledModificationDate = Date(timeIntervalSinceNow: -settledAge)
 
+        func settle(_ name: String) throws {
+            try fileManager.setAttributes(
+                [.modificationDate: settledModificationDate],
+                ofItemAtPath: folder.appending(path: name).path(percentEncoded: false)
+            )
+        }
         func write(_ text: String, to name: String) throws {
             try Data(text.utf8).write(to: folder.appending(path: name))
+            try settle(name)
         }
         func copy(_ source: String, to destination: String) throws {
             try fileManager.copyItem(at: folder.appending(path: source), to: folder.appending(path: destination))
@@ -157,6 +174,7 @@ struct FakeDownloadsFolder {
 
         // One larger file (kept small in tests)
         try Data(count: bigVideoSize).write(to: folder.appending(path: Names.bigVideo))
+        try settle(Names.bigVideo)
 
         // An old file for age-based rules
         try write("old", to: Names.oldReceipt)

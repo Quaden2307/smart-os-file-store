@@ -27,6 +27,14 @@ public struct ScanLocation: Sendable, Equatable {
     /// How `folderURL` was chosen.
     public let source: Source
 
+    /// Describes a folder that is already known, for example a temporary folder in a test.
+    ///
+    /// The app itself uses `resolve`, which finds Downloads and validates the debug override.
+    public init(folderURL: URL, source: Source) {
+        self.folderURL = folderURL.standardizedFileURL
+        self.source = source
+    }
+
     /// Resolves the folder to scan.
     ///
     /// - Parameters:
@@ -50,7 +58,7 @@ public struct ScanLocation: Sendable, Equatable {
         guard let url = urls.first else {
             throw ScanLocationError.downloadsFolderUnavailable
         }
-        return ScanLocation(folderURL: url.standardizedFileURL, source: .downloadsFolder)
+        return ScanLocation(folderURL: url, source: .downloadsFolder)
     }
 
     #if DEBUG
@@ -80,7 +88,7 @@ public struct ScanLocation: Sendable, Equatable {
         guard isDirectory.boolValue else {
             throw ScanLocationError.overrideIsNotAFolder(path: path, source: source)
         }
-        let url = URL(fileURLWithPath: expandedPath, isDirectory: true).standardizedFileURL
+        let url = URL(fileURLWithPath: expandedPath, isDirectory: true)
         return ScanLocation(folderURL: url, source: source)
     }
     #endif

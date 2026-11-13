@@ -95,32 +95,3 @@ struct ScanLocationTests {
         }
     }
 }
-
-// MARK: - Helpers
-
-/// Runs `body` with a fresh folder under the system temporary directory and removes it afterwards.
-/// Tests never touch the real Downloads folder or any other user folder.
-private func withTemporaryFolder<T>(_ body: (URL) throws -> T) throws -> T {
-    let folder = FileManager.default.temporaryDirectory
-        .appending(path: "ScanLocationTests-\(UUID().uuidString)", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: folder) }
-    return try body(folder)
-}
-
-private func expectSameFolder(
-    _ actual: URL,
-    _ expected: URL,
-    sourceLocation: SourceLocation = #_sourceLocation
-) {
-    #expect(canonicalPath(actual) == canonicalPath(expected), sourceLocation: sourceLocation)
-}
-
-/// Resolves symlinks (the temporary directory lives under a symlinked /var) and drops a trailing slash.
-private func canonicalPath(_ url: URL) -> String {
-    var path = url.standardizedFileURL.resolvingSymlinksInPath().path(percentEncoded: false)
-    while path.count > 1, path.hasSuffix("/") {
-        path.removeLast()
-    }
-    return path
-}

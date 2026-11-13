@@ -1,15 +1,53 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "Files in your Downloads folder will appear here." : {
-
-    },
-    "No Files Yet" : {
-
-    },
-    "Smart OS File Store" : {
-
-    }
+    "-ScanFolder launch argument" : {},
+    "Access to “%@” Is Blocked" : {},
+    "Alias" : {},
+    "Date Added" : {},
+    "Date Modified" : {},
+    "Downloads Folder Not Found" : {},
+    "Downloads folder" : {},
+    "File" : {},
+    "Files" : {},
+    "Folder" : {},
+    "Folder Can’t Be Read" : {},
+    "Folder Is Empty" : {},
+    "Folder Not Found" : {},
+    "Folder being scanned" : {},
+    "Item Can’t Be Read" : {},
+    "Kind" : {},
+    "Loading…" : {},
+    "Name" : {},
+    "No Folder to Scan" : {},
+    "No date" : {},
+    "No size" : {},
+    "Not a Folder" : {},
+    "Open Privacy Settings" : {},
+    "Open the Files and Folders privacy settings in System Settings" : {},
+    "Package" : {},
+    "Quick Look" : {},
+    "Refresh" : {},
+    "Refresh the list (⌘R)" : {},
+    "Refreshing" : {},
+    "Reveal in Finder" : {},
+    "SMARTOS_SCAN_FOLDER environment variable" : {},
+    "Scan Stopped" : {},
+    "Scanning %@ (%@)" : {},
+    "Size" : {},
+    "Smart OS File Store" : {},
+    "Smart OS File Store isn’t allowed to read “%@”. If macOS asked for permission and you chose Don’t Allow, turn on Smart OS File Store under Files and Folders in Privacy & Security, then try again." : {},
+    "The %@ was given without a folder path." : {},
+    "The folder “%@” could not be found." : {},
+    "The folder “%@” from the %@ does not exist." : {},
+    "The scan was stopped before it finished." : {},
+    "There are no files in this folder." : {},
+    "Try Again" : {},
+    "Your Downloads folder could not be located." : {},
+    "^[%lld item](inflect: true) could not be read" : {},
+    "^[%lld item](inflect: true), %@" : {},
+    "“%@” could not be read. %@" : {},
+    "“%@” from the %@ is a file, not a folder." : {}
   },
   "version" : "1.0"
 }

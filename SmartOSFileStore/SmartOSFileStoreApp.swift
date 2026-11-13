@@ -6,6 +6,9 @@ struct SmartOSFileStoreApp: App {
         Window("Smart OS File Store", id: "main") {
             ContentView()
         }
-        .defaultSize(width: 720, height: 480)
+        .defaultSize(width: 960, height: 600)
+        .commands {
+            RevealInFinderCommands()
+        }
     }
 }

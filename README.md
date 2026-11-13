@@ -22,7 +22,7 @@ open build/Build/Products/Debug/SmartOSFileStore.app
 
 ## Hand testing against a fake folder
 
-Debug builds can be pointed at a folder other than Downloads, so cleanup features are never tried on real files. Build a throwaway folder with the script in `.claude/skills/cleanup-test-fixtures/SKILL.md`, then launch the app with either of these. The launch argument wins when both are set. Release builds ignore both.
+Debug builds can be pointed at a folder other than Downloads, so cleanup features are never tried on real files. Build a throwaway folder with `scripts/make-fake-downloads.sh` (set `EXTRA_FILES=5000` to add thousands of small files for performance checks), then launch the app with either of these. The launch argument wins when both are set. Release builds ignore both.
 
 ```bash
 open build/Build/Products/Debug/SmartOSFileStore.app --args -ScanFolder /path/to/FakeDownloads

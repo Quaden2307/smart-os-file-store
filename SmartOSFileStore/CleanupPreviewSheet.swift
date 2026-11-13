@@ -1,35 +1,49 @@
 import FileStoreCore
+import QuickLook
 import SwiftUI
 
-/// The preview of a cleanup plan: what stays, what would change, and why. Read-only in this
-/// segment; the next one adds the checkboxes and the Move to Trash button.
+/// The preview of a cleanup plan: what stays, what would change and why. Every proposed change has
+/// a checkbox; Move to Trash asks for confirmation, carries out the ticked changes and then shows
+/// what happened. Every cleanup action shares this screen.
 struct CleanupPreviewSheet: View {
-    let plan: CleanupPlan
+    @State private var model: CleanupPreviewModel
+    @State private var selectedRow: URL?
+    @State private var previewItem: URL?
+
+    /// The checkbox with keyboard focus, if any. Space then toggles it rather than opening Quick Look.
+    @FocusState private var focusedCheckbox: URL?
 
     @Environment(\.dismiss) private var dismiss
+
+    init(plan: CleanupPlan, onExecuted: @escaping @MainActor (CleanupResult) -> Void) {
+        _model = State(initialValue: CleanupPreviewModel(plan: plan, onExecuted: onExecuted))
+    }
+
+    private var plan: CleanupPlan { model.plan }
 
     var body: some View {
         VStack(spacing: 0) {
             header
                 .padding(16)
             Divider()
-            if plan.isEmpty, plan.skippedItems.isEmpty {
-                ContentUnavailableView(
-                    "No Duplicates Found",
-                    systemImage: "checkmark.circle",
-                    description: Text("No two files in this folder have the same content.")
-                )
+            content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                groupList
-            }
             Divider()
             footer
                 .padding(12)
         }
         .frame(minWidth: 620, idealWidth: 700, minHeight: 420, idealHeight: 540)
+        .sheet(isPresented: $model.isConfirming) {
+            TrashConfirmationSheet(fileCount: model.tickedCount, bytes: model.tickedBytes) {
+                model.execute()
+            }
+        }
+        .interactiveDismissDisabled(model.isExecuting)
         .onExitCommand {
-            dismiss()
+            // Escape closes the sheet, except while files are being moved.
+            if !model.isExecuting {
+                close()
+            }
         }
     }
 
@@ -40,7 +54,8 @@ struct CleanupPreviewSheet: View {
             if plan.isEmpty {
                 Text("No Duplicates Found")
                     .foregroundStyle(.secondary)
-            } else {
+            } else if model.result == nil {
+                // Once files have moved, the summary below says what happened instead.
                 Text("^[\(plan.changes.count) duplicate](inflect: true) in ^[\(plan.duplicateGroups.count) group](inflect: true) would free \(plan.bytesToFree.formattedFileSize)")
                     .foregroundStyle(.secondary)
             }
@@ -48,21 +63,39 @@ struct CleanupPreviewSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    @ViewBuilder
+    private var content: some View {
+        if let result = model.result {
+            CleanupSummaryView(result: result)
+        } else if plan.isEmpty, plan.skippedItems.isEmpty {
+            ContentUnavailableView(
+                "No Duplicates Found",
+                systemImage: "checkmark.circle",
+                description: Text("No two files in this folder have the same content.")
+            )
+        } else {
+            groupList
+        }
+    }
+
     private var groupList: some View {
-        List {
+        List(selection: $selectedRow) {
             ForEach(plan.duplicateGroups) { group in
                 Section {
+                    KeptFileRow(record: group.kept)
+                        .tag(group.kept.url)
                     ForEach(group.duplicates) { record in
                         DuplicateFileRow(
                             record: record,
                             sizeInBytes: group.fileSizeInBytes,
-                            reason: .sameContent(asFileNamed: group.kept.displayName)
+                            reason: .sameContent(asFileNamed: group.kept.displayName),
+                            isTicked: tickedBinding(record.id),
+                            isEnabled: model.isReviewing,
+                            focusedCheckbox: $focusedCheckbox
                         )
+                        .tag(record.url)
                     }
-                } header: {
-                    KeptFileRow(record: group.kept)
                 }
-                .headerProminence(.increased)
             }
             if !plan.skippedItems.isEmpty {
                 Section("Not Checked") {
@@ -72,30 +105,140 @@ struct CleanupPreviewSheet: View {
                 }
             }
         }
+        .contextMenu(forSelectionType: URL.self) { urls in
+            Button("Quick Look") {
+                preview(urls)
+            }
+        } primaryAction: { urls in
+            preview(urls)
+        }
+        .onKeyPress(.space) {
+            // A focused checkbox owns Space.
+            guard focusedCheckbox == nil else { return .ignored }
+            // Space toggles the panel, as in Finder: it sets the binding back to nil when it closes.
+            if previewItem != nil {
+                previewItem = nil
+                return .handled
+            }
+            guard let selectedRow else { return .ignored }
+            preview([selectedRow])
+            return .handled
+        }
+        .quickLookPreview($previewItem, in: rowURLs)
         .accessibilityLabel("Duplicate groups")
     }
 
+    @ViewBuilder
     private var footer: some View {
-        HStack {
-            if !plan.skippedItems.isEmpty {
-                Text("^[\(plan.skippedItems.count) file](inflect: true) could not be checked")
+        switch model.phase {
+        case .reviewing where plan.isEmpty:
+            HStack {
+                skippedNote
+                Spacer()
+                doneButton
+            }
+        case .reviewing:
+            HStack(spacing: 12) {
+                Button("Select All") {
+                    model.selectAll()
+                }
+                Button("Select None") {
+                    model.selectNone()
+                }
+                Text("^[\(model.tickedCount) file](inflect: true) (\(model.tickedBytes.formattedFileSize)) selected")
+                    .monospacedDigit()
                     .foregroundStyle(.secondary)
+                skippedNote
+                Spacer()
+                Button("Cancel") {
+                    close()
+                }
+                .keyboardShortcut(.cancelAction)
+                Button("Move to Trash") {
+                    confirm()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!model.canExecute || model.isConfirming)
             }
-            Spacer()
-            Button("Done") {
-                dismiss()
+        case .executing(let progress):
+            HStack(spacing: 12) {
+                ProgressView(value: progress.fractionCompleted)
+                    .frame(maxWidth: 240)
+                    .accessibilityLabel("Progress moving files to the Trash")
+                Text("Moving file \(min(progress.itemsCompleted + 1, progress.itemsTotal)) of \(progress.itemsTotal) to the Trash…")
+                    .monospacedDigit()
+                Spacer()
             }
-            .keyboardShortcut(.defaultAction)
+        case .finished(let result):
+            HStack {
+                if !result.notMoved.isEmpty {
+                    Text("^[\(result.notMoved.count) file](inflect: true) not moved")
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                doneButton
+            }
         }
+    }
+
+    @ViewBuilder
+    private var skippedNote: some View {
+        if !plan.skippedItems.isEmpty {
+            Text("^[\(plan.skippedItems.count) file](inflect: true) could not be checked")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var doneButton: some View {
+        Button("Done") {
+            close()
+        }
+        .keyboardShortcut(.defaultAction)
+    }
+
+    /// Every row's URL in display order, so the Quick Look panel's arrows move through the list.
+    private var rowURLs: [URL] {
+        plan.duplicateGroups.flatMap { group in
+            [group.kept.url] + group.duplicates.map(\.url)
+        }
+    }
+
+    private func preview(_ urls: Set<URL>) {
+        guard let first = rowURLs.first(where: { urls.contains($0) }) else { return }
+        previewItem = first
+    }
+
+    private func tickedBinding(_ id: ProposedChange.ID) -> Binding<Bool> {
+        Binding(
+            get: { model.isTicked(id) },
+            set: { model.setTicked(id, $0) }
+        )
+    }
+
+    /// Asks before anything moves; `TrashConfirmationSheet` calls `execute` only from its
+    /// Move to Trash button. Quick Look closes first so its panel does not float over the question.
+    private func confirm() {
+        guard model.canExecute, !model.isConfirming else { return }
+        previewItem = nil
+        model.isConfirming = true
+    }
+
+    private func close() {
+        previewItem = nil
+        dismiss()
     }
 }
 
-/// The copy that stays, marked Keep.
+/// The copy that stays, marked Keep. Selectable and previewable like any row, but with no checkbox.
 private struct KeptFileRow: View {
     let record: FileRecord
 
     var body: some View {
         HStack(spacing: 8) {
+            // Takes the checkbox's place so the names line up.
+            Color.clear
+                .frame(width: DuplicateFileRow.checkboxWidth, height: 1)
+                .accessibilityHidden(true)
             FileIconView(record: record)
             Text(record.displayName)
                 .font(.body)
@@ -114,24 +257,45 @@ private struct KeptFileRow: View {
                     .font(.body)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
+                    .frame(minWidth: 72, alignment: .trailing)
             }
         }
         .accessibilityElement(children: .combine)
     }
 }
 
-/// A copy proposed for the Trash, with its Date Added and size.
+/// A copy proposed for the Trash: its checkbox, name, reason, Date Added and size.
 private struct DuplicateFileRow: View {
+    /// Width of a regular checkbox, which the kept row leaves blank.
+    static let checkboxWidth: CGFloat = 14
+
     let record: FileRecord
     let sizeInBytes: Int64
     let reason: ProposedChange.Reason
+    @Binding var isTicked: Bool
+    let isEnabled: Bool
+    let focusedCheckbox: FocusState<URL?>.Binding
 
     var body: some View {
         HStack(spacing: 8) {
+            // The label is hidden but still read by VoiceOver.
+            Toggle(isOn: $isTicked) {
+                Text("Move \(record.displayName) to the Trash")
+            }
+            .toggleStyle(.checkbox)
+            .labelsHidden()
+            .disabled(!isEnabled)
+            .focused(focusedCheckbox, equals: record.id)
             FileIconView(record: record)
-            Text(record.displayName)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(record.displayName)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(reason.localizedDescription)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
             Spacer()
             DateCell(date: record.dateAdded)
                 .foregroundStyle(.secondary)
@@ -140,9 +304,6 @@ private struct DuplicateFileRow: View {
                 .foregroundStyle(.secondary)
                 .frame(minWidth: 72, alignment: .trailing)
         }
-        .help(reason.localizedDescription)
-        .accessibilityElement(children: .combine)
-        .accessibilityValue(reason.localizedDescription)
     }
 }
 

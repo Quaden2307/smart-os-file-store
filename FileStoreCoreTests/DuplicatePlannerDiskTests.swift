@@ -37,18 +37,21 @@ struct DuplicatePlannerDiskTests {
             let plan = try await plan(fixture)
 
             let reports = try #require(group(keeping: Names.reportPDF, in: plan))
-            #expect(reports.duplicates.map(\.displayName) == [Names.reportCopy1, Names.reportCopy2, Names.reportCopyWord])
+            #expect(
+                reports.duplicates.map(\.displayName)
+                    == [Names.reportCopy1, Names.reportCopy2, Names.lockedReportCopy, Names.reportCopyWord]
+            )
             #expect(reports.fileSizeInBytes == 21)
-            #expect(reports.reclaimableBytes == 63)
+            #expect(reports.reclaimableBytes == 84)
             let reportChanges = plan.changes.filter { $0.reason == .sameContent(asFileNamed: Names.reportPDF) }
-            #expect(reportChanges.count == 3)
+            #expect(reportChanges.count == 4)
             #expect(reportChanges.allSatisfy { $0.operation == .moveToTrash && $0.sizeInBytes == 21 })
 
             #expect(plan.action == .findDuplicates)
             expectSameFolder(plan.folderURL, fixture.url)
             #expect(plan.duplicateGroups.count == 2)
-            #expect(plan.changes.count == 4)
-            #expect(plan.bytesToFree == 82)
+            #expect(plan.changes.count == 5)
+            #expect(plan.bytesToFree == 103)
             #expect(plan.skippedItems.isEmpty)
         }
     }
@@ -102,7 +105,7 @@ struct DuplicatePlannerDiskTests {
             try Data(FakeDownloadsFolder.reportContents.utf8).write(to: fresh)
 
             let before = try await plan(fixture)
-            #expect(group(keeping: Names.reportPDF, in: before)?.duplicates.count == 3)
+            #expect(group(keeping: Names.reportPDF, in: before)?.duplicates.count == 4)
             #expect(!groupedNames(before).contains(Names.freshReportCopy))
 
             try FileManager.default.setAttributes(
@@ -111,7 +114,7 @@ struct DuplicatePlannerDiskTests {
             )
             let after = try await plan(fixture)
             let reports = try #require(group(keeping: Names.reportPDF, in: after))
-            #expect(reports.duplicates.count == 4)
+            #expect(reports.duplicates.count == 5)
             #expect(reports.duplicates.map(\.displayName).contains(Names.freshReportCopy))
         }
     }
@@ -121,12 +124,12 @@ struct DuplicatePlannerDiskTests {
             let log = ConcurrentLog<DuplicateScanProgress>()
             _ = try await plan(fixture) { log.append($0) }
 
-            // 4 reports × 21, 2 photos × 19, 2 same-size × 4, 4 three-byte files, 2 six-byte files.
+            // 5 reports × 21, 2 photos × 19, 2 same-size × 4, 4 three-byte files, 2 six-byte files.
             let last = try #require(log.values.last)
-            #expect(last.filesToHash == 14)
-            #expect(last.bytesToHash == 154)
-            #expect(last.filesHashed == 14)
-            #expect(last.bytesHashed == 154)
+            #expect(last.filesToHash == 15)
+            #expect(last.bytesToHash == 175)
+            #expect(last.filesHashed == 15)
+            #expect(last.bytesHashed == 175)
         }
     }
 
@@ -158,8 +161,8 @@ struct DuplicatePlannerDiskTests {
             let plan = try await plan(fixture)
 
             let reports = try #require(group(keeping: Names.reportPDF, in: plan))
-            #expect(reports.duplicates.map(\.displayName) == [Names.reportCopy1, Names.reportCopyWord])
-            #expect(plan.changes.count == 3)
+            #expect(reports.duplicates.map(\.displayName) == [Names.reportCopy1, Names.lockedReportCopy, Names.reportCopyWord])
+            #expect(plan.changes.count == 4)
             #expect(plan.skippedItems.count == 1)
             let skipped = try #require(plan.skippedItems.first)
             #expect(canonicalPath(skipped.url) == canonicalPath(unreadable))
@@ -179,7 +182,7 @@ struct DuplicatePlannerDiskTests {
             let plan = try await planner.plan(records: records, in: fixture.url)
 
             let reports = try #require(group(keeping: Names.reportPDF, in: plan))
-            #expect(reports.duplicates.map(\.displayName) == [Names.reportCopy2, Names.reportCopyWord])
+            #expect(reports.duplicates.map(\.displayName) == [Names.reportCopy2, Names.lockedReportCopy, Names.reportCopyWord])
             #expect(plan.skippedItems.count == 1)
             let skipped = try #require(plan.skippedItems.first)
             #expect(canonicalPath(skipped.url) == canonicalPath(changed))
@@ -192,7 +195,13 @@ struct DuplicatePlannerDiskTests {
             let first = try await plan(fixture)
             #expect(!first.isEmpty)
 
-            // Stands in for the next segment's executor, inside a folder this test created.
+            // Removes the planned files directly, inside a folder this test created, to check the
+            // planner alone; the executor has its own idempotence test. The locked copy is unlocked
+            // first, or it could not be removed.
+            try FileManager.default.setAttributes(
+                [.immutable: false],
+                ofItemAtPath: fixture.url(for: Names.lockedReportCopy).path(percentEncoded: false)
+            )
             for change in first.changes {
                 try FileManager.default.removeItem(at: change.record.url)
             }

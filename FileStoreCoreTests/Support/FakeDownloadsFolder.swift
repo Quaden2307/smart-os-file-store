@@ -10,6 +10,9 @@ import Foundation
 /// Every file is backdated by a minute (`settledAge`), because cleanup actions skip files modified
 /// in the last few seconds and a fixture is always scanned moments after it is made.
 /// `old-receipt.pdf` is older still.
+///
+/// Two files are locked (`uchg`): `locked.txt`, which has unique content, and `report (3).pdf`, a
+/// duplicate, so that carrying out a plan has exactly one failure to report.
 struct FakeDownloadsFolder {
     /// File names in the fixture, so tests never retype them.
     enum Names {
@@ -17,6 +20,8 @@ struct FakeDownloadsFolder {
         static let reportCopy1 = "report (1).pdf"
         static let reportCopy2 = "report (2).pdf"
         static let reportCopyWord = "report copy.pdf"
+        /// A fourth identical copy, locked, so moving the duplicates to the Trash has one failure.
+        static let lockedReportCopy = "report (3).pdf"
         static let photo = "IMG_4021.jpg"
         static let photoCopy = "beach.jpg"
         static let notes = "notes.txt"
@@ -47,7 +52,7 @@ struct FakeDownloadsFolder {
 
     /// Everything a top-level scan should list: every item except the hidden file.
     static let expectedTopLevelNames: Set<String> = [
-        Names.reportPDF, Names.reportCopy1, Names.reportCopy2, Names.reportCopyWord,
+        Names.reportPDF, Names.reportCopy1, Names.reportCopy2, Names.lockedReportCopy, Names.reportCopyWord,
         Names.photo, Names.photoCopy,
         Names.notes, Names.notesEdited,
         Names.sameSizeA, Names.sameSizeB,
@@ -59,6 +64,7 @@ struct FakeDownloadsFolder {
     ]
 
     static let reportContents = "quarterly report body"
+    static let photoContents = "holiday photo bytes"
     static let bigVideoSize = 1 << 20
     /// 2025-01-01 09:00 UTC, matching the script's `touch -t 202501010900`.
     static let oldReceiptDate = Date(timeIntervalSince1970: 1_735_722_000)
@@ -85,12 +91,14 @@ struct FakeDownloadsFolder {
         return fixture
     }
 
-    /// Unlocks the locked file, then removes everything.
+    /// Unlocks the locked files, then removes everything.
     func remove() {
-        try? FileManager.default.setAttributes(
-            [.immutable: false],
-            ofItemAtPath: url(for: Names.lockedFile).path(percentEncoded: false)
-        )
+        for name in [Names.lockedFile, Names.lockedReportCopy] {
+            try? FileManager.default.setAttributes(
+                [.immutable: false],
+                ofItemAtPath: url(for: name).path(percentEncoded: false)
+            )
+        }
         root.remove()
     }
 
@@ -128,9 +136,10 @@ struct FakeDownloadsFolder {
         try copy(Names.reportPDF, to: Names.reportCopy1)
         try copy(Names.reportPDF, to: Names.reportCopy2)
         try copy(Names.reportPDF, to: Names.reportCopyWord)
+        try copy(Names.reportPDF, to: Names.lockedReportCopy)
 
         // Same content, unrelated names
-        try write("holiday photo bytes", to: Names.photo)
+        try write(photoContents, to: Names.photo)
         try copy(Names.photo, to: Names.photoCopy)
 
         // Same name pattern, DIFFERENT content: must never be treated as duplicates
@@ -181,6 +190,12 @@ struct FakeDownloadsFolder {
         try fileManager.setAttributes(
             [.modificationDate: oldReceiptDate],
             ofItemAtPath: folder.appending(path: Names.oldReceipt).path(percentEncoded: false)
+        )
+
+        // Locked last: an immutable file's date cannot be changed, and the copy inherited its date.
+        try fileManager.setAttributes(
+            [.immutable: true],
+            ofItemAtPath: folder.appending(path: Names.lockedReportCopy).path(percentEncoded: false)
         )
     }
 }

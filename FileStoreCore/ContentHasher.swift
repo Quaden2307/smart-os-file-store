@@ -85,17 +85,19 @@ public struct ContentHasher: Sendable {
         // Look before opening: `lstat` describes a link itself and, unlike `open(2)`, never makes
         // a cloud provider download a dataless placeholder, which would block this thread for as
         // long as the download takes and ignore cancellation.
-        var status = stat()
-        guard lstat(path, &status) == 0 else {
-            throw openError(errno, url: url)
+        let status: FileStatus
+        do throws(FileStatus.Failure) {
+            status = try FileStatus.of(path: path)
+        } catch {
+            throw ContentHashError(statusFailure: error, url: url)
         }
-        guard (status.st_mode & S_IFMT) == S_IFREG else {
+        guard status.isRegularFile else {
             throw .notARegularFile(url)
         }
-        if (status.st_flags & UInt32(SF_DATALESS)) != 0 {
+        if status.isDataless {
             throw .notDownloaded(url)
         }
-        if let expectedSizeInBytes, Int64(status.st_size) != expectedSizeInBytes {
+        if let expectedSizeInBytes, status.sizeInBytes != expectedSizeInBytes {
             throw .changedSinceScan(url)
         }
 
@@ -107,10 +109,11 @@ public struct ContentHasher: Sendable {
         defer { close(descriptor) }
 
         // The path could have been swapped between `lstat` and `open`; check what was opened.
-        guard fstat(descriptor, &status) == 0 else {
+        var opened = stat()
+        guard fstat(descriptor, &opened) == 0 else {
             throw .readFailed(url, reason: describe(errno))
         }
-        guard (status.st_mode & S_IFMT) == S_IFREG else {
+        guard (opened.st_mode & S_IFMT) == S_IFREG else {
             throw .notARegularFile(url)
         }
 
@@ -173,6 +176,17 @@ public struct ContentHasher: Sendable {
 }
 
 extension ContentHashError {
+    fileprivate init(statusFailure: FileStatus.Failure, url: URL) {
+        switch statusFailure {
+        case .notFound:
+            self = .fileNotFound(url)
+        case .accessDenied:
+            self = .accessDenied(url)
+        case .other(let reason):
+            self = .readFailed(url, reason: reason)
+        }
+    }
+
     /// A description without the path, which stays private in logs.
     fileprivate var logDescription: String {
         switch self {

@@ -285,26 +285,6 @@ public struct DuplicatePlanner: Sendable {
     }
 }
 
-extension CleanupSkipReason {
-    /// Nil for `.cancelled`, which is not a reason to skip a file but to stop.
-    fileprivate init?(hashError: ContentHashError) {
-        switch hashError {
-        case .fileNotFound:
-            self = .notFound
-        case .accessDenied:
-            self = .accessDenied
-        case .notARegularFile, .changedSinceScan:
-            self = .changedSinceScan
-        case .notDownloaded:
-            self = .notDownloaded
-        case .readFailed(_, let reason):
-            self = .unreadable(reason: reason)
-        case .cancelled:
-            return nil
-        }
-    }
-}
-
 /// Bytes one hashing task has reported so far.
 private final class ByteCount: Sendable {
     private let value = Mutex<Int64>(0)

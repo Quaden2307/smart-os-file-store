@@ -64,9 +64,10 @@ public struct CleanupPlan: Sendable, Hashable {
     }
 }
 
-/// Why a file was left out of a plan.
+/// Why a file was left out of a plan, or left alone when a plan was carried out.
 public enum CleanupSkipReason: Sendable, Hashable {
-    /// The file is no longer what the scan saw: a different size, or no longer a regular file.
+    /// The file is no longer what the scan saw: a different size or modification date, or content
+    /// that no longer matches the group it was planned in.
     case changedSinceScan
 
     /// The file disappeared between the scan and the check.
@@ -78,6 +79,57 @@ public enum CleanupSkipReason: Sendable, Hashable {
     /// The file's content is not on this Mac yet (a cloud placeholder); reading it would start a download.
     case notDownloaded
 
+    /// A symbolic link, folder or other non-regular item now sits at the path. Links are never followed.
+    case notARegularFile
+
     /// Reading failed for another reason. `reason` is the system's description.
     case unreadable(reason: String)
+
+    // The reasons below only arise while a plan is carried out.
+
+    /// The item is the copy the plan keeps, or the same file as it (a hard link). It is never moved.
+    case keptFile
+
+    /// The item is not something this plan may act on: it is not among the plan's proposed changes,
+    /// or it no longer fits the action's scope (empty, still downloading, hidden).
+    case notInPlan
+
+    /// The item is not directly inside the scanned folder.
+    case outsideFolder
+
+    /// The scanned folder itself could not be reached, so nothing in it was checked or moved.
+    case folderUnavailable
+
+    /// The group's kept copy is gone, so the whole group was left alone. `name` is the kept file's name.
+    case keptFileMissing(name: String)
+
+    /// The group's kept copy could not be confirmed to still hold the group's content, so the whole
+    /// group was left alone. `name` is the kept file's name.
+    case keptFileNotVerified(name: String)
+
+    /// Execution was stopped before this item was reached.
+    case cancelled
+}
+
+extension CleanupSkipReason {
+    /// The reason matching a hashing failure. Nil for `.cancelled`, which is not a reason to skip a
+    /// file but to stop.
+    init?(hashError: ContentHashError) {
+        switch hashError {
+        case .fileNotFound:
+            self = .notFound
+        case .accessDenied:
+            self = .accessDenied
+        case .notARegularFile:
+            self = .notARegularFile
+        case .changedSinceScan:
+            self = .changedSinceScan
+        case .notDownloaded:
+            self = .notDownloaded
+        case .readFailed(_, let reason):
+            self = .unreadable(reason: reason)
+        case .cancelled:
+            return nil
+        }
+    }
 }

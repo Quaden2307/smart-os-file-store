@@ -45,7 +45,12 @@ struct ContentView: View {
             }
         }
         .sheet(item: presentedPlan) { presented in
-            CleanupPreviewSheet(plan: presented.plan)
+            CleanupPreviewSheet(plan: presented.plan) { _ in
+                // Files moved, so the rows on screen are stale.
+                model.refresh()
+            }
+            // A later plan must start with its own ticks, never inherit an earlier sheet's state.
+            .id(presented.id)
         }
         .focusedSceneValue(\.selectedFileURLs, Array(selection))
         .onAppear {

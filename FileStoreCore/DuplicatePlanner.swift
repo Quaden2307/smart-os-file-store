@@ -152,7 +152,7 @@ public struct DuplicatePlanner: Sendable {
 
         try Self.throwIfCancelled()
 
-        let candidates = candidates(in: records, now: now)
+        let candidates = Self.distinctFiles(candidates(in: Self.recordsDirectlyInside(folderURL, among: records), now: now))
         let toHash = Self.sizeGroups(of: candidates).flatMap { $0 }
         let bytesToHash = toHash.reduce(Int64(0)) { $0 + ($1.sizeInBytes ?? 0) }
         let tracker = ProgressTracker(filesToHash: toHash.count, bytesToHash: bytesToHash, onProgress: onProgress)
@@ -163,12 +163,13 @@ public struct DuplicatePlanner: Sendable {
 
         let hasher = hasher
         let width = maxConcurrentHashes
-        let (hashes, skippedItems) = await withTaskGroup(
+        let (hashes, skippedItems, sawCancelledHash) = await withTaskGroup(
             of: HashOutcome.self,
-            returning: ([FileRecord.ID: ContentHash], [CleanupPlan.SkippedItem]).self
+            returning: ([FileRecord.ID: ContentHash], [CleanupPlan.SkippedItem], Bool).self
         ) { group in
             var hashes: [FileRecord.ID: ContentHash] = [:]
             var skippedItems: [CleanupPlan.SkippedItem] = []
+            var sawCancelledHash = false
             func collect(_ outcome: HashOutcome) {
                 switch outcome {
                 case .hashed(let id, let hash):
@@ -176,7 +177,7 @@ public struct DuplicatePlanner: Sendable {
                 case .skipped(let item):
                     skippedItems.append(item)
                 case .cancelled:
-                    break
+                    sawCancelledHash = true
                 }
             }
 
@@ -198,9 +199,15 @@ public struct DuplicatePlanner: Sendable {
             while let outcome = await group.next() {
                 collect(outcome)
             }
-            return (hashes, skippedItems)
+            return (hashes, skippedItems, sawCancelledHash)
         }
 
+        // A hash stops early only when its task was cancelled, normally because this whole search
+        // was. If only a hashing task was cancelled, the plan would be missing a file without
+        // saying so, so the search reports cancelled rather than returning an incomplete plan.
+        if sawCancelledHash {
+            throw .cancelled
+        }
         try Self.throwIfCancelled()
         tracker.emitNow()
 
@@ -211,16 +218,60 @@ public struct DuplicatePlanner: Sendable {
             skippedItems: skippedItems
         )
 
-        let elapsed = clock.now - start
-        let milliseconds = Double(elapsed.components.seconds) * 1_000
-            + Double(elapsed.components.attoseconds) / 1e15
         Self.logger.info(
-            "Planned \(plan.duplicateGroups.count) duplicate groups, \(plan.changes.count) changes, \(plan.skippedItems.count) skipped, in \(milliseconds, format: .fixed(precision: 1)) ms"
+            "Planned \(plan.duplicateGroups.count) duplicate groups, \(plan.changes.count) changes, \(plan.skippedItems.count) skipped, in \((clock.now - start).milliseconds, format: .fixed(precision: 1)) ms"
         )
         return plan
     }
 
     // MARK: - Helpers
+
+    /// The records that sit directly inside `folderURL` under a visible name. The scanner lists
+    /// only those, so for its records this changes nothing; a record built elsewhere must not
+    /// widen the search to a hidden file or to a file outside the folder.
+    static func recordsDirectlyInside(_ folderURL: URL, among records: [FileRecord]) -> [FileRecord] {
+        let folder = folderURL.standardizedFileURL
+        let folderComponents = folder.pathComponents
+        // A directory listing spells its entries with symbolic links resolved (`/private/var/…` for
+        // a folder given as `/var/…`), so the folder's resolved spelling is accepted as well. Only a
+        // record that matches neither is resolved itself.
+        let resolvedFolderComponents = folder.resolvingSymlinksInPath().pathComponents
+        return records.filter { record in
+            guard !record.displayName.hasPrefix(".") else { return false }
+            let standardized = record.url.standardizedFileURL
+            let parentComponents = Array(standardized.pathComponents.dropLast())
+            if parentComponents == folderComponents || parentComponents == resolvedFolderComponents {
+                return true
+            }
+            return standardized.deletingLastPathComponent().resolvingSymlinksInPath().pathComponents
+                == resolvedFolderComponents
+        }
+    }
+
+    /// One record per file on disk. Two names for one file (hard links) hold the same bytes by
+    /// definition: they are not duplicates of each other and moving one would free nothing, so the
+    /// name the keep rule prefers stands for them all. A record whose file cannot be read now is
+    /// kept, so that the hash step reports it.
+    static func distinctFiles(_ records: [FileRecord]) -> [FileRecord] {
+        var chosen: [FileIdentity: FileRecord] = [:]
+        var identities: [FileIdentity] = []
+        var unidentified: [FileRecord] = []
+        for record in records {
+            guard let status = try? FileStatus.of(path: record.url.path(percentEncoded: false)) else {
+                unidentified.append(record)
+                continue
+            }
+            if let current = chosen[status.identity] {
+                if keepsBefore(record, current) {
+                    chosen[status.identity] = record
+                }
+            } else {
+                chosen[status.identity] = record
+                identities.append(status.identity)
+            }
+        }
+        return identities.compactMap { chosen[$0] } + unidentified
+    }
 
     private enum HashOutcome: Sendable {
         case hashed(FileRecord.ID, ContentHash)

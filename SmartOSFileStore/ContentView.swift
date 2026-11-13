@@ -52,7 +52,8 @@ struct ContentView: View {
             // A later plan must start with its own ticks, never inherit an earlier sheet's state.
             .id(presented.id)
         }
-        .focusedSceneValue(\.selectedFileURLs, Array(selection))
+        // While a preview sheet is up, File menu commands must not act on the table behind it.
+        .focusedSceneValue(\.selectedFileURLs, duplicates.presentedPlan == nil ? Array(selection) : nil)
         .onAppear {
             model.refresh()
         }
@@ -71,9 +72,10 @@ struct ContentView: View {
         }
     }
 
-    /// Duplicates are found among the rows on screen, so the list must be settled first.
+    /// Duplicates are found among the rows on screen, so the list must be settled first, and a new
+    /// search must never replace a preview the user is still looking at.
     private var canFindDuplicates: Bool {
-        model.isSettled && !duplicates.isRunning
+        model.isSettled && !duplicates.isRunning && duplicates.presentedPlan == nil
     }
 
     /// `.sheet(item:)` keeps showing the plan while the sheet animates away; setting it to nil

@@ -10,9 +10,19 @@ permissions:
   contents: read
 
 jobs:
+  # Debug is what the owner builds and tests by hand. Release is what ships: it compiles without the
+  # DEBUG condition (so the folder override must be gone) and with the optimiser, which can surface
+  # warnings Debug never shows. Both run the whole suite; the scale suite runs on its own so its
+  # timing and memory figures are not shared with other suites.
   build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [Debug, Release]
+    name: ${{ matrix.configuration }}
     # xcode-27 is the only GitHub-hosted macOS image that ships Xcode 27 (preview status).
     runs-on: xcode-27
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
@@ -30,9 +40,19 @@ jobs:
       - name: Build
         run: >
           xcodebuild -scheme SmartOSFileStore -destination 'platform=macOS'
+          -configuration ${{ matrix.configuration }}
           -derivedDataPath build build CODE_SIGNING_ALLOWED=NO
 
       - name: Test
         run: >
           xcodebuild -scheme SmartOSFileStore -destination 'platform=macOS'
+          -configuration ${{ matrix.configuration }}
           -derivedDataPath build test CODE_SIGNING_ALLOWED=NO
+          -skip-testing:FileStoreCoreTests/ScaleTests
+
+      - name: Test at scale
+        run: >
+          xcodebuild -scheme SmartOSFileStore -destination 'platform=macOS'
+          -configuration ${{ matrix.configuration }}
+          -derivedDataPath build test-without-building CODE_SIGNING_ALLOWED=NO
+          -only-testing:FileStoreCoreTests/ScaleTests

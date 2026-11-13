@@ -116,6 +116,14 @@ public struct ContentHasher: Sendable {
         guard (opened.st_mode & S_IFMT) == S_IFREG else {
             throw .notARegularFile(url)
         }
+        // The descriptor must be the very file `lstat` described, with the size the scan saw, not
+        // something put at the path in between the two calls.
+        guard opened.st_dev == status.identity.device, opened.st_ino == status.identity.inode else {
+            throw .changedSinceScan(url)
+        }
+        if let expectedSizeInBytes, Int64(opened.st_size) != expectedSizeInBytes {
+            throw .changedSinceScan(url)
+        }
 
         let buffer = UnsafeMutableRawBufferPointer.allocate(
             byteCount: chunkSize,

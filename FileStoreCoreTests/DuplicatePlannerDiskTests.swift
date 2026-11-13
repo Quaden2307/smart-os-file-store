@@ -230,4 +230,77 @@ struct DuplicatePlannerDiskTests {
             }
         }
     }
+    /// Records that are hidden or outside the folder are dropped before hashing, even when handed
+    /// in directly. The scanner never produces them; a plan must not reach past its folder.
+    @Test func ignoresHiddenAndOutsideFolderRecords() async throws {
+        let temp = try TemporaryFolder.make()
+        defer { temp.remove() }
+        let inside = temp.url.appending(path: "Inside", directoryHint: .isDirectory)
+        let outside = temp.url.appending(path: "Outside", directoryHint: .isDirectory)
+        let settled = Date(timeIntervalSinceNow: -60)
+        for folder in [inside, outside] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        }
+        for (folder, name) in [(inside, "a.txt"), (inside, "a (1).txt"), (inside, ".a.txt"), (outside, "a (2).txt")] {
+            let url = folder.appending(path: name)
+            try Data("alpha".utf8).write(to: url)
+            try FileManager.default.setAttributes([.modificationDate: settled], ofItemAtPath: url.path(percentEncoded: false))
+        }
+        let insideRecords = try await scanner.scan(ScanLocation(folderURL: inside, source: .launchArgument)).records
+        let outsideRecords = try await scanner.scan(ScanLocation(folderURL: outside, source: .launchArgument)).records
+        // The scanner itself skips the hidden file; the record below stands in for a plan built elsewhere.
+        #expect(insideRecords.count == 2)
+        let hidden = FileRecord(
+            url: inside.appending(path: ".a.txt"),
+            displayName: ".a.txt",
+            kind: .file,
+            localizedTypeDescription: nil,
+            contentType: nil,
+            sizeInBytes: 5,
+            dateAdded: settled,
+            dateModified: settled,
+            isDownloading: false
+        )
+
+        let plan = try await planner.plan(records: insideRecords + outsideRecords + [hidden], in: inside)
+
+        #expect(plan.duplicateGroups.count == 1)
+        #expect(plan.changes.map(\.record.displayName) == ["a (1).txt"])
+        #expect(plan.skippedItems.isEmpty)
+    }
+    /// Two names for one file (a hard link) hold the same bytes by definition. They are not
+    /// duplicates of each other, nothing is proposed for them, and a real copy is still found.
+    @Test func hardLinksAreNotDuplicates() async throws {
+        let temp = try TemporaryFolder.make()
+        defer { temp.remove() }
+        let settled = Date(timeIntervalSinceNow: -60)
+        let fileManager = FileManager.default
+        for name in ["a.txt", "a (2).txt"] {
+            let url = temp.url.appending(path: name)
+            try Data("alpha".utf8).write(to: url)
+            try fileManager.setAttributes([.modificationDate: settled], ofItemAtPath: url.path(percentEncoded: false))
+        }
+        try fileManager.linkItem(
+            atPath: temp.url.appending(path: "a.txt").path(percentEncoded: false),
+            toPath: temp.url.appending(path: "a (1).txt").path(percentEncoded: false)
+        )
+        let records = try await scanner.scan(ScanLocation(folderURL: temp.url, source: .launchArgument)).records
+        #expect(records.count == 3)
+
+        let plan = try await planner.plan(records: records, in: temp.url)
+
+        #expect(plan.duplicateGroups.count == 1)
+        #expect(plan.duplicateGroups.first?.kept.displayName == "a.txt")
+        #expect(plan.changes.map(\.record.displayName) == ["a (2).txt"])
+        #expect(plan.skippedItems.isEmpty)
+
+        // Only the two names of one file left: nothing to find, now and on every later run.
+        try fileManager.removeItem(at: temp.url.appending(path: "a (2).txt"))
+        let again = try await planner.plan(
+            records: try await scanner.scan(ScanLocation(folderURL: temp.url, source: .launchArgument)).records,
+            in: temp.url
+        )
+        #expect(again.isEmpty)
+        #expect(again.skippedItems.isEmpty)
+    }
 }

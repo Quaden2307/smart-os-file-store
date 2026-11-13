@@ -31,11 +31,20 @@ targets:
     sources:
       - SmartOSFileStore
     dependencies:
-      - target: FileStoreCore   # embedded and linked
+      # Linked statically, not embedded: with Hardened Runtime on, an app signed to run locally
+      # cannot load an embedded framework that carries no Team ID (library validation refuses it),
+      # so the engine is linked into the app binary and there is nothing to validate.
+      - target: FileStoreCore
+        embed: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.quaden2307.SmartOSFileStore
         ENABLE_HARDENED_RUNTIME: YES
+      configs:
+        Release:
+          # Sign to Run Locally injects get-task-allow (debugger attachment) into every build.
+          # A build meant for users must not carry it; notarization rejects it.
+          CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
     info:
       path: SmartOSFileStore/Info.plist
       properties:
@@ -57,6 +66,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.quaden2307.FileStoreCore
         GENERATE_INFOPLIST_FILE: YES   # a framework bundle needs an Info.plist to be signed
         SKIP_INSTALL: YES
+        # A static framework: the same module and the same engine/app boundary, linked into the
+        # app and the test bundle instead of being loaded at launch (see the app's dependency).
+        MACH_O_TYPE: staticlib
 
   FileStoreCoreTests:
     type: bundle.unit-test
@@ -65,6 +77,7 @@ targets:
       - FileStoreCoreTests
     dependencies:
       - target: FileStoreCore
+        embed: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.quaden2307.FileStoreCoreTests

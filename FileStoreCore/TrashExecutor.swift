@@ -57,7 +57,9 @@ public struct TrashExecutor: Sendable {
             break
         }
 
-        let confirmed = plan.changes.filter { confirmedChangeIDs.contains($0.id) }
+        // A plan built elsewhere could list one file twice; it is looked at once.
+        var seen: Set<ProposedChange.ID> = []
+        let confirmed = plan.changes.filter { confirmedChangeIDs.contains($0.id) && seen.insert($0.id).inserted }
         let unknown = confirmedChangeIDs.subtracting(plan.changes.map(\.id))
         if !unknown.isEmpty {
             Self.logger.error("Ignoring \(unknown.count) confirmed items that are not in the plan")
@@ -68,6 +70,7 @@ public struct TrashExecutor: Sendable {
         items.reserveCapacity(confirmed.count)
         var bytesFreed: Int64 = 0
         var wasCancelled = false
+        var verifiedKept: [URL: VerifiedFile] = [:]
         onProgress?(CleanupExecutionProgress(itemsCompleted: 0, itemsTotal: confirmed.count, bytesFreed: 0))
 
         for change in confirmed {
@@ -76,7 +79,7 @@ public struct TrashExecutor: Sendable {
                 wasCancelled = true
                 outcome = .skipped(.cancelled)
             } else {
-                outcome = await process(change, context: context, now: now)
+                outcome = await process(change, context: context, now: now, verifiedKept: &verifiedKept)
                 if outcome == .skipped(.cancelled) {
                     wasCancelled = true
                 }
@@ -92,11 +95,8 @@ public struct TrashExecutor: Sendable {
         }
 
         let result = CleanupResult(action: plan.action, folderURL: plan.folderURL, items: items, wasCancelled: wasCancelled)
-        let elapsed = clock.now - start
-        let milliseconds = Double(elapsed.components.seconds) * 1_000
-            + Double(elapsed.components.attoseconds) / 1e15
         Self.logger.info(
-            "Trashed \(result.trashedCount) of \(confirmed.count) confirmed items (\(result.bytesFreed) bytes), \(result.skipped.count) skipped, \(result.failed.count) failed, cancelled: \(wasCancelled), in \(milliseconds, format: .fixed(precision: 1)) ms"
+            "Trashed \(result.trashedCount) of \(confirmed.count) confirmed items (\(result.bytesFreed) bytes), \(result.skipped.count) skipped, \(result.failed.count) failed, cancelled: \(wasCancelled), in \((clock.now - start).milliseconds, format: .fixed(precision: 1)) ms"
         )
         return result
     }
@@ -104,8 +104,21 @@ public struct TrashExecutor: Sendable {
     // MARK: - One item
 
     /// One item, checked from the cheapest test to the dearest. The first failing check decides.
-    private func process(_ change: ProposedChange, context: PlanContext, now: Date) async -> CleanupItemOutcome {
-        guard let folderIdentity = context.folderIdentity else {
+    ///
+    /// `verifiedKept` remembers, per kept file, the state in which its content was confirmed during
+    /// this run, so a kept file is read once per run rather than once per duplicate.
+    private func process(
+        _ change: ProposedChange,
+        context: PlanContext,
+        now: Date,
+        verifiedKept: inout [URL: VerifiedFile]
+    ) async -> CleanupItemOutcome {
+        // The folder itself is checked again for every item: it can be renamed, removed or replaced
+        // while earlier items are being moved, and nothing may be moved out of a different folder.
+        guard let folderIdentity = context.folderIdentity,
+              let folderNow = try? FileStatus.of(path: context.folderURL.path(percentEncoded: false), followingLinks: true),
+              folderNow.isDirectory,
+              folderNow.identity == folderIdentity else {
             return .skipped(.folderUnavailable)
         }
         switch change.operation {
@@ -113,8 +126,10 @@ public struct TrashExecutor: Sendable {
             break
         }
 
-        // Membership: the plan's own data must propose exactly this change.
-        let recordURL = change.record.url.standardizedFileURL
+        // Membership: the plan's own data must propose exactly this change. The plan's URL values
+        // are compared as they are: `standardizedFileURL` consults the file system (it drops a
+        // `/private` prefix only while the path still exists), so it is no stable key.
+        let recordURL = change.record.url
         guard let group = context.groupsByDuplicateURL[recordURL],
               group.fileSizeInBytes > 0,
               change.sizeInBytes == group.fileSizeInBytes else {
@@ -125,7 +140,7 @@ public struct TrashExecutor: Sendable {
         }
 
         // Containment: act on `<folder>/<name>`, never on the plan's spelling of the path.
-        guard let itemURL = Self.urlInsideFolder(recordURL, folderURL: context.folderURL, folderIdentity: folderIdentity),
+        guard let itemURL = Self.urlInsideFolder(recordURL.standardizedFileURL, folderURL: context.folderURL, folderIdentity: folderIdentity),
               let keptURL = Self.urlInsideFolder(
                   group.kept.url.standardizedFileURL,
                   folderURL: context.folderURL,
@@ -187,28 +202,35 @@ public struct TrashExecutor: Sendable {
             }
             return .skipped(reason)
         }
-        do throws(ContentHashError) {
-            let keptHash = try await hasher.hash(contentsOf: keptURL, expectedSizeInBytes: group.fileSizeInBytes)
-            guard keptHash == group.contentHash else {
-                return .skipped(.keptFileNotVerified(name: keptName))
+        // The kept copy's content is confirmed once per run against this group's hash. For later
+        // items it is enough that the very same file (identity, size, modification date) is still
+        // there and that the hash it was confirmed against is this group's: a plan that names one
+        // kept file in two groups with different content is caught on the second group. This
+        // trusts "same identity, size and date" for the length of the run, as the item check
+        // itself does between its reads and the move.
+        let expectedKept = VerifiedFile(keptStatus, contentHash: group.contentHash)
+        if verifiedKept[keptURL] != expectedKept {
+            do throws(ContentHashError) {
+                let keptHash = try await hasher.hash(contentsOf: keptURL, expectedSizeInBytes: group.fileSizeInBytes)
+                guard keptHash == group.contentHash else {
+                    return .skipped(.keptFileNotVerified(name: keptName))
+                }
+            } catch {
+                switch error {
+                case .cancelled:
+                    return .skipped(.cancelled)
+                case .fileNotFound:
+                    return .skipped(.keptFileMissing(name: keptName))
+                case .accessDenied, .notARegularFile, .changedSinceScan, .notDownloaded, .readFailed:
+                    return .skipped(.keptFileNotVerified(name: keptName))
+                }
             }
-        } catch {
-            switch error {
-            case .cancelled:
-                return .skipped(.cancelled)
-            case .fileNotFound:
-                return .skipped(.keptFileMissing(name: keptName))
-            case .accessDenied, .notARegularFile, .changedSinceScan, .notDownloaded, .readFailed:
-                return .skipped(.keptFileNotVerified(name: keptName))
-            }
-        }
-
-        if Task.isCancelled {
-            return .skipped(.cancelled)
+            verifiedKept[keptURL] = expectedKept
         }
 
         // Last look, after the reads and right before the move: the path must still hold the very
-        // file that was just hashed, not something put in its place meanwhile.
+        // file that was just hashed, not something put in its place meanwhile, and its flags must
+        // still allow the move.
         guard let finalStatus = try? FileStatus.of(path: itemURL.path(percentEncoded: false)),
               finalStatus.identity == status.identity,
               finalStatus.isRegularFile,
@@ -216,7 +238,28 @@ public struct TrashExecutor: Sendable {
               finalStatus.modificationDate == status.modificationDate else {
             return .skipped(.changedSinceScan)
         }
+        if let refused = Self.flagOutcome(finalStatus) {
+            return refused
+        }
+        if Task.isCancelled {
+            return .skipped(.cancelled)
+        }
         return Self.trash(itemURL)
+    }
+
+    /// Flags the file system can change at any moment, checked on the status read right before
+    /// the move: a placeholder, a hidden file or a locked file is never moved.
+    private static func flagOutcome(_ status: FileStatus) -> CleanupItemOutcome? {
+        if status.isDataless {
+            return .skipped(.notDownloaded)
+        }
+        if status.isHidden {
+            return .skipped(.notInPlan)
+        }
+        if status.isUserImmutable || status.isSystemImmutable {
+            return .failed(.fileIsLocked)
+        }
+        return nil
     }
 
     /// The URL to act on for `standardizedURL`: the plan's folder plus the item's own name, once the
@@ -303,6 +346,22 @@ public struct TrashExecutor: Sendable {
     }
 }
 
+/// The state of a file whose content was confirmed to be `contentHash`: the same identity, size and
+/// modification date read later, for the same hash, mean the confirmation still stands.
+private struct VerifiedFile: Equatable, Sendable {
+    let identity: FileIdentity
+    let sizeInBytes: Int64
+    let modificationDate: Date
+    let contentHash: ContentHash
+
+    init(_ status: FileStatus, contentHash: ContentHash) {
+        identity = status.identity
+        sizeInBytes = status.sizeInBytes
+        modificationDate = status.modificationDate
+        self.contentHash = contentHash
+    }
+}
+
 /// What the executor needs from the plan, looked up once: the folder's identity, the kept files'
 /// URLs and identities, and each duplicate's group.
 private struct PlanContext: Sendable {
@@ -311,14 +370,14 @@ private struct PlanContext: Sendable {
     /// Nil when the folder cannot be read or is not a folder; nothing is moved then.
     let folderIdentity: FileIdentity?
 
-    /// Standardized URLs of every group's kept file.
+    /// Every group's kept file, by the plan's own URL value.
     let keptURLs: Set<URL>
 
     /// Identities of every kept file that exists, read through the plan's own spelling of its path:
     /// whatever a plan names as kept must never be moved.
     let keptIdentities: Set<FileIdentity>
 
-    /// Each duplicate's group, by standardized URL.
+    /// Each duplicate's group, by the plan's own URL value.
     let groupsByDuplicateURL: [URL: DuplicateGroup]
 
     init(plan: CleanupPlan) {
@@ -330,17 +389,15 @@ private struct PlanContext: Sendable {
         var keptIdentities: Set<FileIdentity> = []
         var groups: [URL: DuplicateGroup] = [:]
         for group in plan.duplicateGroups {
-            let keptURL = group.kept.url.standardizedFileURL
-            keptURLs.insert(keptURL)
-            if let status = try? FileStatus.of(path: keptURL.path(percentEncoded: false)) {
+            keptURLs.insert(group.kept.url)
+            if let status = try? FileStatus.of(path: group.kept.url.standardizedFileURL.path(percentEncoded: false)) {
                 keptIdentities.insert(status.identity)
             }
             for duplicate in group.duplicates {
                 // A URL listed in two groups is checked against the first group's kept file; the
                 // second group's kept file is protected through `keptURLs` and `keptIdentities`.
-                let url = duplicate.url.standardizedFileURL
-                if groups[url] == nil {
-                    groups[url] = group
+                if groups[duplicate.url] == nil {
+                    groups[duplicate.url] = group
                 }
             }
         }
@@ -375,8 +432,8 @@ extension CleanupSkipReason {
             "not downloaded"
         case .notARegularFile:
             "not a regular file"
-        case .unreadable:
-            "unreadable"
+        case .unreadable(let reason):
+            "unreadable: \(reason)"
         case .keptFile:
             "is a kept file"
         case .notInPlan:

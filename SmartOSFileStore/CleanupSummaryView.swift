@@ -10,17 +10,20 @@ struct CleanupSummaryView: View {
         VStack(spacing: 0) {
             VStack(spacing: 6) {
                 Image(systemName: "trash")
-                    .font(.system(size: 36))
+                    .font(.largeTitle)
+                    .imageScale(.large)
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
                 if result.trashedCount > 0 {
                     Text("^[\(result.trashedCount) file](inflect: true) moved to the Trash")
                         .font(.title2.weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
                     Text("\(result.bytesFreed.formattedFileSize) freed. You can put them back from the Trash.")
                         .foregroundStyle(.secondary)
                 } else {
                     Text("No Files Were Moved")
                         .font(.title2.weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
                     Text("Nothing in the folder was changed.")
                         .foregroundStyle(.secondary)
                 }

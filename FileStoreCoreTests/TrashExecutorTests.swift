@@ -444,12 +444,19 @@ struct TrashExecutorTests {
         let plan = try await plan(temp.url)
         #expect(plan.changes.map(\.record.displayName) == ["a (1).txt", "a (2).txt"])
 
-        // The progress callback runs inside the executing task, so it can cancel that task.
-        let result = await executor.execute(plan: plan, confirmedChangeIDs: Set(plan.changes.map(\.id))) { progress in
-            if progress.itemsCompleted == 1 {
-                withUnsafeCurrentTask { $0?.cancel() }
+        // The executor runs in a task of its own, and the progress callback runs inside that task,
+        // so cancelling from there is deterministic and the test's own task is left alone. (A
+        // cancelled test task would make the runner record the test as skipped, not passed.)
+        let executor = executor
+        let ids = Set(plan.changes.map(\.id))
+        let task = Task {
+            await executor.execute(plan: plan, confirmedChangeIDs: ids) { progress in
+                if progress.itemsCompleted == 1 {
+                    withUnsafeCurrentTask { $0?.cancel() }
+                }
             }
         }
+        let result = await task.value
         defer { TrashedFiles.remove(result) { _ in Data("alpha".utf8) } }
 
         #expect(result.wasCancelled)
@@ -495,5 +502,173 @@ struct TrashExecutorTests {
                 #expect(exists(change.record.url))
             }
         }
+    }
+    // MARK: - Scope rules a crafted plan cannot get round
+
+    /// A plan may name a hidden file or a download still in progress; the executor refuses both.
+    @Test func hiddenAndInProgressNamesAreRefused() async throws {
+        let temp = try TemporaryFolder.make()
+        defer { temp.remove() }
+        try writeSettled(
+            ["a.txt": "alpha", "a (1).txt": "alpha", ".a-hidden.txt": "alpha", "a.crdownload": "alpha"],
+            in: temp.url
+        )
+        let real = try await plan(temp.url)
+        #expect(real.changes.map(\.record.displayName) == ["a (1).txt"])
+        let group = try #require(real.duplicateGroups.first)
+        let template = try #require(group.duplicates.first)
+        let hidden = record(like: template, url: temp.url.appending(path: ".a-hidden.txt"))
+        let downloading = record(like: template, url: temp.url.appending(path: "a.crdownload"))
+        let craftedGroup = DuplicateGroup(
+            contentHash: group.contentHash,
+            kept: group.kept,
+            duplicates: group.duplicates + [hidden, downloading],
+            fileSizeInBytes: group.fileSizeInBytes
+        )
+        let crafted = CleanupPlan(
+            action: .findDuplicates,
+            folderURL: temp.url,
+            changes: craftedGroup.duplicates.map { proposedChange($0, keptName: group.kept.displayName) },
+            duplicateGroups: [craftedGroup]
+        )
+
+        let result = await executor.execute(plan: crafted, confirmedChangeIDs: Set(crafted.changes.map(\.id)))
+        defer { TrashedFiles.remove(result) { _ in Data("alpha".utf8) } }
+
+        #expect(trashedNames(result) == ["a (1).txt"])
+        #expect(try outcome(for: ".a-hidden.txt", in: result) == .skipped(.notInPlan))
+        #expect(try outcome(for: "a.crdownload", in: result) == .skipped(.notInPlan))
+        #expect(exists(temp.url.appending(path: ".a-hidden.txt")))
+        #expect(exists(temp.url.appending(path: "a.crdownload")))
+        #expect(exists(temp.url.appending(path: "a.txt")))
+    }
+
+    /// A file written moments ago may still be being written. Even when a plan lists it, the
+    /// executor leaves it alone until it has been still for the whole window.
+    @Test func fileModifiedWithinTheRecentWindowIsSkipped() async throws {
+        let temp = try TemporaryFolder.make()
+        defer { temp.remove() }
+        for name in ["b.txt", "b (1).txt"] {
+            try Data("beta".utf8).write(to: temp.url.appending(path: name))
+        }
+        let records = try await scanner.scan(ScanLocation(folderURL: temp.url, source: .launchArgument)).records
+        // Planned as if an hour had passed, so the fresh files are candidates; carried out now.
+        let plan = try await planner.plan(records: records, in: temp.url, now: Date(timeIntervalSinceNow: 3_600))
+        #expect(plan.changes.map(\.record.displayName) == ["b (1).txt"])
+
+        let result = await executor.execute(plan: plan, confirmedChangeIDs: Set(plan.changes.map(\.id)))
+
+        #expect(try outcome(for: "b (1).txt", in: result) == .skipped(.changedSinceScan))
+        #expect(result.trashedCount == 0)
+        #expect(exists(temp.url.appending(path: "b (1).txt")))
+    }
+
+    /// The folder itself vanished between the plan and the confirmation: nothing is looked for elsewhere.
+    @Test func removedFolderSkipsEverything() async throws {
+        let temp = try TemporaryFolder.make()
+        defer { temp.remove() }
+        let folder = temp.url.appending(path: "Gone", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        try writeSettled(["c.txt": "gamma", "c (1).txt": "gamma", "c (2).txt": "gamma"], in: folder)
+        let plan = try await plan(folder)
+        #expect(plan.changes.count == 2)
+        try FileManager.default.removeItem(at: folder)
+
+        let result = await executor.execute(plan: plan, confirmedChangeIDs: Set(plan.changes.map(\.id)))
+
+        #expect(result.items.count == 2)
+        #expect(result.items.allSatisfy { $0.outcome == .skipped(.folderUnavailable) })
+        #expect(result.trashedCount == 0)
+    }
+
+    /// A symbolic link put where a duplicate was is refused, and its target is never followed.
+    @Test func symlinkPutInPlaceOfDuplicateIsRefused() async throws {
+        try await withFakeDownloadsFolder { fixture in
+            let plan = try await plan(fixture.url)
+            let copy = fixture.url(for: Names.reportCopy1)
+            try FileManager.default.removeItem(at: copy)
+            try FileManager.default.createSymbolicLink(
+                atPath: copy.path(percentEncoded: false),
+                withDestinationPath: Names.reportPDF
+            )
+            let ticked: Set<ProposedChange.ID> = [try change(named: Names.reportCopy1, in: plan).id]
+
+            let result = await executor.execute(plan: plan, confirmedChangeIDs: ticked)
+
+            #expect(try outcome(for: Names.reportCopy1, in: result) == .skipped(.notARegularFile))
+            #expect(result.trashedCount == 0)
+            #expect(isSymbolicLink(copy))
+            #expect(exists(fixture.url(for: Names.reportPDF)))
+        }
+    }
+
+    /// A duplicate locked after the plan was made fails as locked. It is never unlocked.
+    @Test func fileLockedAfterPlanningFailsAsLocked() async throws {
+        try await withFakeDownloadsFolder { fixture in
+            let plan = try await plan(fixture.url)
+            let copy = fixture.url(for: Names.reportCopy1)
+            let path = copy.path(percentEncoded: false)
+            try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: path)
+            defer { try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: path) }
+            let ticked: Set<ProposedChange.ID> = [try change(named: Names.reportCopy1, in: plan).id]
+
+            let result = await executor.execute(plan: plan, confirmedChangeIDs: ticked)
+
+            #expect(try outcome(for: Names.reportCopy1, in: result) == .failed(.fileIsLocked))
+            #expect(result.trashedCount == 0)
+            #expect(exists(copy))
+        }
+    }
+    /// A plan built elsewhere may list one file twice; it is looked at once and reported once.
+    @Test func changeListedTwiceIsProcessedOnce() async throws {
+        let temp = try TemporaryFolder.make()
+        defer { temp.remove() }
+        try writeSettled(["a.txt": "alpha", "a (1).txt": "alpha"], in: temp.url)
+        let real = try await plan(temp.url)
+        let crafted = CleanupPlan(
+            action: .findDuplicates,
+            folderURL: temp.url,
+            changes: real.changes + real.changes,
+            duplicateGroups: real.duplicateGroups
+        )
+        #expect(crafted.changes.count == 2)
+
+        let result = await executor.execute(plan: crafted, confirmedChangeIDs: Set(crafted.changes.map(\.id)))
+        defer { TrashedFiles.remove(result) { _ in Data("alpha".utf8) } }
+
+        #expect(result.items.count == 1)
+        #expect(trashedNames(result) == ["a (1).txt"])
+        #expect(Set(result.items.map(\.id)).count == result.items.count)
+    }
+    /// A crafted plan may name one kept file in two groups with different content. The kept copy
+    /// is confirmed against each group's hash, so the second group's file is never moved on the
+    /// strength of the first group's check.
+    @Test func keptFileIsVerifiedAgainstEachGroupsHash() async throws {
+        let temp = try TemporaryFolder.make()
+        defer { temp.remove() }
+        try writeSettled(["k.txt": "alpha", "k (1).txt": "alpha", "unique.txt": "bravo"], in: temp.url)
+        let real = try await plan(temp.url)
+        #expect(real.changes.map(\.record.displayName) == ["k (1).txt"])
+        let groupA = try #require(real.duplicateGroups.first)
+        let records = try await scanner.scan(ScanLocation(folderURL: temp.url, source: .launchArgument)).records
+        let unique = try #require(records.first { $0.displayName == "unique.txt" })
+        // Group B claims `unique.txt` is a copy of `k.txt`, with unique.txt's own hash, so the item
+        // check passes and only the kept file's check can tell the truth.
+        let uniqueHash = try await ContentHasher().hash(contentsOf: unique.url)
+        let groupB = DuplicateGroup(contentHash: uniqueHash, kept: groupA.kept, duplicates: [unique], fileSizeInBytes: 5)
+        let crafted = CleanupPlan(
+            action: .findDuplicates,
+            folderURL: temp.url,
+            changes: real.changes + [proposedChange(unique, keptName: groupA.kept.displayName)],
+            duplicateGroups: [groupA, groupB]
+        )
+
+        let result = await executor.execute(plan: crafted, confirmedChangeIDs: Set(crafted.changes.map(\.id)))
+        defer { TrashedFiles.remove(result) { _ in Data("alpha".utf8) } }
+
+        #expect(trashedNames(result) == ["k (1).txt"])
+        #expect(try outcome(for: "unique.txt", in: result) == .skipped(.keptFileNotVerified(name: "k.txt")))
+        #expect(exists(temp.url.appending(path: "unique.txt")))
+        #expect(exists(temp.url.appending(path: "k.txt")))
     }
 }

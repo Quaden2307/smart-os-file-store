@@ -2,8 +2,8 @@ import FileStoreCore
 import QuickLook
 import SwiftUI
 
-/// The sortable file table. Space or a double click opens Quick Look; the context menu and the
-/// File menu reveal the selection in Finder.
+/// The sortable file table. Space, Command-Y or a double click opens Quick Look; the context menu
+/// and the File menu reveal the selection in Finder.
 struct FileTableView: View {
     @Bindable var model: FileListModel
     @Binding var selection: Set<FileRecord.ID>
@@ -61,17 +61,29 @@ struct FileTableView: View {
             preview(ids)
         }
         .onKeyPress(.space) {
-            // Space toggles, as in Finder: the panel sets the binding back to nil when it closes.
-            if previewItem != nil {
-                previewItem = nil
-                return .handled
-            }
-            guard !selection.isEmpty else { return .ignored }
-            preview(selection)
+            guard toggleQuickLook() else { return .ignored }
+            return .handled
+        }
+        .onKeyPress(phases: .down) { press in
+            // Command-Y, as in Finder. Handled by the table itself, so it works wherever the
+            // table has focus and needs no menu item to be enabled first.
+            guard press.key == "y", press.modifiers == .command, toggleQuickLook() else { return .ignored }
             return .handled
         }
         .quickLookPreview($previewItem, in: previewItems)
         .accessibilityLabel("Files")
+    }
+
+    /// Opens Quick Look for the selection, or closes it when it is showing, as in Finder: the panel
+    /// sets the binding back to nil when it closes. False when there was nothing to do.
+    private func toggleQuickLook() -> Bool {
+        if previewItem != nil {
+            previewItem = nil
+            return true
+        }
+        guard !selection.isEmpty else { return false }
+        preview(selection)
+        return true
     }
 
     /// The selected URLs in the table's display order.

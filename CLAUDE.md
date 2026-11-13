@@ -14,7 +14,7 @@ A native macOS file browser that will replace Finder, starting with a self-clean
 - Swift 6 language mode with complete strict concurrency. SwiftUI for the app; AppKit only where SwiftUI falls short (for example a large, fast file table).
 - XcodeGen: `project.yml` is the source of truth. The generated `.xcodeproj` is not committed. Never edit it by hand.
 - Targets: `SmartOSFileStore` (app), `FileStoreCore` (framework: the engine), `FileStoreCoreTests` (unit tests for the engine). Add targets only when asked.
-- Deployment target macOS 26.0, Apple silicon. Bundle id `com.YOURNAME.SmartOSFileStore`.
+- Deployment target macOS 26.0, Apple silicon. Bundle id `com.quaden2307.SmartOSFileStore`.
 - No App Sandbox (direct download, not the Mac App Store). Hardened Runtime on, so the app can be notarized later.
 - CryptoKit for hashing, Quick Look for previews, UniformTypeIdentifiers for file types.
 - No third-party dependencies without the owner's approval. No database yet; GRDB (SQLite) arrives with the activity log in a later segment.

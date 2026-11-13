@@ -19,7 +19,7 @@ final class CleanupPreviewModel {
     /// Changes the user has left ticked. Everything is ticked to begin with.
     private(set) var ticked: Set<ProposedChange.ID>
 
-    /// True while the confirmation alert is up, so it is never shown twice.
+    /// True while the confirmation sheet is up, so it is never shown twice.
     var isConfirming = false
 
     private(set) var phase: Phase = .reviewing

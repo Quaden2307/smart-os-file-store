@@ -9,7 +9,7 @@ struct ScanErrorView: View {
 
     @Environment(\.openURL) private var openURL
 
-    /// The Files and Folders page of Privacy & Security in System Settings.
+    /// The Files & Folders page of Privacy & Security in System Settings.
     private static let privacySettingsURL = URL(
         string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders"
     )
@@ -20,17 +20,29 @@ struct ScanErrorView: View {
         } description: {
             Text(failure.message)
         } actions: {
-            if failure.isPermissionDenied, let url = Self.privacySettingsURL {
+            if let privacySettingsURL {
+                // The way out of a permission problem, so it answers Return; Try Again keeps the
+                // toolbar's Command-R.
                 Button("Open Privacy Settings") {
-                    openURL(url)
+                    openURL(privacySettingsURL)
                 }
                 .buttonStyle(.borderedProminent)
-                .help("Open the Files and Folders privacy settings in System Settings")
+                .keyboardShortcut(.defaultAction)
+                .help("Open the Files & Folders privacy settings in System Settings (Return)")
             }
             if let retry {
-                Button("Try Again", action: retry)
-                    .keyboardShortcut(.defaultAction)
+                let button = Button("Try Again", action: retry)
+                    .help("Scan the folder again (⌘R)")
+                if privacySettingsURL == nil {
+                    button.keyboardShortcut(.defaultAction)
+                } else {
+                    button
+                }
             }
         }
+    }
+
+    private var privacySettingsURL: URL? {
+        failure.isPermissionDenied ? Self.privacySettingsURL : nil
     }
 }

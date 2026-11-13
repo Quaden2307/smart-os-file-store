@@ -3,17 +3,23 @@ import QuickLook
 import SwiftUI
 
 /// The preview of a cleanup plan: what stays, what would change and why. Every proposed change has
-/// a checkbox; Move to Trash asks for confirmation, carries out the ticked changes and then shows
-/// what happened. Every cleanup action shares this screen.
+/// a checkbox, which Space toggles for the selected row; Command-Y opens Quick Look. Move to Trash
+/// asks for confirmation, carries out the ticked changes and then shows what happened. Every
+/// cleanup action shares this screen.
 struct CleanupPreviewSheet: View {
     @State private var model: CleanupPreviewModel
     @State private var selectedRow: URL?
     @State private var previewItem: URL?
 
-    /// The checkbox with keyboard focus, if any. Space then toggles it rather than opening Quick Look.
+    /// The checkbox with keyboard focus, if any. It owns Space itself; the list's handler stands back.
     @FocusState private var focusedCheckbox: URL?
 
     @Environment(\.dismiss) private var dismiss
+
+    /// Catches Command-A while the sheet is up. A list takes Command-A as the standard Select All
+    /// before any button's shortcut is considered, so without this the shortcut would select the
+    /// list's rows (nothing visible) instead of ticking every duplicate.
+    @State private var selectAllMonitor: SelectAllKeyMonitor?
 
     init(plan: CleanupPlan, onExecuted: @escaping @MainActor (CleanupResult) -> Void) {
         _model = State(initialValue: CleanupPreviewModel(plan: plan, onExecuted: onExecuted))
@@ -45,12 +51,24 @@ struct CleanupPreviewSheet: View {
                 close()
             }
         }
+        .onAppear {
+            selectAllMonitor = SelectAllKeyMonitor { [model] in
+                // Only while reviewing, and not while the confirmation or Quick Look is in front.
+                guard model.isReviewing, !model.isConfirming, previewItem == nil else { return false }
+                model.selectAll()
+                return true
+            }
+        }
+        .onDisappear {
+            selectAllMonitor = nil
+        }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Duplicates")
                 .font(.title2.weight(.semibold))
+                .accessibilityAddTraits(.isHeader)
             if plan.isEmpty {
                 Text("No Duplicates Found")
                     .foregroundStyle(.secondary)
@@ -113,19 +131,46 @@ struct CleanupPreviewSheet: View {
             preview(urls)
         }
         .onKeyPress(.space) {
-            // A focused checkbox owns Space.
-            guard focusedCheckbox == nil else { return .ignored }
-            // Space toggles the panel, as in Finder: it sets the binding back to nil when it closes.
-            if previewItem != nil {
-                previewItem = nil
-                return .handled
+            // A focused checkbox owns Space. Otherwise Space ticks or unticks the selected duplicate;
+            // kept and unchecked rows have no checkbox, so Space does nothing on them.
+            guard focusedCheckbox == nil, model.isReviewing, let selectedRow,
+                  let id = changeID(for: selectedRow) else { return .ignored }
+            model.setTicked(id, !model.isTicked(id))
+            return .handled
+        }
+        .onKeyPress(phases: .down) { press in
+            // Command-Y, as in Finder, handled by the list itself.
+            guard press.key == "y", press.modifiers == .command, selectedRow != nil || previewItem != nil else {
+                return .ignored
             }
-            guard let selectedRow else { return .ignored }
-            preview([selectedRow])
+            toggleQuickLook()
+            return .handled
+        }
+        .onKeyPress(.return) {
+            // A list answers Return with its primary action (Quick Look) before the default button
+            // is considered; here Return means Move to Trash, which only opens the confirmation.
+            guard model.canExecute, !model.isConfirming else { return .ignored }
+            confirm()
             return .handled
         }
         .quickLookPreview($previewItem, in: rowURLs)
         .accessibilityLabel("Duplicate groups")
+    }
+
+    /// The proposed change shown in the row tagged `row`, if that row is a duplicate.
+    private func changeID(for row: URL) -> ProposedChange.ID? {
+        plan.changes.contains { $0.id == row } ? row : nil
+    }
+
+    /// Opens Quick Look for the selected row, or closes it when it is showing: the panel sets the
+    /// binding back to nil when it closes.
+    private func toggleQuickLook() {
+        if previewItem != nil {
+            previewItem = nil
+            return
+        }
+        guard let selectedRow else { return }
+        preview([selectedRow])
     }
 
     @ViewBuilder
@@ -142,9 +187,13 @@ struct CleanupPreviewSheet: View {
                 Button("Select All") {
                     model.selectAll()
                 }
+                .keyboardShortcut("a", modifiers: .command)
+                .help("Tick every duplicate (⌘A)")
                 Button("Select None") {
                     model.selectNone()
                 }
+                .keyboardShortcut("a", modifiers: [.command, .shift])
+                .help("Untick every duplicate (⇧⌘A)")
                 Text("^[\(model.tickedCount) file](inflect: true) (\(model.tickedBytes.formattedFileSize)) selected")
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
@@ -249,8 +298,8 @@ private struct KeptFileRow: View {
                 .font(.caption.weight(.semibold))
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
-                .foregroundStyle(Color.accentColor)
-                .background(Color.accentColor.opacity(0.15), in: Capsule())
+                .foregroundStyle(.secondary)
+                .background(.quaternary, in: Capsule())
             Spacer()
             if let size = record.formattedSize {
                 Text(size)
@@ -286,23 +335,27 @@ private struct DuplicateFileRow: View {
             .labelsHidden()
             .disabled(!isEnabled)
             .focused(focusedCheckbox, equals: record.id)
-            FileIconView(record: record)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(record.displayName)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Text(reason.localizedDescription)
-                    .font(.caption)
+            // One VoiceOver element after the checkbox: name, reason, date and size in one breath.
+            HStack(spacing: 8) {
+                FileIconView(record: record)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(record.displayName)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(reason.localizedDescription)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                DateCell(date: record.dateAdded)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                Text(sizeInBytes.formattedFileSize)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 72, alignment: .trailing)
             }
-            Spacer()
-            DateCell(date: record.dateAdded)
-                .foregroundStyle(.secondary)
-            Text(sizeInBytes.formattedFileSize)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .frame(minWidth: 72, alignment: .trailing)
+            .accessibilityElement(children: .combine)
         }
     }
 }

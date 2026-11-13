@@ -13,7 +13,8 @@ struct TrashConfirmationSheet: View {
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: "trash")
-                .font(.system(size: 40))
+                .font(.largeTitle)
+                .imageScale(.large)
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             Text("Move ^[\(fileCount) file](inflect: true) (\(bytes.formattedFileSize)) to the Trash?")

@@ -91,11 +91,8 @@ public struct FolderScanner: Sendable {
 
         try Self.throwIfCancelled()
 
-        let elapsed = clock.now - start
-        let milliseconds = Double(elapsed.components.seconds) * 1_000
-            + Double(elapsed.components.attoseconds) / 1e15
         Self.logger.info(
-            "Scanned \(records.count) items, skipped \(skippedItems.count), in \(milliseconds, format: .fixed(precision: 1)) ms"
+            "Scanned \(records.count) items, skipped \(skippedItems.count), in \((clock.now - start).milliseconds, format: .fixed(precision: 1)) ms"
         )
 
         return FolderScanResult(

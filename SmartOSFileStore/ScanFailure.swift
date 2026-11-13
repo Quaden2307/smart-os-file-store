@@ -18,7 +18,9 @@ struct ScanFailure: Equatable {
         switch error {
         case .downloadsFolderUnavailable:
             title = String(localized: "Downloads Folder Not Found")
-            message = String(localized: "Your Downloads folder could not be located.")
+            message = String(
+                localized: "Your Downloads folder could not be located. Check that a Downloads folder exists in your home folder, then open Smart OS File Store again."
+            )
         case .overrideValueMissing(let source):
             title = String(localized: "No Folder to Scan")
             message = String(localized: "The \(source.localizedName) was given without a folder path.")
@@ -36,23 +38,31 @@ struct ScanFailure: Equatable {
         case .folderNotFound(let url):
             isPermissionDenied = false
             title = String(localized: "Folder Not Found")
-            message = String(localized: "The folder “\(url.lastPathComponent)” could not be found.")
+            message = String(
+                localized: "The folder “\(url.lastPathComponent)” could not be found. Reconnect its disk or create the folder, then click Try Again."
+            )
         case .accessDenied(let url):
             isPermissionDenied = true
             title = String(localized: "Access to “\(url.lastPathComponent)” Is Blocked")
             // The error alone does not say whether macOS privacy protection or the folder's own
             // permissions refused, so the advice names the common case without asserting it.
             message = String(
-                localized: "Smart OS File Store isn’t allowed to read “\(url.lastPathComponent)”. If macOS asked for permission and you chose Don’t Allow, turn on Smart OS File Store under Files and Folders in Privacy & Security, then try again."
+                localized: "Smart OS File Store isn’t allowed to read “\(url.lastPathComponent)”. If macOS asked for permission and you chose Don’t Allow, turn on Smart OS File Store under Files & Folders in Privacy & Security, then click Try Again."
             )
-        case .folderUnreadable(let url, let reason):
+        // The system's own sentence for these usually repeats the name and is logged by the engine;
+        // the window says what to do instead.
+        case .folderUnreadable(let url, _):
             isPermissionDenied = false
             title = String(localized: "Folder Can’t Be Read")
-            message = String(localized: "“\(url.lastPathComponent)” could not be read. \(reason)")
-        case .itemUnreadable(let url, let reason):
+            message = String(
+                localized: "“\(url.lastPathComponent)” could not be read. Check that its disk is connected, then click Try Again."
+            )
+        case .itemUnreadable(let url, _):
             isPermissionDenied = false
             title = String(localized: "Item Can’t Be Read")
-            message = String(localized: "“\(url.lastPathComponent)” could not be read. \(reason)")
+            message = String(
+                localized: "“\(url.lastPathComponent)” could not be read. Check that its disk is connected, then click Try Again."
+            )
         case .cancelled:
             isPermissionDenied = false
             title = String(localized: "Scan Stopped")

@@ -1,0 +1,225 @@
+import FileStoreCore
+import Foundation
+import Synchronization
+import Testing
+
+/// Behaviour at the size of a real Downloads folder: thousands of small files and files of several
+/// gigabytes. Correctness is asserted strictly. Time and memory have wide bounds that catch a
+/// regression of an order of magnitude, and the measured values are recorded as warnings so they
+/// show in the test log without failing anything. The large files are sparse: they cost no disk
+/// space and read as zeros through the same code path as any file.
+@Suite("Scale", .serialized, .timeLimit(.minutes(3)))
+struct ScaleTests {
+    private let scanner = FolderScanner()
+    private let planner = DuplicatePlanner()
+
+    private static let smallFileCount = 5_000
+    /// Ten size classes, so every small file shares its size with hundreds of others and is hashed.
+    private static let smallSizes = [64, 128, 256, 512, 1_024, 2_048, 4_096, 8_192, 16_384, 32_768]
+    private static let extensions = ["txt", "pdf", "jpg", "zip", "bin"]
+    private static let mebibyte: Int64 = 1 << 20
+    private static let gibibyte: Int64 = 1 << 30
+    private static let bigSize = 2 * gibibyte
+    private static let uniqueBigSize = 3 * gibibyte
+
+    private enum FixtureError: Error {
+        case couldNotCreate(URL)
+    }
+
+    // MARK: - Fixture
+
+    /// Writes the small files in identical pairs: `small-00000` and `small-00001` share size class
+    /// and content, and so on, so the plan at scale has thousands of groups to build.
+    /// - Returns: The total size of the small files.
+    private static func writeSmallFiles(in folder: URL) throws -> Int64 {
+        var total: Int64 = 0
+        for index in 0..<smallFileCount {
+            let pair = index / 2
+            let size = smallSizes[pair % smallSizes.count]
+            var data = Data(count: size)
+            withUnsafeBytes(of: UInt32(pair).bigEndian) { bytes in
+                data.replaceSubrange(0..<4, with: bytes)
+            }
+            let name = String(format: "small-%05d.%@", index, extensions[pair % extensions.count])
+            try data.write(to: folder.appending(path: name))
+            total += Int64(size)
+        }
+        return total
+    }
+
+    private static func writeSparseFile(_ url: URL, size: Int64) throws {
+        guard FileManager.default.createFile(atPath: url.path(percentEncoded: false), contents: nil) else {
+            throw FixtureError.couldNotCreate(url)
+        }
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.truncate(atOffset: UInt64(size))
+        try handle.close()
+    }
+
+    private static func milliseconds(_ duration: Duration) -> Double {
+        Double(duration.components.seconds) * 1_000 + Double(duration.components.attoseconds) / 1e15
+    }
+
+    private static func mebibytes(_ bytes: UInt64) -> String {
+        String(format: "%.1f MiB", Double(bytes) / Double(mebibyte))
+    }
+
+    /// Records a measurement in the test log. A warning never fails a test.
+    private static func report(_ text: String) {
+        Issue.record("SCALE \(text)", severity: .warning)
+    }
+
+    // MARK: - Tests
+
+    @Test func scansAndPlansThousandsOfFilesWithFlatMemory() async throws {
+        let temp = try TemporaryFolder.make()
+        defer { temp.remove() }
+        let clock = ContinuousClock()
+        let setupStart = clock.now
+        let smallTotal = try Self.writeSmallFiles(in: temp.url)
+        try Self.writeSparseFile(temp.url.appending(path: "big-a.bin"), size: Self.bigSize)
+        try Self.writeSparseFile(temp.url.appending(path: "big-b.bin"), size: Self.bigSize)
+        try Self.writeSparseFile(temp.url.appending(path: "big-c.bin"), size: Self.uniqueBigSize)
+        let setupTime = clock.now - setupStart
+
+        // Scan
+        let scanStart = clock.now
+        let scan = try await scanner.scan(ScanLocation(folderURL: temp.url, source: .launchArgument))
+        let scanTime = clock.now - scanStart
+        #expect(scan.records.count == Self.smallFileCount + 3)
+        #expect(scan.skippedItems.isEmpty)
+
+        // Plan. The files were written moments ago, so the plan is made as if a minute had passed;
+        // the production rule still runs. Memory is sampled from the progress callback, which is
+        // the only place that runs while the hashing threads are busy.
+        let first = Mutex<DuplicateScanProgress?>(nil)
+        let peak = Mutex<UInt64>(0)
+        let before = try #require(physicalFootprintInBytes())
+        let planStart = clock.now
+        let plan = try await planner.plan(records: scan.records, in: temp.url, now: Date(timeIntervalSinceNow: 60)) { progress in
+            first.withLock { stored in
+                if stored == nil {
+                    stored = progress
+                }
+            }
+            if let footprint = physicalFootprintInBytes() {
+                peak.withLock { $0 = max($0, footprint) }
+            }
+        }
+        let planTime = clock.now - planStart
+        let after = try #require(physicalFootprintInBytes())
+
+        let firstProgress = try #require(first.withLock { $0 })
+        #expect(firstProgress.filesToHash == Self.smallFileCount + 2)
+        // big-c has a size of its own, so it is never read.
+        #expect(firstProgress.bytesToHash == smallTotal + 2 * Self.bigSize)
+
+        #expect(plan.skippedItems.isEmpty)
+        #expect(plan.duplicateGroups.count == Self.smallFileCount / 2 + 1)
+        #expect(plan.changes.count == Self.smallFileCount / 2 + 1)
+        let bigGroup = try #require(plan.duplicateGroups.first { $0.fileSizeInBytes == Self.bigSize })
+        #expect(bigGroup.kept.displayName == "big-a.bin")
+        #expect(bigGroup.duplicates.map(\.displayName) == ["big-b.bin"])
+        #expect(plan.duplicateGroups.first?.kept.displayName == "big-a.bin", "the largest saving comes first")
+        let mentioned = plan.duplicateGroups.flatMap { [$0.kept.displayName] + $0.duplicates.map(\.displayName) }
+        #expect(!mentioned.contains("big-c.bin"))
+        #expect(plan.changes.allSatisfy { $0.record.displayName != "big-c.bin" })
+
+        let highest = max(peak.withLock { $0 }, after)
+        let growth = highest > before ? highest - before : 0
+        #expect(growth < UInt64(64 * Self.mebibyte), "footprint grew by \(Self.mebibytes(growth)) while hashing \(firstProgress.bytesToHash) bytes")
+
+        Self.report(
+            "setup \(Self.milliseconds(setupTime).formatted(.number.precision(.fractionLength(0)))) ms; "
+                + "scan of \(scan.records.count) records \(Self.milliseconds(scanTime).formatted(.number.precision(.fractionLength(1)))) ms; "
+                + "plan hashing \(firstProgress.filesToHash) files, \(Self.mebibytes(UInt64(firstProgress.bytesToHash))), "
+                + "\(Self.milliseconds(planTime).formatted(.number.precision(.fractionLength(0)))) ms; "
+                + "footprint before \(Self.mebibytes(before)), peak \(Self.mebibytes(highest)), after \(Self.mebibytes(after)), growth \(Self.mebibytes(growth))"
+        )
+    }
+
+    @Test func cancelStopsAMultiGigabyteSearchPromptly() async throws {
+        let temp = try TemporaryFolder.make()
+        defer { temp.remove() }
+        try Self.writeSparseFile(temp.url.appending(path: "big-a.bin"), size: Self.bigSize)
+        try Self.writeSparseFile(temp.url.appending(path: "big-b.bin"), size: Self.bigSize)
+        let records = try await scanner.scan(ScanLocation(folderURL: temp.url, source: .launchArgument)).records
+        #expect(records.count == 2)
+        let clock = ContinuousClock()
+        let planner = planner
+        let folder = temp.url
+        // The callback runs on a hashing thread, inside a child of the search's task; cancelling the
+        // current task there would stop one hash only. The search task itself is cancelled instead,
+        // once it is known: the callback before the handle is set simply waits for the next one.
+        let searchTask = Mutex<Task<CleanupPlan, any Error>?>(nil)
+        let cancelledAt = Mutex<ContinuousClock.Instant?>(nil)
+
+        let task = Task<CleanupPlan, any Error> {
+            try await planner.plan(records: records, in: folder, now: Date(timeIntervalSinceNow: 60)) { progress in
+                guard progress.bytesHashed > 64 * Self.mebibyte else { return }
+                searchTask.withLock { task in
+                    guard let task else { return }
+                    cancelledAt.withLock { instant in
+                        if instant == nil {
+                            instant = clock.now
+                            task.cancel()
+                        }
+                    }
+                }
+            }
+        }
+        searchTask.withLock { $0 = task }
+        let outcome = await task.result
+        let returnedAt = clock.now
+
+        let instant = try #require(cancelledAt.withLock { $0 })
+        let latency = returnedAt - instant
+        switch outcome {
+        case .success:
+            Issue.record("expected the search to report cancellation, got a plan")
+        case .failure(let error):
+            #expect(error as? DuplicatePlanError == .cancelled)
+        }
+        #expect(latency < .seconds(2), "the search took \(Self.milliseconds(latency)) ms to stop after cancel")
+        Self.report("search of two \(Self.mebibytes(UInt64(Self.bigSize))) files stopped \(Self.milliseconds(latency).formatted(.number.precision(.fractionLength(1)))) ms after cancel")
+    }
+
+    @Test func cancelStopsAMultiGigabyteHashPromptly() async throws {
+        let temp = try TemporaryFolder.make()
+        defer { temp.remove() }
+        let url = temp.url.appending(path: "big.bin")
+        try Self.writeSparseFile(url, size: Self.bigSize)
+        let clock = ContinuousClock()
+        let hasher = ContentHasher()
+        let chunks = Mutex(0)
+        let cancelledAt = Mutex<ContinuousClock.Instant?>(nil)
+
+        // The callback runs inside the hashing task, so cancelling the current task is exact.
+        let task = Task<ContentHash, any Error> {
+            try await hasher.hash(contentsOf: url, expectedSizeInBytes: Self.bigSize) { _ in
+                let count = chunks.withLock { count -> Int in
+                    count += 1
+                    return count
+                }
+                if count == 64 {
+                    cancelledAt.withLock { $0 = clock.now }
+                    withUnsafeCurrentTask { $0?.cancel() }
+                }
+            }
+        }
+        let outcome = await task.result
+        let returnedAt = clock.now
+
+        let instant = try #require(cancelledAt.withLock { $0 })
+        let latency = returnedAt - instant
+        switch outcome {
+        case .success:
+            Issue.record("expected the hash to report cancellation, got a hash")
+        case .failure(let error):
+            #expect(error as? ContentHashError == .cancelled)
+        }
+        #expect(chunks.withLock { $0 } <= 65, "hashing went on after cancel")
+        #expect(latency < .seconds(2), "the hash took \(Self.milliseconds(latency)) ms to stop after cancel")
+        Self.report("hash of a \(Self.mebibytes(UInt64(Self.bigSize))) file stopped \(Self.milliseconds(latency).formatted(.number.precision(.fractionLength(2)))) ms after cancel, after \(chunks.withLock { $0 }) chunks")
+    }
+}

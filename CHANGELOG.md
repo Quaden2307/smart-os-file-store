@@ -21,6 +21,16 @@ All notable changes to Smart OS File Store are recorded here. The format follows
 - Test fixtures for every version 0.2 action, in the hand-testing script and the shared test helper, and a `FakeApplications` folder beside the fake Downloads folder.
 - A benchmark of the scan and Find Duplicates at 10,000 files, kept out of the normal test run, with results in `docs/benchmarks.md`.
 - Decision records in `docs/decisions/`.
+- The engine can rename a file in the scanned folder and move one into a folder inside it, making the folder if needed. Nothing proposes renames or moves yet. Each action may use only its own operation: Find Duplicates only moves to the Trash, Fix messy names (coming) only renames, Archive old downloads (coming) only moves. Every result names where the file went, and any folder made for it, so a later undo can reverse it.
+- The preview can show a plan without groups, one change per row with its checkbox, reason, and old name → new name or folder. Renames and moves are previewed only; they cannot be applied yet.
+- Debug builds have a Debug menu with two made-up plans, Show Sample Messy Names Plan and Show Sample Old Downloads Plan, to look at that preview.
+
+### Safety
+
+- A rename or a move never replaces anything: it is one exclusive step, so if anything already has the name, including in another letter case or Unicode form on a default APFS volume, nothing changes and the file is reported as left alone. No other app can slip an item in between a check and the rename.
+- Renames and moves look up every name through a handle on the scanned folder, never through a path, follow no symbolic link, and stay on the folder's disk. A move's destination must lie inside the folder, and a link or a hidden folder on the way is refused, wherever it points.
+- A new name must be one valid name that fits the disk. It may not be hidden, the archive's name or that of a download still in progress. Only regular files are renamed or moved, and each is checked again right before it changes, with the same rules as the Trash.
+- Every call that changes the disk now lives in one file, and a source-scanning test holds it to exactly three: the Trash, the exclusive rename and making a folder.
 
 ## [0.1.0] - 2026-11-13
 

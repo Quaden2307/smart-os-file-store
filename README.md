@@ -16,6 +16,7 @@ Smart OS File Store is a native macOS file browser that will replace Finder, sta
 - **Marks**, as small badges after the name: Never opened (no last-opened date, added more than 30 days ago), Unused (last opened more than 30 days ago) and Old (added more than 90 days ago, opened or not). Folders, apps, links, aliases, hidden items and downloads in progress get none.
 - **A filter** above the table and in the View menu (All, Never opened, Unused, Old). The status line shows how many items match and their total size.
 - **Download source**: hover over a row to see the site a file was downloaded from and the app that downloaded it. Copy Download Source, in the context menu and the Edit menu, copies the file's address.
+- **Rename and move in the engine**, for Fix messy names and Archive old downloads to use: exclusive, so nothing is ever replaced, through a handle on the folder, so no link is followed. Nothing proposes them yet.
 
 The two thresholds live in the app's defaults. There is no settings window yet; to change them for good, or for one launch:
 
@@ -105,6 +106,8 @@ Cleanup actions leave anything added or modified in the last hour alone. The scr
 ```bash
 open build/Build/Products/Debug/SmartOSFileStore.app --args -ScanFolder /path/to/FakeDownloads -GracePeriodSeconds 0
 ```
+
+Debug builds also have a **Debug** menu. Show Sample Messy Names Plan and Show Sample Old Downloads Plan open the cleanup preview with made-up files, so the preview of renames and moves can be looked at before any action proposes them. The files do not exist, and renames and moves cannot be applied from the preview yet.
 
 Design decisions are recorded in [docs/decisions/](docs/decisions/).
 

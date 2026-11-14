@@ -33,12 +33,12 @@ struct CleanupSummaryView: View {
             .frame(maxWidth: .infinity)
             .accessibilityElement(children: .combine)
 
-            if result.notMoved.isEmpty {
+            if result.leftAlone.isEmpty {
                 Spacer(minLength: 0)
             } else {
                 List {
                     Section("Not Moved") {
-                        ForEach(result.notMoved) { item in
+                        ForEach(result.leftAlone) { item in
                             NotMovedRow(item: item)
                         }
                     }

@@ -110,6 +110,12 @@ public struct FileRecord: Sendable, Identifiable, Hashable {
     public static func isInProgressDownload(_ url: URL) -> Bool {
         inProgressDownloadExtensions.contains(url.pathExtension.lowercased())
     }
+
+    /// True when an item called `name` would be taken for a download still in progress, by the
+    /// same rule as `isInProgressDownload(_:)`.
+    public static func isInProgressDownload(name: String) -> Bool {
+        isInProgressDownload(URL(filePath: name, directoryHint: .notDirectory))
+    }
 }
 
 extension FileRecord {

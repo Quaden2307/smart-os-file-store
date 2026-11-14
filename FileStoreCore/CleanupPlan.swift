@@ -26,7 +26,8 @@ public struct CleanupPlan: Sendable, Hashable {
     /// Every proposed change, in the order the preview shows them.
     public let changes: [ProposedChange]
 
-    /// For `findDuplicates`: which kept file each change is a copy of. Empty for other actions.
+    /// For `findDuplicates`: which kept file each change is a copy of. Empty for plans without
+    /// groups, such as renames and moves, which the preview then lists one change per row.
     public let duplicateGroups: [DuplicateGroup]
 
     /// Files the action saw but could not check.
@@ -59,6 +60,8 @@ public struct CleanupPlan: Sendable, Hashable {
             switch change.operation {
             case .moveToTrash:
                 total + change.sizeInBytes
+            case .rename, .move:
+                total
             }
         }
     }
@@ -109,6 +112,28 @@ public enum CleanupSkipReason: Sendable, Hashable {
 
     /// Execution was stopped before this item was reached.
     case cancelled
+
+    // The reasons below only arise for a rename or a move.
+
+    /// Something already has the new name where the item would go. It is never overwritten.
+    /// `name` is the name that is taken.
+    case destinationExists(name: String)
+
+    /// The new name, or the name of a folder on the way, is not one valid file name: empty, `.` or
+    /// `..`, containing `/` or NUL, too long for the disk, or a name no action may give (hidden,
+    /// the archive's, a download still in progress).
+    case invalidName
+
+    /// The destination is not inside the scanned folder: it lies elsewhere, is the folder itself,
+    /// or is reached through a symbolic link or onto another disk.
+    case destinationOutsideFolder
+
+    /// A file or a package sits where the destination folder should be.
+    case destinationNotAFolder
+
+    /// The destination folder, or one on the way, is hidden (by flag), so the file would vanish
+    /// from view in it.
+    case destinationHidden
 }
 
 extension CleanupSkipReason {

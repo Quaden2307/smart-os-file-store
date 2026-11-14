@@ -11,6 +11,9 @@ struct SmartOSFileStoreApp: App {
             RevealInFinderCommands()
             CopyDownloadSourceCommands()
             FilterCommands()
+            #if DEBUG
+            DebugCommands()
+            #endif
         }
     }
 }

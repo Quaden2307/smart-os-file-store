@@ -41,23 +41,7 @@ struct FileStatus: Sendable {
         guard result == 0 else {
             throw failure(errno)
         }
-        let type = status.st_mode & S_IFMT
-        let flags = status.st_flags
-        return FileStatus(
-            identity: FileIdentity(device: status.st_dev, inode: status.st_ino),
-            isRegularFile: type == S_IFREG,
-            isSymbolicLink: type == S_IFLNK,
-            isDirectory: type == S_IFDIR,
-            sizeInBytes: Int64(status.st_size),
-            modificationDate: Date(
-                timeIntervalSince1970: TimeInterval(status.st_mtimespec.tv_sec)
-                    + TimeInterval(status.st_mtimespec.tv_nsec) / 1_000_000_000
-            ),
-            isUserImmutable: (flags & UInt32(UF_IMMUTABLE)) != 0,
-            isSystemImmutable: (flags & UInt32(SF_IMMUTABLE)) != 0,
-            isDataless: (flags & UInt32(SF_DATALESS)) != 0,
-            isHidden: (flags & UInt32(UF_HIDDEN)) != 0
-        )
+        return FileStatus(status)
     }
 
     /// When the item at `path` was added to its folder, read now with `getattrlist(2)`. A symbolic
@@ -67,7 +51,10 @@ struct FileStatus: Sendable {
     ///
     /// `lstat` has no such field, and `URL.resourceValues` may answer from a cache, so the executor
     /// asks the file system directly right before it acts.
-    static func dateAdded(path: String) throws(Failure) -> Date? {
+    ///
+    /// - Parameter folder: A directory descriptor that a relative `path` is looked up in, as with
+    ///   `fstatat`. By default a path is resolved as usual.
+    static func dateAdded(path: String, relativeTo folder: Int32 = AT_FDCWD) throws(Failure) -> Date? {
         var request = attrlist()
         request.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
         request.commonattr = attrgroup_t(ATTR_CMN_RETURNED_ATTRS) | attrgroup_t(ATTR_CMN_ADDEDTIME)
@@ -76,7 +63,7 @@ struct FileStatus: Sendable {
         let timeOffset = returnedOffset + MemoryLayout<attribute_set_t>.size
         var reply = [UInt8](repeating: 0, count: timeOffset + MemoryLayout<timespec>.size)
         let result = reply.withUnsafeMutableBytes { buffer in
-            getattrlist(path, &request, buffer.baseAddress, buffer.count, UInt32(FSOPT_NOFOLLOW))
+            getattrlistat(folder, path, &request, buffer.baseAddress, buffer.count, UInt(FSOPT_NOFOLLOW))
         }
         guard result == 0 else {
             let code = errno
@@ -95,7 +82,7 @@ struct FileStatus: Sendable {
         }
     }
 
-    private static func failure(_ code: Int32) -> Failure {
+    static func failure(_ code: Int32) -> Failure {
         switch code {
         case ENOENT, ENOTDIR:
             .notFound
@@ -104,5 +91,28 @@ struct FileStatus: Sendable {
         default:
             .other(reason: String(cString: strerror(code)))
         }
+    }
+}
+
+extension FileStatus {
+    /// Describes what one `stat` family call returned.
+    init(_ status: stat) {
+        let type = status.st_mode & S_IFMT
+        let flags = status.st_flags
+        self.init(
+            identity: FileIdentity(device: status.st_dev, inode: status.st_ino),
+            isRegularFile: type == S_IFREG,
+            isSymbolicLink: type == S_IFLNK,
+            isDirectory: type == S_IFDIR,
+            sizeInBytes: Int64(status.st_size),
+            modificationDate: Date(
+                timeIntervalSince1970: TimeInterval(status.st_mtimespec.tv_sec)
+                    + TimeInterval(status.st_mtimespec.tv_nsec) / 1_000_000_000
+            ),
+            isUserImmutable: (flags & UInt32(UF_IMMUTABLE)) != 0,
+            isSystemImmutable: (flags & UInt32(SF_IMMUTABLE)) != 0,
+            isDataless: (flags & UInt32(SF_DATALESS)) != 0,
+            isHidden: (flags & UInt32(UF_HIDDEN)) != 0
+        )
     }
 }

@@ -19,7 +19,7 @@ Nothing on disk changes before the user confirms. There is no code path that ski
 ## Rules that always apply
 
 - **Engine and interface stay separate.** Scan, plan and execute live in the engine and import no SwiftUI or AppKit interface code. Views only call the engine and display results.
-- **Three operations only.** The engine moves an item to the Trash (`FileManager.trashItem`), renames it, or moves it within the scanned folder. Never permanently delete a user's file. Rename and move never overwrite an existing item.
+- **Three operations only.** The engine moves an item to the Trash (`FileManager.trashItem`), renames it, or moves it within the scanned folder. Never permanently delete a user's file. Rename and move never overwrite an existing item. All three go through `CleanupExecutor`, and a new action states the one operation it uses in `CleanupAction.allows`; the executor refuses any other.
 - **Recheck before acting.** Just before each change, confirm the file still exists and is unchanged since the scan (size and modification date, or content hash where the plan relied on it). If not, skip it and report it.
 - **One failure does not stop the rest.** Each item succeeds or fails on its own with a typed error and a message a user can understand. No `try!`, no force unwraps, no `fatalError` on file operations.
 - **Idempotent.** Running the action again right after it finishes produces an empty plan.

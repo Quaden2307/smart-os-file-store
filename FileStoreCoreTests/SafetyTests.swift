@@ -35,18 +35,33 @@ struct SafetyTests {
         case noSourcesFound(target: String)
     }
 
-    /// Calls and flags that change files. None may appear in production code: the engine removes
-    /// files through `trashItem` alone, and the app only calls the engine.
+    /// Calls and flags that change files. None may appear in production code: the engine changes
+    /// files only through the calls in `diskChangingCalls`, and the app only calls the engine.
+    /// `rename(` is the POSIX call; the enum case `rename(to:` is always written with its label.
     private static let fileChangingPatterns = [
-        #"\bremoveItem\s*\("#, #"\bunlink\s*\("#, #"\brmdir\s*\("#, #"\brename\s*\("#,
+        #"\bremoveItem\s*\("#, #"\bunlink\s*\("#, #"\bunlinkat\s*\("#, #"\bremovefile\s*\("#,
+        #"\brmdir\s*\("#, #"\brename\s*\((?!\s*to\s*:)"#, #"\brenameat\s*\("#, #"\brenamex_np\s*\("#,
+        #"\bRENAME_SWAP\b"#, #"\bexchangedata\s*\("#,
         #"\bftruncate\s*\("#, #"\btruncate\s*\("#,
         #"\bmoveItem\s*\("#, #"\breplaceItem\s*\("#, #"\bcopyItem\s*\("#, #"\blinkItem\s*\("#,
-        #"\bcreateFile\s*\("#, #"\bcreateDirectory\s*\("#, #"\bcreateSymbolicLink\s*\("#,
+        #"\bf?copyfile\s*\("#, #"\bf?clonefile(at)?\s*\("#, #"\blink(at)?\s*\("#, #"\bsymlink(at)?\s*\("#,
+        #"\bcreateFile\s*\("#, #"\bcreateDirectory\s*\("#, #"\bcreateSymbolicLink\s*\("#, #"\bmkdir\s*\("#,
         #"\bwrite\s*\(\s*to"#, #"\bsetAttributes\s*\("#,
         #"\bFileHandle\s*\(\s*forWritingTo"#, #"\bFileHandle\s*\(\s*forUpdating"#,
         #"\bO_WRONLY\b"#, #"\bO_RDWR\b"#, #"\bO_TRUNC\b"#, #"\bO_CREAT\b"#,
-        #"\bf?setxattr\s*\("#, #"\bf?removexattr\s*\("#, #"\bsetattrlist\s*\("#,
+        #"\bf?setxattr\s*\("#, #"\bf?removexattr\s*\("#, #"\bf?setattrlist(at)?\s*\("#,
     ]
+
+    /// The engine's only calls that change the disk, with how often each may appear. All of them
+    /// live in `DiskChange.swift` and nowhere else, in the engine or the app.
+    private static let diskChangingCalls = [
+        (pattern: #"\btrashItem\s*\("#, count: 1),
+        (pattern: #"\brenameatx_np\s*\("#, count: 1),
+        (pattern: #"\bmkdirat\s*\("#, count: 1),
+    ]
+
+    /// A whole `renameatx_np` call, its arguments included (one level of nested parentheses).
+    private static let renameCall = #"\brenameatx_np\s*\((?:[^()]|\([^()]*\))*\)"#
 
     /// Constructs that crash or bypass the type checker. Forbidden anywhere near user files.
     private static let forcedPathPatterns = [
@@ -117,11 +132,22 @@ struct SafetyTests {
             }
         }
 
-        // The one removal call in the engine, and it is a move to the Trash.
+        // The engine's disk changes all sit in one file: the one removal call, a move to the Trash,
+        // a rename that never replaces anything, and making a folder for a move.
+        for call in Self.diskChangingCalls {
+            let regex = try Self.regex(call.pattern)
+            let callers = (engine + app).filter { $0.count(of: regex) > 0 }
+            #expect(callers.map(\.label) == ["FileStoreCore/DiskChange.swift"], "\(call.pattern)")
+            #expect(callers.first?.count(of: regex) == call.count, "\(call.pattern)")
+        }
+        // Every rename is exclusive, so it can never replace an item.
+        let diskChange = try #require(engine.first { $0.name == "DiskChange.swift" })
+        let renameCalls = diskChange.code.matches(of: try Self.regex(Self.renameCall))
+        #expect(renameCalls.count == 1)
+        for call in renameCalls {
+            #expect(call.output[0].substring?.contains("RENAME_EXCL") == true, "\(call.output[0].substring ?? "")")
+        }
         let trashCall = try Self.regex(#"\btrashItem\s*\("#)
-        let callers = engine.filter { $0.count(of: trashCall) > 0 }
-        #expect(callers.map(\.name) == ["TrashExecutor.swift"])
-        #expect(callers.first?.count(of: trashCall) == 1)
 
         // The app never touches the Trash itself; it hands a confirmed plan to the engine.
         let recycleCall = try Self.regex(#"\brecycle\s*\("#)

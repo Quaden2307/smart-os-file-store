@@ -56,6 +56,9 @@ struct ContentView: View {
         .focusedSceneValue(\.selectedFileURLs, duplicates.presentedPlan == nil ? Array(selection) : nil)
         .focusedSceneValue(\.selectedDownloadAddresses, duplicates.presentedPlan == nil ? model.downloadAddresses(for: selection) : nil)
         .focusedSceneValue(\.fileListFilter, $model.filter)
+        #if DEBUG
+        .focusedSceneValue(\.duplicateSearch, duplicates)
+        #endif
         .onAppear {
             model.refresh()
         }

@@ -16,6 +16,12 @@ final class CleanupPreviewModel {
 
     let plan: CleanupPlan
 
+    /// Whether the preview shows duplicate groups or one change per row, worked out once.
+    let isGroupedByDuplicates: Bool
+
+    /// Whether the plan can be carried out from here: so far only moves to the Trash can be.
+    let isTrashOnly: Bool
+
     /// Changes the user has left ticked. Everything is ticked to begin with.
     private(set) var ticked: Set<ProposedChange.ID>
 
@@ -26,13 +32,15 @@ final class CleanupPreviewModel {
 
     private let onExecuted: @MainActor (CleanupResult) -> Void
     private var executionTask: Task<Void, Never>?
-    private let executor: TrashExecutor
+    private let executor: CleanupExecutor
     private let logger = Logger(subsystem: "com.quaden2307.SmartOSFileStore", category: "Cleanup")
 
     /// - Parameter eligibility: The rules the plan was made with; the executor checks them again.
     init(plan: CleanupPlan, eligibility: CandidateEligibility, onExecuted: @escaping @MainActor (CleanupResult) -> Void) {
         self.plan = plan
-        self.executor = TrashExecutor(eligibility: eligibility)
+        self.isGroupedByDuplicates = plan.isGroupedByDuplicates
+        self.isTrashOnly = plan.isTrashOnly
+        self.executor = CleanupExecutor(eligibility: eligibility)
         self.onExecuted = onExecuted
         self.ticked = Set(plan.changes.map(\.id))
     }
@@ -69,8 +77,10 @@ final class CleanupPreviewModel {
         tickedChanges.reduce(0) { $0 + $1.sizeInBytes }
     }
 
-    /// True when Move to Trash may be offered: still reviewing, with at least one change ticked.
-    var canExecute: Bool { isReviewing && tickedCount > 0 }
+    /// True when Move to Trash may be offered: still reviewing, with at least one change ticked, in
+    /// a plan of moves to the Trash. Renames and moves are previewed only, until an action that
+    /// proposes them brings its own confirmation.
+    var canExecute: Bool { isReviewing && tickedCount > 0 && isTrashOnly }
 
     func isTicked(_ id: ProposedChange.ID) -> Bool {
         ticked.contains(id)

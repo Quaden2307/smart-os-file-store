@@ -92,6 +92,19 @@ final class DuplicateSearchModel {
         presentedPlan = nil
     }
 
+    #if DEBUG
+    /// True while a sample may be shown: no search running and no preview up.
+    var canPresentSample: Bool { !isRunning && presentedPlan == nil }
+
+    /// Shows `plan` in the preview sheet as a search result would be (debug builds only: the
+    /// Debug menu's made-up plans). Never while a search runs or another preview is up.
+    func presentSample(_ plan: CleanupPlan) {
+        guard canPresentSample else { return }
+        presentedPlan = PresentedPlan(plan: plan)
+        logger.info("Showing a sample plan with \(plan.changes.count) changes")
+    }
+    #endif
+
     private func report(_ progress: DuplicateScanProgress, generation: Int) {
         guard generation == self.generation, isRunning else { return }
         phase = .running(progress)

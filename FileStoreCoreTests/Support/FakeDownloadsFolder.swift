@@ -153,6 +153,8 @@ struct FakeDownloadsFolder {
 
     /// `statement.pdf`'s download source, as a browser records it: the file's URL, then the page.
     static let statementSources = ["https://example.com/statements/statement.pdf", "https://example.com/account"]
+    /// The app `statement.pdf`'s quarantine attribute names.
+    static let statementDownloadingApp = "Safari"
 
     /// 2025-01-01 09:00 UTC, matching the script: when the old receipt and the tax form arrived.
     static let oldReceiptDate = Date(timeIntervalSince1970: 1_735_722_000)
@@ -387,6 +389,10 @@ struct FakeDownloadsFolder {
         try ExtendedAttributes.setLastUsedDate(Self.oldReceiptLastOpened, on: url(for: Names.oldReceipt))
         try ExtendedAttributes.setLastUsedDate(Date(timeIntervalSinceNow: -Self.taxFormLastOpenedAge), on: url(for: Names.taxForm))
         try ExtendedAttributes.setWhereFroms(Self.statementSources, on: url(for: Names.statement))
+        try ExtendedAttributes.setQuarantine(
+            ExtendedAttributes.quarantineValue(app: Self.statementDownloadingApp, downloadedAt: Date(timeIntervalSinceNow: -FileDates.settledAge)),
+            on: url(for: Names.statement)
+        )
 
         // Locked last: a locked file's dates and attributes cannot be changed.
         for name in [Names.lockedFile, Names.lockedReportCopy] {

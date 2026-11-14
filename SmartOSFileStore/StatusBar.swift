@@ -1,15 +1,20 @@
 import FileStoreCore
 import SwiftUI
 
-/// The line under the table: item count, total size, skipped items, and a spinner while
-/// refreshing. Debug builds add a second line naming the folder being scanned.
+/// The line under the table: item count and total size (of the filtered rows when a filter is on),
+/// skipped items, and a spinner while refreshing. Debug builds add a second line naming the folder
+/// being scanned.
 struct StatusBar: View {
     let model: FileListModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 8) {
-                Text("^[\(model.itemCount) item](inflect: true), \(model.totalBytes.formattedFileSize)")
+                if model.filter == .all {
+                    Text("^[\(model.itemCount) item](inflect: true), \(model.totalBytes.formattedFileSize)")
+                } else {
+                    Text("\(model.visibleCount) of ^[\(model.itemCount) item](inflect: true), \(model.visibleBytes.formattedFileSize)")
+                }
                 if !model.skippedItems.isEmpty {
                     Text("^[\(model.skippedItems.count) item](inflect: true) could not be read")
                         .foregroundStyle(.secondary)

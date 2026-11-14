@@ -46,6 +46,17 @@ public struct FileRecord: Sendable, Identifiable, Hashable {
     /// True when the name ends in an extension browsers use for downloads still in progress.
     public let isDownloading: Bool
 
+    /// When a user last opened the item, as macOS records it. Nil when it recorded none: the item
+    /// was never opened, or it is a kind macOS records no date for (see `recordsLastOpened`).
+    public let lastOpened: Date?
+
+    /// Where the item was downloaded from. Nil when macOS recorded nothing.
+    public let downloadSource: DownloadSource?
+
+    /// False when the last-opened date could not be read at all (see `FileMetadata`), so a missing
+    /// date means unknown, not never opened.
+    public let canReadLastOpened: Bool
+
     public init(
         url: URL,
         displayName: String,
@@ -55,7 +66,10 @@ public struct FileRecord: Sendable, Identifiable, Hashable {
         sizeInBytes: Int64?,
         dateAdded: Date?,
         dateModified: Date?,
-        isDownloading: Bool
+        isDownloading: Bool,
+        lastOpened: Date? = nil,
+        downloadSource: DownloadSource? = nil,
+        canReadLastOpened: Bool = true
     ) {
         self.url = url
         self.displayName = displayName
@@ -66,6 +80,27 @@ public struct FileRecord: Sendable, Identifiable, Hashable {
         self.dateAdded = dateAdded
         self.dateModified = dateModified
         self.isDownloading = isDownloading
+        self.lastOpened = lastOpened
+        self.downloadSource = downloadSource
+        self.canReadLastOpened = canReadLastOpened
+    }
+
+    /// True when a missing last-opened date means the item was never opened: it is a kind macOS
+    /// dates when a user opens it (files and document packages, a Keynote file say), and its date
+    /// could be read. macOS records none for folders or apps, and opening a symbolic link or a
+    /// Finder alias opens its target, so for those a missing date means "not recorded".
+    public var recordsLastOpened: Bool {
+        guard canReadLastOpened else {
+            return false
+        }
+        switch kind {
+        case .file:
+            return !(contentType?.conforms(to: .aliasFile) ?? false)
+        case .package:
+            return !(contentType?.conforms(to: .application) ?? false)
+        case .folder, .symlink:
+            return false
+        }
     }
 
     /// Extensions browsers give to files that are still being downloaded. Compared case-insensitively.
@@ -78,11 +113,12 @@ public struct FileRecord: Sendable, Identifiable, Hashable {
 }
 
 extension FileRecord {
-    /// Builds a record from resource values the scanner already fetched for `url`.
+    /// Builds a record from resource values the scanner already fetched for `url`, and the metadata
+    /// it read for it.
     ///
     /// Resource values describe a symbolic link itself, not its target, so a link is never
     /// mistaken for a folder. A package is also a directory, so it is checked before `folder`.
-    init(url: URL, values: URLResourceValues) {
+    init(url: URL, values: URLResourceValues, metadata: FileMetadata) {
         let kind: Kind
         if values.isSymbolicLink == true {
             kind = .symlink
@@ -111,7 +147,10 @@ extension FileRecord {
             sizeInBytes: sizeInBytes,
             dateAdded: values.addedToDirectoryDate,
             dateModified: values.contentModificationDate,
-            isDownloading: Self.isInProgressDownload(url)
+            isDownloading: Self.isInProgressDownload(url),
+            lastOpened: metadata.lastOpened,
+            downloadSource: metadata.downloadSource,
+            canReadLastOpened: metadata.canReadLastOpened
         )
     }
 }

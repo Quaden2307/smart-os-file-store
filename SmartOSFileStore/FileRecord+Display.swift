@@ -14,6 +14,22 @@ extension FileRecord {
     var formattedSize: String? {
         sizeInBytes?.formattedFileSize
     }
+
+    /// The row's tooltip: the site the file came from and the app that downloaded it, whichever
+    /// macOS recorded. Nil when it recorded neither.
+    var downloadSourceTooltip: String? {
+        guard let downloadSource else { return nil }
+        switch (downloadSource.site, downloadSource.downloadingApp) {
+        case let (site?, app?):
+            return String(localized: "Downloaded from \(site) with \(app)")
+        case let (site?, nil):
+            return String(localized: "Downloaded from \(site)")
+        case let (nil, app?):
+            return String(localized: "Downloaded with \(app)")
+        case (nil, nil):
+            return nil
+        }
+    }
 }
 
 extension Int64 {

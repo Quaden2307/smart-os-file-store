@@ -10,6 +10,21 @@ Smart OS File Store is a native macOS file browser that will replace Finder, sta
 - **Rechecks every file right before it moves**: it must still be a regular file directly inside the folder, with the size, date and content the scan saw, and its kept copy must still be there with the same content. Anything that changed is skipped and reported. Locked files fail with a message and are never unlocked.
 - **Moves files to the Trash only**, never deletes them. The summary says what moved and what did not, and why; files can be put back from the Trash. Running Find Duplicates again right afterwards finds nothing.
 
+## What version 0.2 adds so far
+
+- **Last Opened column**: the date macOS records when a file is opened (the `com.apple.lastuseddate#PS` attribute Launch Services writes), read from the file itself, so it shows at once in any folder, indexed by Spotlight or not. Files never opened show "Never" and sort as the oldest. Folders, apps, links and Finder aliases, which macOS does not date when they are opened, show a dash unless a date is recorded, as does an item whose date could not be read.
+- **Marks**, as small badges after the name: Never opened (no last-opened date, added more than 30 days ago), Unused (last opened more than 30 days ago) and Old (added more than 90 days ago, opened or not). Folders, apps, links, aliases, hidden items and downloads in progress get none.
+- **A filter** above the table and in the View menu (All, Never opened, Unused, Old). The status line shows how many items match and their total size.
+- **Download source**: hover over a row to see the site a file was downloaded from and the app that downloaded it. Copy Download Source, in the context menu and the Edit menu, copies the file's address.
+
+The two thresholds live in the app's defaults. There is no settings window yet; to change them for good, or for one launch:
+
+```bash
+defaults write com.quaden2307.SmartOSFileStore CleanupUnusedAfterDays -int 7   # default 30
+defaults write com.quaden2307.SmartOSFileStore CleanupOldAfterDays -int 60     # default 90
+open build/Build/Products/Debug/SmartOSFileStore.app --args -CleanupUnusedAfterDays 1
+```
+
 ## What it does not do yet
 
 - Only the top level of Downloads. No other folders and no subfolders.
@@ -50,7 +65,7 @@ xcodegen generate
 # Build
 xcodebuild -scheme SmartOSFileStore -destination 'platform=macOS' -derivedDataPath build build
 
-# Run the unit tests (about 115 tests; the scale suite adds a few seconds)
+# Run the unit tests (about 170 tests; the scale suite adds a few seconds)
 xcodebuild -scheme SmartOSFileStore -destination 'platform=macOS' -derivedDataPath build test
 
 # Launch the app
@@ -67,7 +82,7 @@ open build/Build/Products/Release/SmartOSFileStore.app
 
 ### Benchmark
 
-A benchmark times the scan and Find Duplicates on 10,000 small files and three sparse multi-gigabyte files, with peak memory. It is kept out of the normal test run (the default test plan leaves it out) and takes about a minute. Run it in the Release configuration, which is what ships, and copy the `BENCHMARK` lines into [docs/benchmarks.md](docs/benchmarks.md):
+A benchmark times the scan (with and without reading last-opened dates and download sources), the marks, the table's sort and Find Duplicates on 10,000 small files and three sparse multi-gigabyte files, with peak memory. It is kept out of the normal test run (the default test plan leaves it out) and takes about a minute. Run it in the Release configuration, which is what ships, and copy the `BENCHMARK` lines into [docs/benchmarks.md](docs/benchmarks.md):
 
 ```bash
 xcodebuild -scheme SmartOSFileStore -destination 'platform=macOS' -configuration Release -derivedDataPath build test -testPlan Benchmark 2>&1 | grep BENCHMARK
@@ -77,7 +92,7 @@ The tests only ever touch folders they create under the system temporary directo
 
 ## Hand testing against a fake folder
 
-Debug builds can be pointed at a folder other than Downloads, so cleanup features are never tried on real files. Build a throwaway folder with `scripts/make-fake-downloads.sh` (set `EXTRA_FILES=5000` to add thousands of small files for performance checks). It prints the path of `FakeDownloads`, of a `FakeApplications` folder beside it, and the command that removes both. Then launch the app with either of these. The launch argument wins when both are set. Release builds ignore both.
+Debug builds can be pointed at a folder other than Downloads, so cleanup features are never tried on real files. Build a throwaway folder with `scripts/make-fake-downloads.sh` (set `EXTRA_FILES=10000` to add thousands of small files for performance checks; each carries a download source, and every other one is Unused). It prints the path of `FakeDownloads`, of a `FakeApplications` folder beside it, and the command that removes both. Then launch the app with either of these. The launch argument wins when both are set. Release builds ignore both.
 
 ```bash
 open build/Build/Products/Debug/SmartOSFileStore.app --args -ScanFolder /path/to/FakeDownloads

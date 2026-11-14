@@ -84,6 +84,29 @@ struct FakeDownloadsFolderTests {
             #expect(ExtendedAttributes.lastUsedDate(of: fixture.url(for: Names.oldManual)) == nil)
             #expect(ExtendedAttributes.whereFroms(of: fixture.url(for: Names.statement)) == FakeDownloadsFolder.statementSources)
             #expect(ExtendedAttributes.whereFroms(of: fixture.url(for: Names.reportPDF)) == nil)
+            let quarantine = try #require(ExtendedAttributes.quarantine(of: fixture.url(for: Names.statement)))
+            #expect(quarantine.split(separator: ";").dropFirst(2).first.map(String.init) == FakeDownloadsFolder.statementDownloadingApp)
+            #expect(ExtendedAttributes.quarantine(of: fixture.url(for: Names.reportPDF)) == nil)
+        }
+    }
+
+    /// Under the default thresholds only the three age cases carry marks. Everything else is two
+    /// hours old, a folder, a link or a download in progress, and carries none.
+    @Test func ageCasesCarryTheirMarks() async throws {
+        try await withFakeDownloadsFolder { fixture in
+            let expected: [String: [FileMark]] = [
+                Names.oldReceipt: [.unused, .old],
+                Names.oldManual: [.neverOpened, .old],
+                Names.taxForm: [.old],
+            ]
+            let now = Date.now
+            let settings = CleanupSettings()
+            let all = try await records(fixture)
+            #expect(all.count == FakeDownloadsFolder.expectedTopLevelNames.count)
+            for record in all {
+                let marks = FileMarker.marks(for: record, now: now, settings: settings)
+                #expect(marks == expected[record.displayName, default: []], "\(record.displayName) has marks \(marks)")
+            }
         }
     }
 

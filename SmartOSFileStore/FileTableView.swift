@@ -2,8 +2,10 @@ import FileStoreCore
 import QuickLook
 import SwiftUI
 
-/// The sortable file table. Space, Command-Y or a double click opens Quick Look; the context menu
-/// and the File menu reveal the selection in Finder.
+/// The sortable file table, showing the rows the filter lets through. Space, Command-Y or a double
+/// click opens Quick Look; the context menu and the File menu reveal the selection in Finder, and
+/// the context menu copies where a file was downloaded from. Hovering anywhere on a row shows the
+/// site and app it came from.
 struct FileTableView: View {
     @Bindable var model: FileListModel
     @Binding var selection: Set<FileRecord.ID>
@@ -12,41 +14,59 @@ struct FileTableView: View {
     @State private var previewItems: [URL] = []
 
     var body: some View {
-        Table(model.sortedRecords, selection: $selection, sortOrder: $model.sortOrder) {
-            TableColumn("Name", value: \.displayName) { record in
+        Table(model.visibleRecords, selection: $selection, sortOrder: $model.sortOrder) {
+            TableColumn("Name", sortUsing: FileListSort.name) { record in
                 HStack(spacing: 6) {
                     FileIconView(record: record)
                     Text(record.displayName)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                    ForEach(model.marks(for: record), id: \.self) { mark in
+                        MarkBadge(mark: mark)
+                    }
                 }
+                // One element for VoiceOver: "old-manual.pdf, Never opened, Old".
+                .accessibilityElement(children: .combine)
+                .rowHelp(record.downloadSourceTooltip)
             }
-            .width(min: 160, ideal: 220)
+            .width(min: 180, ideal: 280)
 
-            TableColumn("Kind", value: \.kindDescription) { record in
+            TableColumn("Kind", sortUsing: FileListSort.kind) { record in
                 Text(record.kindDescription)
                     .lineLimit(1)
+                    .rowHelp(record.downloadSourceTooltip)
             }
             .width(min: 90, ideal: 110)
 
-            TableColumn("Size", sortUsing: KeyPathComparator(\FileRecord.sizeInBytes)) { record in
-                if let size = record.formattedSize {
-                    Text(size)
-                        .monospacedDigit()
-                } else {
-                    NoValueCell(label: "No size")
+            TableColumn("Size", sortUsing: FileListSort.size) { record in
+                Group {
+                    if let size = record.formattedSize {
+                        Text(size)
+                            .monospacedDigit()
+                    } else {
+                        NoValueCell(label: "No size")
+                    }
                 }
+                .rowHelp(record.downloadSourceTooltip, alignment: .trailing)
             }
             .width(min: 60, ideal: 70)
             .alignment(.numeric)
 
-            TableColumn("Date Added", sortUsing: KeyPathComparator(\FileRecord.dateAdded)) { record in
+            TableColumn("Date Added", sortUsing: FileListSort.dateAdded) { record in
                 DateCell(date: record.dateAdded)
+                    .rowHelp(record.downloadSourceTooltip)
             }
             .width(min: 120, ideal: 165)
 
-            TableColumn("Date Modified", sortUsing: KeyPathComparator(\FileRecord.dateModified)) { record in
+            TableColumn("Date Modified", sortUsing: FileListSort.dateModified) { record in
                 DateCell(date: record.dateModified)
+                    .rowHelp(record.downloadSourceTooltip)
+            }
+            .width(min: 120, ideal: 165)
+
+            TableColumn("Last Opened", sortUsing: FileListSort.lastOpened) { record in
+                LastOpenedCell(record: record)
+                    .rowHelp(record.downloadSourceTooltip)
             }
             .width(min: 120, ideal: 165)
         }
@@ -57,6 +77,11 @@ struct FileTableView: View {
             Button("Reveal in Finder") {
                 RevealInFinder.reveal(urls(for: ids))
             }
+            Divider()
+            Button("Copy Download Source") {
+                Clipboard.copy(model.downloadAddresses(for: ids).joined(separator: "\n"))
+            }
+            .disabled(model.downloadAddresses(for: ids).isEmpty)
         } primaryAction: { ids in
             preview(ids)
         }
@@ -72,6 +97,15 @@ struct FileTableView: View {
         }
         .quickLookPreview($previewItem, in: previewItems)
         .accessibilityLabel("Files")
+        .overlay {
+            if model.visibleRecords.isEmpty, case .marked(let mark) = model.filter {
+                ContentUnavailableView(
+                    "No Matching Files",
+                    systemImage: "line.3.horizontal.decrease.circle",
+                    description: Text("No files are marked \(mark.title).")
+                )
+            }
+        }
     }
 
     /// Opens Quick Look for the selection, or closes it when it is showing, as in Finder: the panel
@@ -88,7 +122,7 @@ struct FileTableView: View {
 
     /// The selected URLs in the table's display order.
     private func urls(for ids: Set<FileRecord.ID>) -> [URL] {
-        model.sortedRecords.filter { ids.contains($0.id) }.map(\.url)
+        model.visibleRecords.filter { ids.contains($0.id) }.map(\.url)
     }
 
     private func preview(_ ids: Set<FileRecord.ID>) {
@@ -99,3 +133,16 @@ struct FileTableView: View {
     }
 }
 
+private extension View {
+    /// Shows `text` as the row's tooltip. The cell is filled first, so the tooltip appears wherever
+    /// the pointer is on the row, not only over the text. SwiftUI offers no tooltip for a whole row.
+    @ViewBuilder
+    func rowHelp(_ text: String?, alignment: Alignment = .leading) -> some View {
+        let filled = frame(maxWidth: .infinity, alignment: alignment)
+        if let text {
+            filled.help(text)
+        } else {
+            filled
+        }
+    }
+}

@@ -6,7 +6,8 @@
 #
 # Usage:
 #   scripts/make-fake-downloads.sh                   # the standard set of files
-#   EXTRA_FILES=5000 scripts/make-fake-downloads.sh  # plus 5,000 tiny files for table performance checks
+#   EXTRA_FILES=5000 scripts/make-fake-downloads.sh  # plus 5,000 tiny files for table performance checks,
+#                                                    # each with a download source, half of them Unused
 #
 # Then launch a debug build against it:
 #   open build/Build/Products/Debug/SmartOSFileStore.app --args -ScanFolder "<printed path>"
@@ -188,7 +189,8 @@ xcrun swift "$SCRIPTS/set-dates.swift" "${DATES[@]}"
 xattr -wx 'com.apple.lastuseddate#PS' "$(le64 1738400400)$(le64 0)" "old-receipt.pdf"
 xattr -wx 'com.apple.lastuseddate#PS' "$(le64 "$(date -v-1d +%s)")$(le64 0)" "tax-form-2024.pdf"
 
-# Where the statement was downloaded from, as browsers record it: a binary property list of URLs
+# Where the statement was downloaded from, as browsers record it: a binary property list of URLs,
+# and the app that downloaded it, as the quarantine system records it (flags;time;app;event).
 WHERE="$ROOT/where-froms.plist"
 cat > "$WHERE" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -201,8 +203,21 @@ cat > "$WHERE" <<'PLIST'
 </plist>
 PLIST
 plutil -convert binary1 "$WHERE"
-xattr -wx 'com.apple.metadata:kMDItemWhereFroms' "$(xxd -p "$WHERE" | tr -d '\n')" "statement.pdf"
+WHERE_HEX="$(xxd -p "$WHERE" | tr -d '\n')"
 rm "$WHERE"
+QUARANTINE="0083;$(printf '%08x' "$TWO_HOURS_AGO");Safari;6B29FC40-CA47-1067-B31D-00DD010662DA"
+xattr -wx 'com.apple.metadata:kMDItemWhereFroms' "$WHERE_HEX" "statement.pdf"
+xattr -w 'com.apple.quarantine' "$QUARANTINE" "statement.pdf"
+
+# The bulk files get the same download source, and every other one a last-opened date of
+# 2025-02-01, so about half of them are Unused. xargs keeps each xattr call under the argument limit.
+if [ "$count" -gt 0 ]; then
+  printf '%s\0' "${BULK[@]}" | xargs -0 xattr -wx 'com.apple.metadata:kMDItemWhereFroms' "$WHERE_HEX"
+  printf '%s\0' "${BULK[@]}" | xargs -0 xattr -w 'com.apple.quarantine' "$QUARANTINE"
+  HALF=()
+  for ((i = 0; i < count; i += 2)); do HALF+=("${BULK[$i]}"); done
+  printf '%s\0' "${HALF[@]}" | xargs -0 xattr -wx 'com.apple.lastuseddate#PS' "$(le64 1738400400)$(le64 0)"
+fi
 
 # Locked last: a locked file's dates and attributes cannot be changed.
 chflags uchg "locked.txt" "report (3).pdf"

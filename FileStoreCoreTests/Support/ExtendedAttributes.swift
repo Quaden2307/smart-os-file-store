@@ -12,6 +12,10 @@ enum ExtendedAttributes {
     /// browsers (Finder's Get Info shows it as "Where from").
     static let whereFromsName = "com.apple.metadata:kMDItemWhereFroms"
 
+    /// Which app downloaded the file: text of the form `flags;time;app;event`, the flags and the
+    /// time in hexadecimal, written by the quarantine system for the browser.
+    static let quarantineName = "com.apple.quarantine"
+
     static func setLastUsedDate(_ date: Date, on url: URL) throws {
         let seconds = date.timeIntervalSince1970.rounded(.down)
         var value = Data()
@@ -35,6 +39,24 @@ enum ExtendedAttributes {
     static func whereFroms(of url: URL) -> [String]? {
         guard let value = get(whereFromsName, of: url) else { return nil }
         return try? PropertyListSerialization.propertyList(from: value, format: nil) as? [String]
+    }
+
+    static func setQuarantine(_ value: String, on url: URL) throws {
+        try set(Data(value.utf8), name: quarantineName, on: url)
+    }
+
+    static func quarantine(of url: URL) -> String? {
+        get(quarantineName, of: url).flatMap { String(data: $0, encoding: .utf8) }
+    }
+
+    /// A quarantine value as Safari leaves one, for a file downloaded at `date`.
+    static func quarantineValue(app: String, downloadedAt date: Date) -> String {
+        String(format: "0083;%08x;%@;6B29FC40-CA47-1067-B31D-00DD010662DA", Int(date.timeIntervalSince1970), app)
+    }
+
+    /// Writes `value` exactly as given, for attributes that are deliberately malformed.
+    static func setRaw(_ value: Data, name: String, on url: URL) throws {
+        try set(value, name: name, on: url)
     }
 
     private static func set(_ value: Data, name: String, on url: URL) throws {

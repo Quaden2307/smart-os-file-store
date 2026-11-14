@@ -19,9 +19,9 @@ struct ContentView: View {
             Divider()
             StatusBar(model: model)
         }
-        // Wide enough for all five columns at their ideal widths, so the table never has to
+        // Wide enough for all six columns at their ideal widths, so the table never has to
         // scroll sideways in a window the user has not resized.
-        .frame(minWidth: 840, minHeight: 400)
+        .frame(minWidth: 1_080, minHeight: 400)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -52,8 +52,10 @@ struct ContentView: View {
             // A later plan must start with its own ticks, never inherit an earlier sheet's state.
             .id(presented.id)
         }
-        // While a preview sheet is up, File menu commands must not act on the table behind it.
+        // While a preview sheet is up, menu commands must not act on the table behind it.
         .focusedSceneValue(\.selectedFileURLs, duplicates.presentedPlan == nil ? Array(selection) : nil)
+        .focusedSceneValue(\.selectedDownloadAddresses, duplicates.presentedPlan == nil ? model.downloadAddresses(for: selection) : nil)
+        .focusedSceneValue(\.fileListFilter, $model.filter)
         .onAppear {
             model.refresh()
         }
@@ -67,13 +69,18 @@ struct ContentView: View {
         .onChange(of: model.scanGeneration) {
             // The listing was replaced: drop selected rows that are gone, so menu commands never
             // act on files that are no longer listed, and forget per-file icons.
-            selection = selection.intersection(Set(model.records.map(\.id)))
+            keepSelectionVisible()
             FileIconCache.shared.removeAll()
+        }
+        .onChange(of: model.filter) {
+            // Rows the filter hides must not stay selected, or menu commands would act on them.
+            keepSelectionVisible()
         }
     }
 
-    /// Duplicates are found among the rows on screen, so the list must be settled first, and a new
-    /// search must never replace a preview the user is still looking at.
+    /// Duplicates are found among every listed file, whatever the filter shows (the preview names
+    /// each file it proposes), so the list must be settled first, and a new search must never
+    /// replace a preview the user is still looking at.
     private var canFindDuplicates: Bool {
         model.isSettled && !duplicates.isRunning && duplicates.presentedPlan == nil
     }
@@ -89,6 +96,10 @@ struct ContentView: View {
                 }
             }
         )
+    }
+
+    private func keepSelectionVisible() {
+        selection = selection.intersection(Set(model.visibleRecords.map(\.id)))
     }
 
     private func findDuplicates() {
@@ -110,7 +121,11 @@ struct ContentView: View {
                 description: Text("There are no files in this folder.")
             )
         } else {
-            FileTableView(model: model, selection: $selection)
+            VStack(spacing: 0) {
+                FileFilterBar(filter: $model.filter)
+                Divider()
+                FileTableView(model: model, selection: $selection)
+            }
         }
     }
 }

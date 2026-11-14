@@ -4,8 +4,9 @@ import Foundation
 import Synchronization
 import Testing
 
-/// How long the engine takes on a large folder: 10,000 small files and three sparse files of
-/// several gigabytes. It times the scan and the duplicate plan and reports memory, and asserts only
+/// How long the engine takes on a large folder: 10,000 small files carrying the attributes a real
+/// download has, and three sparse files of several gigabytes. It times the scan with and without
+/// reading those attributes, the marks, and the duplicate plan, reports memory, and asserts only
 /// that the answers are right; there are no time limits to pass. Results go to the test log as
 /// warnings starting `BENCHMARK`, and are copied by hand into docs/benchmarks.md.
 ///
@@ -53,24 +54,38 @@ struct BenchmarkTests {
         let clock = ContinuousClock()
         let setupStart = clock.now
         let smallTotal = try BulkFiles.writeSmallFiles(count: Self.smallFileCount, in: temp.url)
+        let openedCount = try BulkFiles.addDownloadAttributes(count: Self.smallFileCount, in: temp.url)
         try BulkFiles.writeSparseFile(temp.url.appending(path: "big-a.bin"), size: Self.bigSize)
         try BulkFiles.writeSparseFile(temp.url.appending(path: "big-b.bin"), size: Self.bigSize)
         try BulkFiles.writeSparseFile(temp.url.appending(path: "big-c.bin"), size: Self.uniqueBigSize)
         let setupTime = clock.now - setupStart
 
         let scanner = FolderScanner()
+        // The scan as it was before last opened and download sources were read.
+        let listingScanner = FolderScanner(metadataReader: NoMetadataReader())
         let planner = DuplicatePlanner()
+        let settings = CleanupSettings()
         let location = ScanLocation(folderURL: temp.url, source: .launchArgument)
         // The files were written moments ago, so plans are made as if two hours had passed; the
         // production rules still run.
         let later = Date(timeIntervalSinceNow: 2 * 3_600)
         let before = try #require(physicalFootprintInBytes())
         let peak = Mutex<UInt64>(before)
+        var listingTimes: [Duration] = []
         var scanTimes: [Duration] = []
+        var markTimes: [Duration] = []
+        var sortTimes: [Duration] = []
+        var keyedSortTimes: [Duration] = []
         var planTimes: [Duration] = []
         var bytesHashed: Int64 = 0
 
         for run in 0...Self.measuredRuns {
+            let listingStart = clock.now
+            let listing = try await listingScanner.scan(location)
+            let listingTime = clock.now - listingStart
+            #expect(listing.records.count == Self.smallFileCount + 3)
+            #expect(listing.records.allSatisfy { $0.lastOpened == nil && $0.downloadSource == nil })
+
             let scanStart = clock.now
             let scan = try await scanner.scan(location)
             let scanTime = clock.now - scanStart
@@ -79,6 +94,28 @@ struct BenchmarkTests {
             }
             #expect(scan.records.count == Self.smallFileCount + 3)
             #expect(scan.skippedItems.isEmpty)
+            let sourced = scan.records.filter {
+                $0.downloadSource?.addresses == BulkFiles.downloadSources && $0.downloadSource?.downloadingApp == BulkFiles.downloadingApp
+            }
+            #expect(sourced.count == Self.smallFileCount)
+            #expect(scan.records.count { $0.lastOpened == BulkFiles.lastOpened } == openedCount)
+
+            // Every file is fresh, so the only mark is Unused, on the files last opened in 2025.
+            let marksStart = clock.now
+            let marks = scan.records.map { FileMarker.marks(for: $0, now: later, settings: settings) }
+            let marksTime = clock.now - marksStart
+            #expect(marks.count { $0 == [.unused] } == openedCount)
+            #expect(marks.count { !$0.isEmpty } == openedCount)
+
+            // What the app's table does on the main actor after each scan: its default sort, newest
+            // Date Added first, the general way and the keyed way the app uses.
+            let sortStart = clock.now
+            let sorted = scan.records.sorted(using: [KeyPathComparator(\FileRecord.dateAdded, order: .reverse)])
+            let sortTime = clock.now - sortStart
+            let keyedSortStart = clock.now
+            let keyedSorted = FileRecordSorting.sorted(scan.records, by: [.value(\.dateAdded, order: .reverse)])
+            let keyedSortTime = clock.now - keyedSortStart
+            #expect(keyedSorted.map(\.url) == sorted.map(\.url))
 
             let total = Mutex<Int64>(0)
             let planStart = clock.now
@@ -99,7 +136,11 @@ struct BenchmarkTests {
 
             // Run 0 warms the caches and is not counted.
             if run > 0 {
+                listingTimes.append(listingTime)
                 scanTimes.append(scanTime)
+                markTimes.append(marksTime)
+                sortTimes.append(sortTime)
+                keyedSortTimes.append(keyedSortTime)
                 planTimes.append(planTime)
             }
         }
@@ -117,12 +158,16 @@ struct BenchmarkTests {
         let system = ProcessInfo.processInfo.operatingSystemVersionString
         let date = Date.now.formatted(Date.ISO8601FormatStyle(timeZone: .current).year().month().day())
 
-        Self.report("setup of \(Self.smallFileCount + 3) files: \(String(format: "%.0f", Measured.milliseconds(setupTime))) ms")
-        Self.report("scan of \(Self.smallFileCount + 3) records: \(Self.summary(scanTimes)), median (min–max) of \(Self.measuredRuns) runs")
+        Self.report("setup of \(Self.smallFileCount + 3) files with their attributes: \(String(format: "%.0f", Measured.milliseconds(setupTime))) ms")
+        Self.report("scan of \(Self.smallFileCount + 3) records without metadata: \(Self.summary(listingTimes)), median (min–max) of \(Self.measuredRuns) runs")
+        Self.report("scan of \(Self.smallFileCount + 3) records with metadata: \(Self.summary(scanTimes)), median (min–max) of \(Self.measuredRuns) runs")
+        Self.report("marks for \(Self.smallFileCount + 3) records: \(Self.summary(markTimes)), median (min–max) of \(Self.measuredRuns) runs")
+        Self.report("sort of \(Self.smallFileCount + 3) records by Date Added with sorted(using:): \(Self.summary(sortTimes)), median (min–max) of \(Self.measuredRuns) runs")
+        Self.report("sort of \(Self.smallFileCount + 3) records by Date Added with FileRecordSorting: \(Self.summary(keyedSortTimes)), median (min–max) of \(Self.measuredRuns) runs")
         Self.report("duplicate plan hashing \(Self.smallFileCount + 2) files, \(Measured.mebibytes(UInt64(bytesHashed))): \(Self.summary(planTimes)), median (min–max) of \(Self.measuredRuns) runs")
         Self.report("memory: footprint before \(Measured.mebibytes(before)), sampled peak \(Measured.mebibytes(highest)), growth \(Measured.mebibytes(growth)), process lifetime peak \(lifetime)")
         Self.report(
-            "row: | \(date) | \(model) | \(system) | \(configuration) | <commit> | \(Self.summary(scanTimes)) | \(Self.summary(planTimes)) | \(Measured.mebibytes(highest)) (+\(Measured.mebibytes(growth))) | \(lifetime) |"
+            "row: | \(date) | \(model) | \(system) | \(configuration) | <commit> | \(Self.summary(listingTimes)) | \(Self.summary(scanTimes)) | \(Self.summary(markTimes)) | \(Self.summary(sortTimes)) | \(Self.summary(keyedSortTimes)) | \(Self.summary(planTimes)) | \(Measured.mebibytes(highest)) (+\(Measured.mebibytes(growth))) | \(lifetime) |"
         )
     }
 }

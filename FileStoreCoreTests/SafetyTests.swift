@@ -45,6 +45,7 @@ struct SafetyTests {
         #"\bwrite\s*\(\s*to"#, #"\bsetAttributes\s*\("#,
         #"\bFileHandle\s*\(\s*forWritingTo"#, #"\bFileHandle\s*\(\s*forUpdating"#,
         #"\bO_WRONLY\b"#, #"\bO_RDWR\b"#, #"\bO_TRUNC\b"#, #"\bO_CREAT\b"#,
+        #"\bf?setxattr\s*\("#, #"\bf?removexattr\s*\("#, #"\bsetattrlist\s*\("#,
     ]
 
     /// Constructs that crash or bypass the type checker. Forbidden anywhere near user files.
@@ -144,11 +145,14 @@ struct SafetyTests {
     // MARK: - Read-only phases
 
     /// What `lstat` says about one entry: enough to notice any write, rename or attribute change.
+    /// The status-change time moves whenever an extended attribute is written or removed.
     private struct Entry: Hashable {
         let name: String
         let size: Int64
         let modifiedSeconds: Int
         let modifiedNanoseconds: Int
+        let changedSeconds: Int
+        let changedNanoseconds: Int
         let inode: UInt64
         let mode: UInt16
         let flags: UInt32
@@ -172,6 +176,8 @@ struct SafetyTests {
                     size: Int64(status.st_size),
                     modifiedSeconds: status.st_mtimespec.tv_sec,
                     modifiedNanoseconds: status.st_mtimespec.tv_nsec,
+                    changedSeconds: status.st_ctimespec.tv_sec,
+                    changedNanoseconds: status.st_ctimespec.tv_nsec,
                     inode: status.st_ino,
                     mode: status.st_mode,
                     flags: status.st_flags

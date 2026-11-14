@@ -128,6 +128,47 @@ struct FolderScannerTests {
         #expect(!FileRecord.isInProgressDownload(URL(fileURLWithPath: "/tmp/download")))
     }
 
+    // MARK: - Metadata
+
+    /// The reader decides each record's metadata; nothing is written to or read from attributes.
+    @Test func recordsCarryTheReadersMetadata() async throws {
+        let temp = try TemporaryFolder.make()
+        defer { temp.remove() }
+        try Data("a".utf8).write(to: temp.url.appending(path: "opened.pdf"))
+        try Data("b".utf8).write(to: temp.url.appending(path: "plain.pdf"))
+        let opened = Date(timeIntervalSince1970: 1_738_400_400)
+        let source = try #require(DownloadSource(addresses: ["https://example.com/opened.pdf"], downloadingApp: "Safari"))
+        let reader = FixedMetadataReader(metadataByName: ["opened.pdf": FileMetadata(lastOpened: opened, downloadSource: source)])
+
+        let result = try await FolderScanner(metadataReader: reader).scan(location(temp.url))
+
+        let openedRecord = try #require(result.records.first { $0.displayName == "opened.pdf" })
+        #expect(openedRecord.lastOpened == opened)
+        #expect(openedRecord.downloadSource == source)
+        let plainRecord = try #require(result.records.first { $0.displayName == "plain.pdf" })
+        #expect(plainRecord.lastOpened == nil)
+        #expect(plainRecord.downloadSource == nil)
+        #expect(ExtendedAttributes.lastUsedDate(of: openedRecord.url) == nil)
+    }
+
+    @Test func defaultReaderReadsTheFixturesAttributes() async throws {
+        try await withFakeDownloadsFolder { fixture in
+            let records = try await scanner.scan(location(fixture.url)).records
+            func record(_ name: String) throws -> FileRecord {
+                try #require(records.first { $0.displayName == name }, "no record for \(name)")
+            }
+            let statement = try #require(try record(Names.statement).downloadSource)
+            #expect(statement.addresses == FakeDownloadsFolder.statementSources)
+            #expect(statement.downloadingApp == FakeDownloadsFolder.statementDownloadingApp)
+            #expect(statement.site == "example.com")
+            #expect(try record(Names.oldReceipt).lastOpened == FakeDownloadsFolder.oldReceiptLastOpened)
+            #expect(try record(Names.oldManual).lastOpened == nil)
+            #expect(try record(Names.reportPDF).downloadSource == nil)
+            let taxOpened = try #require(try record(Names.taxForm).lastOpened)
+            #expect(abs(taxOpened.timeIntervalSinceNow + FakeDownloadsFolder.taxFormLastOpenedAge) < 60)
+        }
+    }
+
     @Test func emptyFolderGivesNoRecords() async throws {
         let temp = try TemporaryFolder.make()
         defer { temp.remove() }

@@ -25,11 +25,41 @@ enum BulkFiles {
             withUnsafeBytes(of: UInt32(pair).bigEndian) { bytes in
                 data.replaceSubrange(0..<4, with: bytes)
             }
-            let name = String(format: "small-%05d.%@", index, extensions[pair % extensions.count])
-            try data.write(to: folder.appending(path: name))
+            try data.write(to: folder.appending(path: smallFileName(index)))
             total += Int64(size)
         }
         return total
+    }
+
+    /// Where every bulk file was downloaded from, and with which app.
+    static let downloadSources = ["https://example.com/files/bulk.bin", "https://example.com/downloads"]
+    static let downloadingApp = "Safari"
+    /// When every other bulk file was last opened: 2025-02-01 09:00 UTC, so it is Unused.
+    static let lastOpened = Date(timeIntervalSince1970: 1_738_400_400)
+
+    /// Gives each file `writeSmallFiles` made the attributes a real download carries: a download
+    /// source and a quarantine attribute naming the browser, and to every other file (the even
+    /// indexes) a last-opened date.
+    /// - Returns: How many files got a last-opened date.
+    @discardableResult
+    static func addDownloadAttributes(count: Int, in folder: URL) throws -> Int {
+        let quarantine = ExtendedAttributes.quarantineValue(app: downloadingApp, downloadedAt: lastOpened)
+        var opened = 0
+        for index in 0..<count {
+            let file = folder.appending(path: smallFileName(index))
+            try ExtendedAttributes.setWhereFroms(downloadSources, on: file)
+            try ExtendedAttributes.setQuarantine(quarantine, on: file)
+            if index.isMultiple(of: 2) {
+                try ExtendedAttributes.setLastUsedDate(lastOpened, on: file)
+                opened += 1
+            }
+        }
+        return opened
+    }
+
+    /// `small-00000.txt`, `small-00001.txt`, `small-00002.pdf`…: the extension changes with each pair.
+    private static func smallFileName(_ index: Int) -> String {
+        String(format: "small-%05d.%@", index, extensions[(index / 2) % extensions.count])
     }
 
     /// A file of `size` bytes with nothing allocated: it reads as zeros.

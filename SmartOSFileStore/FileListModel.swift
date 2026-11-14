@@ -20,6 +20,15 @@ final class FileListModel {
     /// `records` in the table's current sort order. Re-sorted only when either input changes.
     private(set) var sortedRecords: [FileRecord] = []
 
+    /// The rows the table shows: `sortedRecords` narrowed by `filter`.
+    private(set) var visibleRecords: [FileRecord] = []
+
+    /// Total size of `visibleRecords`, counted like `totalBytes`.
+    private(set) var visibleBytes: Int64 = 0
+
+    /// Each record's marks at the time of the latest scan. Records without marks have no entry.
+    private(set) var marksByID: [FileRecord.ID: [FileMark]] = [:]
+
     /// Items the last scan saw but could not read.
     private(set) var skippedItems: [FolderScanResult.SkippedItem] = []
 
@@ -40,11 +49,18 @@ final class FileListModel {
     private(set) var scanGeneration = 0
 
     /// The table's sort order. Default: newest Date Added first.
-    var sortOrder: [KeyPathComparator<FileRecord>] = [KeyPathComparator(\.dateAdded, order: .reverse)] {
+    var sortOrder: [KeyPathComparator<FileRecord>] = FileListSort.newestFirst {
         didSet { resort() }
     }
 
+    /// Which rows the table shows. Kept across refreshes.
+    var filter: FileListFilter = .all {
+        didSet { refilter() }
+    }
+
     var itemCount: Int { records.count }
+
+    var visibleCount: Int { visibleRecords.count }
 
     /// True when the folder was scanned successfully and holds nothing visible.
     var isEmpty: Bool { hasLoadedOnce && failure == nil && records.isEmpty }
@@ -74,16 +90,26 @@ final class FileListModel {
         }
     }
 
+    /// A finished scan and the marks worked out from it.
+    private struct ScanOutcome: Sendable {
+        let result: FolderScanResult
+        let marksByID: [FileRecord.ID: [FileMark]]
+    }
+
     /// Starts a new scan, cancelling any that is still running.
     func refresh() {
         guard let location else { return }
         scanTask?.cancel()
         isLoading = true
         let scanner = scanner
+        // Read again on every scan, so a threshold changed with `defaults write` applies on ⌘R.
+        let settings = CleanupSettings.load(from: UserDefaults.standard)
         scanTask = Task {
-            let outcome: Result<FolderScanResult, FolderScanError>
+            let outcome: Result<ScanOutcome, FolderScanError>
             do throws(FolderScanError) {
-                outcome = .success(try await scanner.scan(location))
+                let result = try await scanner.scan(location)
+                let marksByID = await Self.marks(for: result.records, now: result.scannedAt, settings: settings)
+                outcome = .success(ScanOutcome(result: result, marksByID: marksByID))
             } catch {
                 outcome = .failure(error)
             }
@@ -93,22 +119,31 @@ final class FileListModel {
         }
     }
 
-    private func apply(_ outcome: Result<FolderScanResult, FolderScanError>) {
+    private func apply(_ outcome: Result<ScanOutcome, FolderScanError>) {
         switch outcome {
         case .failure(.cancelled):
             // Only a superseded scan reports this, and the scan that replaced it owns the state.
             return
-        case .success(let result):
+        case .success(let outcome):
+            let clock = ContinuousClock()
+            let start = clock.now
+            let result = outcome.result
             failure = nil
             records = result.records
             skippedItems = result.skippedItems
             totalBytes = result.records.reduce(0) { $0 + ($1.sizeInBytes ?? 0) }
+            marksByID = outcome.marksByID
             resort()
-            logger.info("Listed \(result.records.count) items, skipped \(result.skippedItems.count)")
+            logger.info(
+                "Listed \(result.records.count) items, skipped \(result.skippedItems.count), marked \(self.marksByID.count); sorting and filtering on the main actor took \((clock.now - start).milliseconds, format: .fixed(precision: 1)) ms"
+            )
         case .failure(let error):
             failure = ScanFailure(error)
             records = []
             sortedRecords = []
+            visibleRecords = []
+            visibleBytes = 0
+            marksByID = [:]
             skippedItems = []
             totalBytes = 0
             logger.error("Scan failed: \(String(describing: error), privacy: .private)")
@@ -118,7 +153,46 @@ final class FileListModel {
         scanGeneration += 1
     }
 
+    /// The marks `record` carried at the latest scan, in display order.
+    func marks(for record: FileRecord) -> [FileMark] {
+        marksByID[record.id] ?? []
+    }
+
+    /// Where each of the rows was downloaded from, for those that recorded an address, in the
+    /// table's display order: what Copy Download Source copies.
+    func downloadAddresses(for ids: Set<FileRecord.ID>) -> [String] {
+        guard !ids.isEmpty else { return [] }
+        return visibleRecords.filter { ids.contains($0.id) }.compactMap(\.downloadSource?.fileAddress)
+    }
+
     private func resort() {
-        sortedRecords = records.sorted(using: sortOrder)
+        sortedRecords = FileListSort.sorted(records, using: sortOrder)
+        refilter()
+    }
+
+    private func refilter() {
+        switch filter {
+        case .all:
+            visibleRecords = sortedRecords
+            visibleBytes = totalBytes
+        case .marked(let mark):
+            visibleRecords = sortedRecords.filter { marks(for: $0).contains(mark) }
+            visibleBytes = visibleRecords.reduce(0) { $0 + ($1.sizeInBytes ?? 0) }
+        }
+    }
+
+    /// Each record's marks, worked out off the main actor so a large folder never holds up the window.
+    /// Built with a loop rather than `Dictionary(uniqueKeysWithValues:)`, which traps on a repeated
+    /// key; a listing never repeats a URL, but a crash is not the way to find out.
+    @concurrent
+    private nonisolated static func marks(for records: [FileRecord], now: Date, settings: CleanupSettings) async -> [FileRecord.ID: [FileMark]] {
+        var marksByID: [FileRecord.ID: [FileMark]] = [:]
+        for record in records {
+            let marks = FileMarker.marks(for: record, now: now, settings: settings)
+            if !marks.isEmpty {
+                marksByID[record.id] = marks
+            }
+        }
+        return marksByID
     }
 }

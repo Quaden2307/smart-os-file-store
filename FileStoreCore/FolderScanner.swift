@@ -5,6 +5,8 @@ import os
 ///
 /// The scanner does not descend into subfolders, does not follow symbolic links, and skips
 /// hidden items. It runs off the caller's actor and stops early when its task is cancelled.
+/// Each record carries the metadata its reader finds: by default, last opened and download source
+/// read from the item's extended attributes.
 public struct FolderScanner: Sendable {
     /// The resource values fetched for every item in one call, so each record costs no extra
     /// file-system round trip.
@@ -25,7 +27,13 @@ public struct FolderScanner: Sendable {
 
     private static let logger = Logger(subsystem: "com.quaden2307.FileStoreCore", category: "FolderScanner")
 
-    public init() {}
+    private let metadataReader: any FileMetadataReading
+
+    /// - Parameter metadataReader: Reads each item's last-opened date and download source. Tests
+    ///   pass their own to give records metadata without writing any to disk.
+    public init(metadataReader: any FileMetadataReading = ExtendedAttributeMetadataReader()) {
+        self.metadataReader = metadataReader
+    }
 
     /// Lists the top level of `location.folderURL`.
     ///
@@ -74,7 +82,7 @@ public struct FolderScanner: Sendable {
                 if values.isHidden == true {
                     continue
                 }
-                records.append(FileRecord(url: url, values: values))
+                records.append(FileRecord(url: url, values: values, metadata: metadataReader.metadata(for: url)))
             } catch {
                 skippedItems.append(
                     FolderScanResult.SkippedItem(

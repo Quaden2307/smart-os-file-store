@@ -49,8 +49,8 @@ targets:
       path: SmartOSFileStore/Info.plist
       properties:
         CFBundleDisplayName: Smart OS File Store
-        CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "1"
+        CFBundleShortVersionString: "0.2.0"
+        CFBundleVersion: "2"
         LSApplicationCategoryType: public.app-category.productivity
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         NSPrincipalClass: NSApplication
@@ -94,7 +94,11 @@ schemes:
       config: Debug
     test:
       config: Debug
-      targets:
-        - FileStoreCoreTests
+      # The default plan runs every test but the benchmark; the Benchmark plan runs only that
+      # (README.md has the command).
+      testPlans:
+        - path: TestPlans/SmartOSFileStore.xctestplan
+          defaultPlan: true
+        - path: TestPlans/Benchmark.xctestplan
     archive:
       config: Release

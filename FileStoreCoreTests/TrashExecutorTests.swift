@@ -42,16 +42,6 @@ struct TrashExecutorTests {
         return attributes?[.type] as? FileAttributeType == .typeSymbolicLink
     }
 
-    /// Writes `files` (name to text) into `folder`, backdated a minute so the planner counts them.
-    private func writeSettled(_ files: [String: String], in folder: URL) throws {
-        let settled = Date(timeIntervalSinceNow: -60)
-        for (name, text) in files {
-            let url = folder.appending(path: name)
-            try Data(text.utf8).write(to: url)
-            try FileManager.default.setAttributes([.modificationDate: settled], ofItemAtPath: url.path(percentEncoded: false))
-        }
-    }
-
     /// The bytes the fixture wrote, for the Trash cleanup's content check.
     private func fixtureContents(of url: URL) -> Data? {
         switch url.lastPathComponent {
@@ -59,6 +49,8 @@ struct TrashExecutorTests {
             Data(FakeDownloadsFolder.reportContents.utf8)
         case Names.photo, Names.photoCopy:
             Data(FakeDownloadsFolder.photoContents.utf8)
+        case Names.receipt, Names.receiptCopy:
+            Data(FakeDownloadsFolder.receiptContents.utf8)
         default:
             nil
         }
@@ -89,7 +81,7 @@ struct TrashExecutorTests {
     @Test func trashesOneFileIntoTheTrash() async throws {
         let temp = try TemporaryFolder.make()
         defer { temp.remove() }
-        try writeSettled(["a.txt": "same bytes", "a (1).txt": "same bytes"], in: temp.url)
+        try FileDates.writeSettled(["a.txt": "same bytes", "a (1).txt": "same bytes"], in: temp.url)
         let plan = try await plan(temp.url)
         #expect(plan.changes.count == 1)
 
@@ -193,7 +185,8 @@ struct TrashExecutorTests {
             let path = url.path(percentEncoded: false)
             // A whole-second date survives the round trip through `setAttributes` exactly, so after
             // the swap the restored date matches the scan's and only the content check can catch it.
-            let settled = Date(timeIntervalSince1970: (Date().timeIntervalSince1970 - 120).rounded(.down))
+            // Two hours back, past the grace period.
+            let settled = Date(timeIntervalSince1970: (Date().timeIntervalSince1970 - FileDates.settledAge).rounded(.down))
             try FileManager.default.setAttributes([.modificationDate: settled], ofItemAtPath: path)
             let plan = try await plan(fixture.url)
             let target = try change(named: Names.reportCopy1, in: plan)
@@ -224,7 +217,8 @@ struct TrashExecutorTests {
                 #expect(try outcome(for: name, in: result) == .skipped(.keptFileMissing(name: Names.reportPDF)))
                 #expect(exists(fixture.url(for: name)), "\(name) should still be there")
             }
-            #expect(trashedNames(result) == [Names.photoCopy])
+            // The other groups go ahead, in plan order: largest saving first.
+            #expect(trashedNames(result) == [Names.receiptCopy, Names.photoCopy])
         }
     }
 
@@ -258,7 +252,7 @@ struct TrashExecutorTests {
         do {
             let temp = try TemporaryFolder.make()
             defer { temp.remove() }
-            try writeSettled(["x.pdf": "same", "x (1).pdf": "same"], in: temp.url)
+            try FileDates.writeSettled(["x.pdf": "same", "x (1).pdf": "same"], in: temp.url)
             let real = try await plan(temp.url)
             let group = try #require(real.duplicateGroups.first)
             #expect(group.kept.displayName == "x.pdf")
@@ -288,7 +282,7 @@ struct TrashExecutorTests {
         do {
             let temp = try TemporaryFolder.make()
             defer { temp.remove() }
-            try writeSettled(["x.pdf": "same", "x (1).pdf": "same"], in: temp.url)
+            try FileDates.writeSettled(["x.pdf": "same", "x (1).pdf": "same"], in: temp.url)
             let real = try await plan(temp.url)
             let group = try #require(real.duplicateGroups.first)
             let kept = group.kept
@@ -317,7 +311,7 @@ struct TrashExecutorTests {
         do {
             let temp = try TemporaryFolder.make()
             defer { temp.remove() }
-            try writeSettled(["x.pdf": "same", "x (1).pdf": "same"], in: temp.url)
+            try FileDates.writeSettled(["x.pdf": "same", "x (1).pdf": "same"], in: temp.url)
             let real = try await plan(temp.url)
             let group = try #require(real.duplicateGroups.first)
             #expect(group.kept.displayName == "x.pdf")
@@ -349,10 +343,7 @@ struct TrashExecutorTests {
             // An identical file beside the scanned folder, addressed through it with "..".
             let outside = fixture.url.deletingLastPathComponent().appending(path: "outside.pdf")
             try Data(FakeDownloadsFolder.reportContents.utf8).write(to: outside)
-            try FileManager.default.setAttributes(
-                [.modificationDate: Date(timeIntervalSinceNow: -60)],
-                ofItemAtPath: outside.path(percentEncoded: false)
-            )
+            try FileDates.settle([outside])
             let sneaky = record(like: group.kept, url: fixture.url.appending(path: "../outside.pdf"))
             let link = record(like: group.kept, url: fixture.url(for: Names.symlink))
             let crafted = CleanupPlan(
@@ -379,7 +370,7 @@ struct TrashExecutorTests {
         let temp = try TemporaryFolder.make()
         defer { temp.remove() }
         let contents = ["a.txt": "alpha", "a (1).txt": "alpha", "a (2).txt": "alpha", "b.jpg": "beta", "c.jpg": "beta"]
-        try writeSettled(contents, in: temp.url)
+        try FileDates.writeSettled(contents, in: temp.url)
         let first = try await plan(temp.url)
         #expect(first.changes.count == 3)
         let ids = Set(first.changes.map(\.id))
@@ -428,7 +419,7 @@ struct TrashExecutorTests {
             let result = await task.value
 
             #expect(result.wasCancelled)
-            #expect(result.items.count == 5)
+            #expect(result.items.count == 6)
             #expect(result.items.allSatisfy { $0.outcome == .skipped(.cancelled) })
             #expect(result.trashedCount == 0)
             for change in plan.changes {
@@ -440,7 +431,7 @@ struct TrashExecutorTests {
     @Test func cancelAfterFirstItemSkipsTheRest() async throws {
         let temp = try TemporaryFolder.make()
         defer { temp.remove() }
-        try writeSettled(["a.txt": "alpha", "a (1).txt": "alpha", "a (2).txt": "alpha"], in: temp.url)
+        try FileDates.writeSettled(["a.txt": "alpha", "a (1).txt": "alpha", "a (2).txt": "alpha"], in: temp.url)
         let plan = try await plan(temp.url)
         #expect(plan.changes.map(\.record.displayName) == ["a (1).txt", "a (2).txt"])
 
@@ -479,7 +470,7 @@ struct TrashExecutorTests {
 
             let result = await executor.execute(plan: crafted, confirmedChangeIDs: Set(crafted.changes.map(\.id)))
 
-            #expect(result.items.count == 5)
+            #expect(result.items.count == 6)
             #expect(result.items.allSatisfy { $0.outcome == .skipped(.folderUnavailable) })
             #expect(result.trashedCount == 0)
             for change in real.changes {
@@ -509,7 +500,7 @@ struct TrashExecutorTests {
     @Test func hiddenAndInProgressNamesAreRefused() async throws {
         let temp = try TemporaryFolder.make()
         defer { temp.remove() }
-        try writeSettled(
+        try FileDates.writeSettled(
             ["a.txt": "alpha", "a (1).txt": "alpha", ".a-hidden.txt": "alpha", "a.crdownload": "alpha"],
             in: temp.url
         )
@@ -543,17 +534,88 @@ struct TrashExecutorTests {
         #expect(exists(temp.url.appending(path: "a.txt")))
     }
 
+    /// A plan may name an item called like the archive folder; the executor refuses it, whatever it holds.
+    @Test func archiveNameIsRefused() async throws {
+        let temp = try TemporaryFolder.make()
+        defer { temp.remove() }
+        try FileDates.writeSettled(["a.txt": "alpha", "a (1).txt": "alpha", "Old downloads": "alpha"], in: temp.url)
+        let real = try await plan(temp.url)
+        #expect(real.changes.map(\.record.displayName) == ["a (1).txt"])
+        let group = try #require(real.duplicateGroups.first)
+        let template = try #require(group.duplicates.first)
+        let archive = record(like: template, url: temp.url.appending(path: "Old downloads"))
+        let craftedGroup = DuplicateGroup(
+            contentHash: group.contentHash,
+            kept: group.kept,
+            duplicates: [archive],
+            fileSizeInBytes: group.fileSizeInBytes
+        )
+        let crafted = CleanupPlan(
+            action: .findDuplicates,
+            folderURL: temp.url,
+            changes: [proposedChange(archive, keptName: group.kept.displayName)],
+            duplicateGroups: [craftedGroup]
+        )
+
+        let result = await executor.execute(plan: crafted, confirmedChangeIDs: Set(crafted.changes.map(\.id)))
+
+        #expect(try outcome(for: "Old downloads", in: result) == .skipped(.notInPlan))
+        #expect(result.trashedCount == 0)
+        #expect(exists(temp.url.appending(path: "Old downloads")))
+    }
+
+    /// A file put in place of a planned duplicate after the scan, with the same name, size,
+    /// modification date and content, is still new to the folder. The grace period is checked on
+    /// the Date Added read right before acting, not on the scan's.
+    @Test func fileMovedInSinceTheScanIsSkipped() async throws {
+        let temp = try TemporaryFolder.make()
+        defer { temp.remove() }
+        let folder = temp.url.appending(path: "Folder", directoryHint: .isDirectory)
+        let elsewhere = temp.url.appending(path: "Elsewhere", directoryHint: .isDirectory)
+        for url in [folder, elsewhere] {
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
+        }
+        try FileDates.writeSettled(["a.txt": "alpha", "a (1).txt": "alpha"], in: folder)
+        let plan = try await plan(folder)
+        let target = try change(named: "a (1).txt", in: plan)
+        let scannedDate = try #require(target.dateModified)
+
+        // The same bytes and modification date, arriving from another folder: moving it in is
+        // what gives it a new Date Added.
+        let duplicate = folder.appending(path: "a (1).txt")
+        let replacement = elsewhere.appending(path: "a (1).txt")
+        try Data("alpha".utf8).write(to: replacement)
+        try FileDates.set(replacement, to: scannedDate)
+        try FileManager.default.removeItem(at: duplicate)
+        try FileManager.default.moveItem(at: replacement, to: duplicate)
+        let added = try #require(try duplicate.resourceValues(forKeys: [.addedToDirectoryDateKey]).addedToDirectoryDate)
+        #expect(added.timeIntervalSinceNow > -60, "moving the file in should have given it a fresh Date Added")
+
+        let result = await executor.execute(plan: plan, confirmedChangeIDs: [target.id])
+
+        #expect(try outcome(for: "a (1).txt", in: result) == .skipped(.changedSinceScan))
+        #expect(result.trashedCount == 0)
+        #expect(exists(duplicate))
+
+        // Control: with no grace period the very same plan moves it, so the check above is what
+        // kept it.
+        let noGrace = TrashExecutor(eligibility: CandidateEligibility(gracePeriod: 0))
+        let control = await noGrace.execute(plan: plan, confirmedChangeIDs: [target.id])
+        defer { TrashedFiles.remove(control) { _ in Data("alpha".utf8) } }
+        #expect(trashedNames(control) == ["a (1).txt"])
+    }
+
     /// A file written moments ago may still be being written. Even when a plan lists it, the
-    /// executor leaves it alone until it has been still for the whole window.
-    @Test func fileModifiedWithinTheRecentWindowIsSkipped() async throws {
+    /// executor leaves it alone until the grace period has passed.
+    @Test func fileInsideTheGracePeriodIsSkipped() async throws {
         let temp = try TemporaryFolder.make()
         defer { temp.remove() }
         for name in ["b.txt", "b (1).txt"] {
             try Data("beta".utf8).write(to: temp.url.appending(path: name))
         }
         let records = try await scanner.scan(ScanLocation(folderURL: temp.url, source: .launchArgument)).records
-        // Planned as if an hour had passed, so the fresh files are candidates; carried out now.
-        let plan = try await planner.plan(records: records, in: temp.url, now: Date(timeIntervalSinceNow: 3_600))
+        // Planned as if two hours had passed, so the fresh files are candidates; carried out now.
+        let plan = try await planner.plan(records: records, in: temp.url, now: Date(timeIntervalSinceNow: 2 * 3_600))
         #expect(plan.changes.map(\.record.displayName) == ["b (1).txt"])
 
         let result = await executor.execute(plan: plan, confirmedChangeIDs: Set(plan.changes.map(\.id)))
@@ -569,7 +631,7 @@ struct TrashExecutorTests {
         defer { temp.remove() }
         let folder = temp.url.appending(path: "Gone", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
-        try writeSettled(["c.txt": "gamma", "c (1).txt": "gamma", "c (2).txt": "gamma"], in: folder)
+        try FileDates.writeSettled(["c.txt": "gamma", "c (1).txt": "gamma", "c (2).txt": "gamma"], in: folder)
         let plan = try await plan(folder)
         #expect(plan.changes.count == 2)
         try FileManager.default.removeItem(at: folder)
@@ -623,7 +685,7 @@ struct TrashExecutorTests {
     @Test func changeListedTwiceIsProcessedOnce() async throws {
         let temp = try TemporaryFolder.make()
         defer { temp.remove() }
-        try writeSettled(["a.txt": "alpha", "a (1).txt": "alpha"], in: temp.url)
+        try FileDates.writeSettled(["a.txt": "alpha", "a (1).txt": "alpha"], in: temp.url)
         let real = try await plan(temp.url)
         let crafted = CleanupPlan(
             action: .findDuplicates,
@@ -646,7 +708,7 @@ struct TrashExecutorTests {
     @Test func keptFileIsVerifiedAgainstEachGroupsHash() async throws {
         let temp = try TemporaryFolder.make()
         defer { temp.remove() }
-        try writeSettled(["k.txt": "alpha", "k (1).txt": "alpha", "unique.txt": "bravo"], in: temp.url)
+        try FileDates.writeSettled(["k.txt": "alpha", "k (1).txt": "alpha", "unique.txt": "bravo"], in: temp.url)
         let real = try await plan(temp.url)
         #expect(real.changes.map(\.record.displayName) == ["k (1).txt"])
         let groupA = try #require(real.duplicateGroups.first)

@@ -2,6 +2,20 @@
 
 All notable changes to Smart OS File Store are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- The grace period is now one hour and counts both dates: a file added to the folder or modified in the last hour is never proposed, where version 0.1 skipped only files modified in the last ten seconds. A copy or a file moved in from elsewhere therefore waits an hour too. The rule is checked again right before each file moves, on its Date Added as read at that moment.
+- An item named Old downloads at the top of the folder, in any letter case, is never proposed: it is the archive a later version files old downloads into.
+
+### Added
+
+- A debug-only launch argument, `-GracePeriodSeconds <n>`, so hand testing can use files made moments ago. Release builds ignore it.
+- Test fixtures for every version 0.2 action, in the hand-testing script and the shared test helper, and a `FakeApplications` folder beside the fake Downloads folder.
+- A benchmark of the scan and Find Duplicates at 10,000 files, kept out of the normal test run, with results in `docs/benchmarks.md`.
+- Decision records in `docs/decisions/`.
+
 ## [0.1.0] - 2026-11-13
 
 ### Added

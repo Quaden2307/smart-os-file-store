@@ -117,7 +117,7 @@ struct FolderScannerTests {
     @Test func flagsInProgressDownloads() async throws {
         try await withFakeDownloadsFolder { fixture in
             let result = try await scanner.scan(location(fixture.url))
-            for name in [Names.chromeDownload, Names.safariDownload, Names.partialDownload] {
+            for name in [Names.chromeDownload, Names.safariDownload, Names.partialDownload, Names.freshDownload] {
                 let record = try #require(result.records.first { $0.displayName == name })
                 #expect(record.isDownloading, "\(name) should be flagged as downloading")
             }

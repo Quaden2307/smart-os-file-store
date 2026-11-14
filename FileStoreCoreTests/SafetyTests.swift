@@ -54,7 +54,7 @@ struct SafetyTests {
     ]
 
     /// The repository root: the folder holding `project.yml`, found from this file's own path.
-    private static func projectRoot() throws -> URL {
+    static func projectRoot() throws -> URL {
         var folder = URL(filePath: #filePath).deletingLastPathComponent()
         for _ in 0..<5 {
             let marker = folder.appending(path: "project.yml").path(percentEncoded: false)
@@ -193,7 +193,7 @@ struct SafetyTests {
 
             let records = try await scanner.scan(ScanLocation(folderURL: fixture.url, source: .launchArgument)).records
             let plan = try await planner.plan(records: records, in: fixture.url)
-            #expect(plan.changes.count == 5)
+            #expect(plan.changes.count == 6)
 
             let after = try Self.snapshot(of: fixture.url)
             #expect(after == before)

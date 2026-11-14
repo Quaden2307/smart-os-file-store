@@ -153,10 +153,10 @@ struct DuplicatePlannerTests {
         #expect(makePlan([notes, sameSizeEdit], hashes: [notes.id: hash(1), sameSizeEdit.id: hash(2)]).isEmpty)
     }
 
-    @Test func candidatesExcludeNonFilesDownloadsEmptyAndFresh() {
-        let now = Self.base
-        let settled = record("settled.pdf", modified: now - 10.5)
-        let boundary = record("boundary.pdf", modified: now - 10)
+    @Test func candidatesExcludeNonFilesDownloadsEmptyFreshAndArchive() {
+        // Two hours after every record's default dates, so only the dates set below are recent.
+        let now = Self.base + 2 * 3_600
+        let hour = CandidateEligibility.defaultGracePeriod
         let records = [
             record("Folder", size: nil, kind: .folder),
             record("App.app", size: nil, kind: .package),
@@ -164,13 +164,25 @@ struct DuplicatePlannerTests {
             record("movie.mp4.crdownload", downloading: true),
             record("empty.txt", size: 0),
             record("sizeless.txt", size: nil),
-            record("fresh.pdf", modified: now - 3),
+            record("modified-recently.pdf", modified: now - (hour - 0.5)),
+            record("added-recently.pdf", added: now - 60),
             record("undated.pdf", modified: nil),
-            settled,
-            boundary,
+            record(".hidden.pdf"),
+            record("Old downloads"),
+            record("settled.pdf", modified: now - (hour + 0.5)),
+            record("boundary.pdf", added: now - hour, modified: now - hour),
+            record("no-date-added.pdf", added: nil),
         ]
         let names = Set(planner.candidates(in: records, now: now).map(\.displayName))
-        #expect(names == ["settled.pdf", "boundary.pdf"])
+        #expect(names == ["settled.pdf", "boundary.pdf", "no-date-added.pdf"])
+    }
+
+    @Test func candidatesFollowTheConfiguredGracePeriod() {
+        let now = Self.base + 2 * 3_600
+        let fresh = record("fresh.pdf", added: now - 5, modified: now - 5)
+        let shortened = DuplicatePlanner(eligibility: CandidateEligibility(gracePeriod: 0))
+        #expect(planner.candidates(in: [fresh], now: now).isEmpty)
+        #expect(shortened.candidates(in: [fresh], now: now).map(\.displayName) == ["fresh.pdf"])
     }
 
     @Test func sizeGroupsOnlyKeepSharedSizes() {

@@ -18,17 +18,17 @@ public struct TrashExecutor: Sendable {
 
     public let hasher: ContentHasher
 
-    /// A file modified more recently than this is still being written and is left alone.
-    public let recentModificationWindow: TimeInterval
+    /// The rules every action shares. The grace period is checked again on dates read from disk.
+    public let eligibility: CandidateEligibility
 
     private static let logger = Logger(subsystem: "com.quaden2307.FileStoreCore", category: "TrashExecutor")
 
     public init(
         hasher: ContentHasher = ContentHasher(),
-        recentModificationWindow: TimeInterval = DuplicatePlanner.defaultRecentModificationWindow
+        eligibility: CandidateEligibility = CandidateEligibility()
     ) {
         self.hasher = hasher
-        self.recentModificationWindow = recentModificationWindow
+        self.eligibility = eligibility
     }
 
     /// Moves the confirmed changes of `plan` to the Trash, in plan order.
@@ -36,7 +36,7 @@ public struct TrashExecutor: Sendable {
     /// - Parameters:
     ///   - confirmedChangeIDs: The changes the user ticked. IDs that match nothing in the plan are
     ///     logged and ignored; nothing outside the plan is ever touched.
-    ///   - now: The current time, for the "modified in the last few seconds" rule.
+    ///   - now: The current time, for the grace period.
     ///   - onProgress: Called on the executing thread before the first item and after each one.
     /// - Returns: One result per confirmed change. If the task is cancelled, the items not yet
     ///   reached are reported as skipped and `wasCancelled` is set.
@@ -176,14 +176,35 @@ public struct TrashExecutor: Sendable {
             return .skipped(.keptFile)
         }
 
-        // Scope rules the planner applied; a plan built elsewhere must not get round them.
-        if FileRecord.isInProgressDownload(itemURL) || status.isHidden || itemURL.lastPathComponent.hasPrefix(".") {
+        // The rules every action shares, on what the disk says now rather than the scan's record; a
+        // plan built elsewhere must not get round them. A file put here since the scan, under the
+        // same name and with an old modification date, is as new as a freshly written one.
+        if status.isHidden {
             return .skipped(.notInPlan)
+        }
+        let dateAdded: Date?
+        do throws(FileStatus.Failure) {
+            dateAdded = try FileStatus.dateAdded(path: itemURL.path(percentEncoded: false))
+        } catch {
+            return .skipped(CleanupSkipReason(statusFailure: error))
+        }
+        switch eligibility.refusal(
+            name: itemURL.lastPathComponent,
+            isDownloading: FileRecord.isInProgressDownload(itemURL),
+            dateAdded: dateAdded,
+            dateModified: status.modificationDate,
+            now: now
+        ) {
+        case nil:
+            break
+        case .excludedName, .downloadInProgress:
+            return .skipped(.notInPlan)
+        case .insideGracePeriod:
+            return .skipped(.changedSinceScan)
         }
         guard status.sizeInBytes == change.sizeInBytes,
               let scannedDate = change.dateModified,
-              abs(status.modificationDate.timeIntervalSince(scannedDate)) <= Self.modificationDateTolerance,
-              now.timeIntervalSince(status.modificationDate) >= recentModificationWindow else {
+              abs(status.modificationDate.timeIntervalSince(scannedDate)) <= Self.modificationDateTolerance else {
             return .skipped(.changedSinceScan)
         }
         if status.isUserImmutable || status.isSystemImmutable {

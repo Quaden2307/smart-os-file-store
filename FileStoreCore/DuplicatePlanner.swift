@@ -17,37 +17,34 @@ public struct DuplicatePlanner: Sendable {
     /// Files hashed at the same time. Enough to keep an SSD busy without saturating it.
     public static let defaultMaxConcurrentHashes = 4
 
-    /// A file modified more recently than this is still being written and is left alone.
-    public static let defaultRecentModificationWindow: TimeInterval = 10
-
     public let hasher: ContentHasher
     public let maxConcurrentHashes: Int
-    public let recentModificationWindow: TimeInterval
+
+    /// The rules every action shares, the grace period among them.
+    public let eligibility: CandidateEligibility
 
     private static let logger = Logger(subsystem: "com.quaden2307.FileStoreCore", category: "DuplicatePlanner")
 
     public init(
         hasher: ContentHasher = ContentHasher(),
         maxConcurrentHashes: Int = Self.defaultMaxConcurrentHashes,
-        recentModificationWindow: TimeInterval = Self.defaultRecentModificationWindow
+        eligibility: CandidateEligibility = CandidateEligibility()
     ) {
         self.hasher = hasher
         self.maxConcurrentHashes = max(1, maxConcurrentHashes)
-        self.recentModificationWindow = recentModificationWindow
+        self.eligibility = eligibility
     }
 
     // MARK: - Pure functions
 
-    /// The records that may take part at all: regular files with content, not still downloading,
-    /// and not modified within `recentModificationWindow` of `now`. Folders, packages, symbolic
-    /// links and empty files are never candidates. A file whose modification date is unknown is
-    /// treated as not settled.
+    /// The records that may take part at all: those the shared rules allow at `now` (see
+    /// `CandidateEligibility.allows`: not hidden, not the archive, not still downloading, past the
+    /// grace period), and of those only regular files with content. Folders, packages, symbolic
+    /// links and empty files are never candidates.
     public func candidates(in records: [FileRecord], now: Date) -> [FileRecord] {
         records.filter { record in
-            guard record.kind == .file, !record.isDownloading else { return false }
-            guard let size = record.sizeInBytes, size > 0 else { return false }
-            guard let modified = record.dateModified else { return false }
-            return now.timeIntervalSince(modified) >= recentModificationWindow
+            guard record.kind == .file, let size = record.sizeInBytes, size > 0 else { return false }
+            return eligibility.allows(record, now: now)
         }
     }
 
@@ -226,9 +223,9 @@ public struct DuplicatePlanner: Sendable {
 
     // MARK: - Helpers
 
-    /// The records that sit directly inside `folderURL` under a visible name. The scanner lists
-    /// only those, so for its records this changes nothing; a record built elsewhere must not
-    /// widen the search to a hidden file or to a file outside the folder.
+    /// The records that sit directly inside `folderURL`. The scanner lists only those, so for its
+    /// records this changes nothing; a record built elsewhere must not widen the search to a file
+    /// outside the folder. (Hidden names are the shared rules' business; see `candidates`.)
     static func recordsDirectlyInside(_ folderURL: URL, among records: [FileRecord]) -> [FileRecord] {
         let folder = folderURL.standardizedFileURL
         let folderComponents = folder.pathComponents
@@ -237,7 +234,6 @@ public struct DuplicatePlanner: Sendable {
         // record that matches neither is resolved itself.
         let resolvedFolderComponents = folder.resolvingSymlinksInPath().pathComponents
         return records.filter { record in
-            guard !record.displayName.hasPrefix(".") else { return false }
             let standardized = record.url.standardizedFileURL
             let parentComponents = Array(standardized.pathComponents.dropLast())
             if parentComponents == folderComponents || parentComponents == resolvedFolderComponents {

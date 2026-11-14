@@ -49,9 +49,10 @@ struct DuplicatePlannerDiskTests {
 
             #expect(plan.action == .findDuplicates)
             expectSameFolder(plan.folderURL, fixture.url)
-            #expect(plan.duplicateGroups.count == 2)
-            #expect(plan.changes.count == 5)
-            #expect(plan.bytesToFree == 103)
+            // The reports (4 × 21 bytes), the receipt copy (22) and the photo copy (19), largest saving first.
+            #expect(plan.duplicateGroups.map(\.kept.displayName) == [Names.reportPDF, Names.receipt, Names.photo])
+            #expect(plan.changes.count == 6)
+            #expect(plan.bytesToFree == 125)
             #expect(plan.skippedItems.isEmpty)
         }
     }
@@ -68,16 +69,28 @@ struct DuplicatePlannerDiskTests {
         }
     }
 
-    @Test func doesNotGroupNotesOrSameSizePairs() async throws {
+    @Test func findsReceiptGroupKeepingTheCleanName() async throws {
+        try await withFakeDownloadsFolder { fixture in
+            let plan = try await plan(fixture)
+
+            let receipts = try #require(group(keeping: Names.receipt, in: plan))
+            #expect(receipts.duplicates.map(\.displayName) == [Names.receiptCopy])
+        }
+    }
+
+    @Test func doesNotGroupLookalikesOrUniqueFiles() async throws {
         try await withFakeDownloadsFolder { fixture in
             let plan = try await plan(fixture)
 
             let mustStayAlone: Set<String> = [
-                Names.notes, Names.notesEdited,
-                Names.sameSizeA, Names.sameSizeB,
-                Names.diskImage, Names.installer, Names.zipArchive, Names.oldReceipt,
-                Names.lockedFile, Names.percentEncodedName,
-                Names.unicodePDF, Names.noExtension, Names.bigVideo,
+                Names.notes, Names.notesEdited, Names.todoText, Names.todoMarkdown,
+                Names.sameSizeA, Names.sameSizeB, Names.invoice, Names.invoiceCopy,
+                Names.installer, Names.appZip, Names.zipArchive, Names.partialZipArchive,
+                Names.singleFileZip, Names.singleFileZipContent, Names.lonelyZip,
+                Names.numberedName, Names.copyWordName, Names.percentEncodedName,
+                Names.queryLeftoverName, Names.doubledExtensionName,
+                Names.oldReceipt, Names.oldManual, Names.taxForm, Names.statement,
+                Names.lockedFile, Names.unicodePDF, Names.noExtension, Names.bigVideo, Names.largeFile,
             ]
             #expect(groupedNames(plan).isDisjoint(with: mustStayAlone))
         }
@@ -89,8 +102,9 @@ struct DuplicatePlannerDiskTests {
 
             let neverCandidates: Set<String> = [
                 Names.emptyA, Names.emptyB, Names.hiddenFile, Names.symlink,
-                Names.chromeDownload, Names.safariDownload, Names.partialDownload,
-                Names.subfolder, Names.zipFolder,
+                Names.chromeDownload, Names.safariDownload, Names.partialDownload, Names.freshDownload,
+                Names.subfolder, Names.zipFolder, Names.partialZipFolder,
+                Names.emptyFolder, Names.dsStoreFolder, Names.archiveFolder,
             ]
             #expect(groupedNames(plan).isDisjoint(with: neverCandidates))
             for change in plan.changes {
@@ -99,24 +113,69 @@ struct DuplicatePlannerDiskTests {
         }
     }
 
-    @Test func excludesFileModifiedInLastTenSeconds() async throws {
+    /// A new file is left alone for the whole grace period, judged on both of its dates: one that
+    /// was just put in the folder is new even when its modification date is old.
+    @Test func excludesFileAddedOrModifiedInLastHour() async throws {
         try await withFakeDownloadsFolder { fixture in
             let fresh = fixture.url(for: Names.freshReportCopy)
             try Data(FakeDownloadsFolder.reportContents.utf8).write(to: fresh)
 
-            let before = try await plan(fixture)
-            #expect(group(keeping: Names.reportPDF, in: before)?.duplicates.count == 4)
-            #expect(!groupedNames(before).contains(Names.freshReportCopy))
+            let written = try await plan(fixture)
+            #expect(group(keeping: Names.reportPDF, in: written)?.duplicates.count == 4)
+            #expect(!groupedNames(written).contains(Names.freshReportCopy))
 
+            // An old modification date alone is not enough: it was still added moments ago.
             try FileManager.default.setAttributes(
-                [.modificationDate: Date(timeIntervalSinceNow: -60)],
+                [.modificationDate: Date(timeIntervalSinceNow: -FileDates.settledAge)],
                 ofItemAtPath: fresh.path(percentEncoded: false)
             )
-            let after = try await plan(fixture)
-            let reports = try #require(group(keeping: Names.reportPDF, in: after))
+            let modifiedLongAgo = try await plan(fixture)
+            #expect(!groupedNames(modifiedLongAgo).contains(Names.freshReportCopy))
+
+            try FileDates.settle([fresh])
+            let settled = try await plan(fixture)
+            let reports = try #require(group(keeping: Names.reportPDF, in: settled))
             #expect(reports.duplicates.count == 5)
             #expect(reports.duplicates.map(\.displayName).contains(Names.freshReportCopy))
         }
+    }
+
+    /// A copy keeps its original's modification date but is new to the folder, so it waits too.
+    @Test func excludesCopyMadeMomentsAgo() async throws {
+        try await withFakeDownloadsFolder { fixture in
+            let copy = fixture.url(for: Names.freshReportCopy)
+            try FileManager.default.copyItem(at: fixture.url(for: Names.reportPDF), to: copy)
+            let records = try await scan(fixture)
+            let record = try #require(records.first { $0.displayName == Names.freshReportCopy })
+            let original = try #require(records.first { $0.displayName == Names.reportPDF })
+            #expect(record.dateModified == original.dateModified)
+
+            let plan = try await planner.plan(records: records, in: fixture.url)
+
+            #expect(!groupedNames(plan).contains(Names.freshReportCopy))
+            #expect(group(keeping: Names.reportPDF, in: plan)?.duplicates.count == 4)
+        }
+    }
+
+    /// The archive's name and downloads in progress are never candidates, whatever they hold: here
+    /// regular files identical to a real pair, including a plain file ending in `.download`.
+    @Test func neverGroupsTheArchiveNameOrDownloadsInProgress() async throws {
+        let temp = try TemporaryFolder.make()
+        defer { temp.remove() }
+        let excluded = ["old downloads", "a.download", "a.crdownload", "a.part"]
+        var files = ["a.txt": "alpha", "a (1).txt": "alpha"]
+        for name in excluded {
+            files[name] = "alpha"
+        }
+        try FileDates.writeSettled(files, in: temp.url)
+
+        let plan = try await planner.plan(
+            records: try await scanner.scan(ScanLocation(folderURL: temp.url, source: .launchArgument)).records,
+            in: temp.url
+        )
+
+        #expect(plan.changes.map(\.record.displayName) == ["a (1).txt"])
+        #expect(groupedNames(plan).isDisjoint(with: excluded))
     }
 
     @Test func hashesOnlyFilesSharingASize() async throws {
@@ -124,12 +183,14 @@ struct DuplicatePlannerDiskTests {
             let log = ConcurrentLog<DuplicateScanProgress>()
             _ = try await plan(fixture) { log.append($0) }
 
-            // 5 reports × 21, 2 photos × 19, 2 same-size × 4, 4 three-byte files, 2 six-byte files.
+            // 5 reports × 21, 2 receipts × 22, 2 photos × 19, 2 invoices × 18, 2 same-size × 4,
+            // 2 three-byte files (Tool.pkg, old-receipt.pdf), 2 six-byte files (the percent name,
+            // locked.txt). Every other file, the zips among them, has a size of its own.
             let last = try #require(log.values.last)
-            #expect(last.filesToHash == 15)
-            #expect(last.bytesToHash == 175)
-            #expect(last.filesHashed == 15)
-            #expect(last.bytesHashed == 175)
+            #expect(last.filesToHash == 17)
+            #expect(last.bytesToHash == 249)
+            #expect(last.filesHashed == 17)
+            #expect(last.bytesHashed == 249)
         }
     }
 
@@ -162,7 +223,7 @@ struct DuplicatePlannerDiskTests {
 
             let reports = try #require(group(keeping: Names.reportPDF, in: plan))
             #expect(reports.duplicates.map(\.displayName) == [Names.reportCopy1, Names.lockedReportCopy, Names.reportCopyWord])
-            #expect(plan.changes.count == 4)
+            #expect(plan.changes.count == 5)
             #expect(plan.skippedItems.count == 1)
             let skipped = try #require(plan.skippedItems.first)
             #expect(canonicalPath(skipped.url) == canonicalPath(unreadable))
@@ -237,14 +298,14 @@ struct DuplicatePlannerDiskTests {
         defer { temp.remove() }
         let inside = temp.url.appending(path: "Inside", directoryHint: .isDirectory)
         let outside = temp.url.appending(path: "Outside", directoryHint: .isDirectory)
-        let settled = Date(timeIntervalSinceNow: -60)
+        let settled = Date(timeIntervalSinceNow: -FileDates.settledAge)
         for folder in [inside, outside] {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
         }
         for (folder, name) in [(inside, "a.txt"), (inside, "a (1).txt"), (inside, ".a.txt"), (outside, "a (2).txt")] {
             let url = folder.appending(path: name)
             try Data("alpha".utf8).write(to: url)
-            try FileManager.default.setAttributes([.modificationDate: settled], ofItemAtPath: url.path(percentEncoded: false))
+            try FileDates.set(url, to: settled)
         }
         let insideRecords = try await scanner.scan(ScanLocation(folderURL: inside, source: .launchArgument)).records
         let outsideRecords = try await scanner.scan(ScanLocation(folderURL: outside, source: .launchArgument)).records
@@ -273,12 +334,9 @@ struct DuplicatePlannerDiskTests {
     @Test func hardLinksAreNotDuplicates() async throws {
         let temp = try TemporaryFolder.make()
         defer { temp.remove() }
-        let settled = Date(timeIntervalSinceNow: -60)
         let fileManager = FileManager.default
         for name in ["a.txt", "a (2).txt"] {
-            let url = temp.url.appending(path: name)
-            try Data("alpha".utf8).write(to: url)
-            try fileManager.setAttributes([.modificationDate: settled], ofItemAtPath: url.path(percentEncoded: false))
+            try Data("alpha".utf8).write(to: temp.url.appending(path: name))
         }
         try fileManager.linkItem(
             atPath: temp.url.appending(path: "a.txt").path(percentEncoded: false),
@@ -286,8 +344,13 @@ struct DuplicatePlannerDiskTests {
         )
         let records = try await scanner.scan(ScanLocation(folderURL: temp.url, source: .launchArgument)).records
         #expect(records.count == 3)
+        // Each name of a hard link has a Date Added of its own, so the plan is made two hours on
+        // rather than by dating files back; then all three names are candidates and the hard-link
+        // rule itself is what keeps `a (1).txt` out of the plan.
+        let later = Date(timeIntervalSinceNow: 2 * 3_600)
+        #expect(planner.candidates(in: records, now: later).count == 3)
 
-        let plan = try await planner.plan(records: records, in: temp.url)
+        let plan = try await planner.plan(records: records, in: temp.url, now: later)
 
         #expect(plan.duplicateGroups.count == 1)
         #expect(plan.duplicateGroups.first?.kept.displayName == "a.txt")
@@ -298,7 +361,8 @@ struct DuplicatePlannerDiskTests {
         try fileManager.removeItem(at: temp.url.appending(path: "a (2).txt"))
         let again = try await planner.plan(
             records: try await scanner.scan(ScanLocation(folderURL: temp.url, source: .launchArgument)).records,
-            in: temp.url
+            in: temp.url,
+            now: later
         )
         #expect(again.isEmpty)
         #expect(again.skippedItems.isEmpty)

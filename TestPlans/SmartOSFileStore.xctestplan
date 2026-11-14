@@ -1,0 +1,27 @@
+{
+  "configurations": [
+    {
+      "id": "53643ADC-419F-46CE-9B13-AAFCC86E669E",
+      "name": "Default",
+      "options": {}
+    }
+  ],
+  "defaultOptions": {},
+  "testTargets": [
+    {
+      "skippedTests": {
+        "suites": [
+          {
+            "name": "BenchmarkTests"
+          }
+        ]
+      },
+      "target": {
+        "containerPath": "container:SmartOSFileStore.xcodeproj",
+        "identifier": "79CA0D85BC92FC8AD6EDE511",
+        "name": "FileStoreCoreTests"
+      }
+    }
+  ],
+  "version": 1
+}

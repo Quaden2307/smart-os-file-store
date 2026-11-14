@@ -43,7 +43,6 @@ final class DuplicateSearchModel {
     /// Increases per search, so a late report from an earlier search cannot touch the current one.
     private var generation = 0
 
-    private let planner = DuplicatePlanner()
     private let logger = Logger(subsystem: "com.quaden2307.SmartOSFileStore", category: "Duplicates")
 
     // Isolated, so it may touch main-actor state: the window is gone, stop reading files for a
@@ -52,8 +51,9 @@ final class DuplicateSearchModel {
         searchTask?.cancel()
     }
 
-    /// Starts a search over `records`, cancelling any that is still running.
-    func start(records: [FileRecord], folderURL: URL) {
+    /// Starts a search over `records`, cancelling any that is still running. `eligibility` decides
+    /// which records may take part at all.
+    func start(records: [FileRecord], folderURL: URL, eligibility: CandidateEligibility) {
         searchTask?.cancel()
         generation += 1
         let generation = generation
@@ -61,7 +61,7 @@ final class DuplicateSearchModel {
         phase = .running(DuplicateScanProgress(filesHashed: 0, filesToHash: 0, bytesHashed: 0, bytesToHash: 0))
         logger.info("Finding duplicates among \(records.count) records")
 
-        let planner = planner
+        let planner = DuplicatePlanner(eligibility: eligibility)
         // Weak throughout: the task must not keep the model alive, and `deinit` cancels the task.
         searchTask = Task { [weak self] in
             let outcome: Result<CleanupPlan, DuplicatePlanError>

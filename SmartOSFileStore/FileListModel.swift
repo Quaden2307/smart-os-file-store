@@ -10,6 +10,10 @@ final class FileListModel {
     /// The folder being scanned, or nil when it could not be resolved (see `failure`).
     private(set) var location: ScanLocation?
 
+    /// The rules every cleanup action shares, resolved once from the same launch arguments as the
+    /// folder, so the search and the executor use the same grace period.
+    let eligibility: CandidateEligibility
+
     /// Records from the latest successful scan, in file-system order.
     private(set) var records: [FileRecord] = []
 
@@ -60,6 +64,7 @@ final class FileListModel {
         arguments: [String] = ProcessInfo.processInfo.arguments,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) {
+        eligibility = CandidateEligibility.resolve(arguments: arguments)
         do throws(ScanLocationError) {
             location = try ScanLocation.resolve(arguments: arguments, environment: environment)
         } catch {

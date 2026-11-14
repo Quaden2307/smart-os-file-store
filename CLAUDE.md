@@ -17,7 +17,7 @@ A native macOS file browser that will replace Finder, starting with a self-clean
 - Deployment target macOS 26.0, Apple silicon. Bundle id `com.quaden2307.SmartOSFileStore`.
 - No App Sandbox (direct download, not the Mac App Store). Hardened Runtime on, so the app can be notarized later.
 - CryptoKit for hashing, Quick Look for previews, UniformTypeIdentifiers for file types.
-- No third-party dependencies without the owner's approval. No database yet; GRDB (SQLite) arrives with the activity log in a later segment.
+- No third-party dependencies without the owner's approval. GRDB (SQLite) is approved and is the only one; it is added in the database segment, not before.
 - Interface uses system colours, fonts and controls only, with light and dark mode. No custom theme yet.
 
 ## Architecture
@@ -25,13 +25,19 @@ A native macOS file browser that will replace Finder, starting with a self-clean
 - `FileStoreCore` holds all file logic: scanning, planning and executing. It must not import SwiftUI or AppKit. The app target only calls the engine and shows results. Later, on-device AI will call the same engine actions as tools, so each action is small, single-purpose and has typed inputs and outputs.
 - Every cleanup action follows scan, plan, preview, confirm, execute. Nothing on disk changes before the user confirms, and no code path skips the preview. Use the `add-cleanup-action` skill whenever adding or changing a cleanup action.
 - Plans are pure values. Planners are pure functions with no file writes.
-- Removal always means `FileManager.trashItem`. Never permanently delete a user file, anywhere, for any reason.
+- The engine has three operations: move to Trash, rename, and move within the scanned folder. Removal always means `FileManager.trashItem`; never permanently delete a user file, anywhere, for any reason. Rename and move never overwrite an existing item.
 - Recheck each file right before acting on it (still exists, same size and modification date). If it changed, skip it and report it.
 - Each item succeeds or fails on its own with a typed error and a message a user can understand. One failure never stops the rest.
 - Actions are idempotent: running one again right after it finishes produces an empty plan.
 - Scanning and hashing run off the main thread with async/await, support cancellation, and never freeze the window. UI state lives on the main actor.
-- Stay in scope: act only inside the chosen folder, follow no symlinks out of it, skip hidden files, and never touch files still downloading (`.crdownload`, `.download`, `.part`) or modified in the last few seconds.
-- The scanned folder is Downloads by default. Debug builds accept an override (launch argument `-ScanFolder <path>` or environment variable `SMARTOS_SCAN_FOLDER`) so hand testing uses a fake folder. Release builds ignore both.
+- Stay in scope: act only inside the chosen folder, follow no symlinks out of it, and skip hidden files.
+- Grace period: an item added or modified in the last hour is never a candidate for any action. Every planner and the executor's recheck use the one shared eligibility check (`CandidateEligibility`), which takes the current time as a parameter.
+- In-progress downloads (`.crdownload`, `.download`, `.part`) are untouched by every action except Clear failed downloads, which has its own rule.
+- A folder named "Old downloads" at the top level of the scanned folder is the archive. No action treats it or its contents as a candidate.
+- Every executed change is recorded in the activity log with enough information to undo it.
+- Files the user marked Keep never appear in any plan.
+- Each segment adds a short decision record under `docs/decisions/` (what was decided, the alternatives, why).
+- The scanned folder is Downloads by default. Debug builds accept an override (launch argument `-ScanFolder <path>` or environment variable `SMARTOS_SCAN_FOLDER`) so hand testing uses a fake folder, and `-GracePeriodSeconds <n>` so freshly made files can be candidates. Release builds ignore all three.
 
 ## Code standards
 
@@ -60,10 +66,21 @@ At the end of each segment, run `/code-review` on the diff and fix what it finds
 - `.gitignore` covers `build/`, `*.xcodeproj`, `DerivedData/`, `.DS_Store`, `xcuserdata/` and `.swiftpm/`.
 - Never force-push, never rewrite pushed history, never commit secrets or signing certificates.
 
-## Current scope (version 0.1)
+## Current scope (version 0.2)
+
+Everything in version 0.1:
 
 1. A window listing the top level of Downloads: name, type, size, date added, date modified.
-2. One cleanup action: find exact duplicates by content. Keep the cleanest-named copy, oldest as tiebreak. Empty files and folders are never duplicate candidates.
+2. Find exact duplicates by content. Keep the cleanest-named copy, oldest as tiebreak. Empty files and folders are never duplicate candidates.
 3. A preview with checkboxes. Confirmed files go to the Trash and the list refreshes.
 
-Out of scope until the owner asks: activity log, database, undo beyond the Trash, other cleanup actions, folders beyond Downloads, AI features, custom theme.
+Plus:
+
+4. Six cleanup actions: clear failed downloads, remove unpacked zips, remove used installers, fix messy names, flag near-duplicates, archive old downloads.
+5. Two review lists: large downloads and empty folders.
+6. In the file list: a Last Opened column, the download source, and marks.
+7. Keep this file.
+8. A local database with an activity log, undo, and a space freed counter.
+9. A Tidy Now overview.
+
+Out of scope until the owner asks: watching Downloads automatically, user-defined rules, schedules, folders beyond Downloads, subfolders, the full storage view, search, tags, sharing, AI features, custom theme.

@@ -26,11 +26,13 @@ final class CleanupPreviewModel {
 
     private let onExecuted: @MainActor (CleanupResult) -> Void
     private var executionTask: Task<Void, Never>?
-    private let executor = TrashExecutor()
+    private let executor: TrashExecutor
     private let logger = Logger(subsystem: "com.quaden2307.SmartOSFileStore", category: "Cleanup")
 
-    init(plan: CleanupPlan, onExecuted: @escaping @MainActor (CleanupResult) -> Void) {
+    /// - Parameter eligibility: The rules the plan was made with; the executor checks them again.
+    init(plan: CleanupPlan, eligibility: CandidateEligibility, onExecuted: @escaping @MainActor (CleanupResult) -> Void) {
         self.plan = plan
+        self.executor = TrashExecutor(eligibility: eligibility)
         self.onExecuted = onExecuted
         self.ticked = Set(plan.changes.map(\.id))
     }

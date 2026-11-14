@@ -47,7 +47,7 @@
     "No longer directly inside the folder." : {},
     "No longer in the folder." : {},
     "No size" : {},
-    "No two files in this folder have the same content." : {},
+    "No two of the files checked have the same content. Files added or changed in the last hour are checked once they are an hour old." : {},
     "Not Checked" : {},
     "Not Moved" : {},
     "Not a Folder" : {},

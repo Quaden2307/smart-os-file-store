@@ -39,15 +39,7 @@ struct FileStatus: Sendable {
         var status = stat()
         let result = followingLinks ? stat(path, &status) : lstat(path, &status)
         guard result == 0 else {
-            let code = errno
-            switch code {
-            case ENOENT, ENOTDIR:
-                throw .notFound
-            case EACCES, EPERM:
-                throw .accessDenied
-            default:
-                throw .other(reason: String(cString: strerror(code)))
-            }
+            throw failure(errno)
         }
         let type = status.st_mode & S_IFMT
         let flags = status.st_flags
@@ -66,5 +58,51 @@ struct FileStatus: Sendable {
             isDataless: (flags & UInt32(SF_DATALESS)) != 0,
             isHidden: (flags & UInt32(UF_HIDDEN)) != 0
         )
+    }
+
+    /// When the item at `path` was added to its folder, read now with `getattrlist(2)`. A symbolic
+    /// link is described itself. Nil when the volume does not record the date, including a volume
+    /// that does not support the call at all (`ENOTSUP`, `EINVAL`): the modification date then
+    /// decides alone, as it did for the scan.
+    ///
+    /// `lstat` has no such field, and `URL.resourceValues` may answer from a cache, so the executor
+    /// asks the file system directly right before it acts.
+    static func dateAdded(path: String) throws(Failure) -> Date? {
+        var request = attrlist()
+        request.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
+        request.commonattr = attrgroup_t(ATTR_CMN_RETURNED_ATTRS) | attrgroup_t(ATTR_CMN_ADDEDTIME)
+        // The reply: its length, which attributes were returned, then the time if it was.
+        let returnedOffset = MemoryLayout<UInt32>.size
+        let timeOffset = returnedOffset + MemoryLayout<attribute_set_t>.size
+        var reply = [UInt8](repeating: 0, count: timeOffset + MemoryLayout<timespec>.size)
+        let result = reply.withUnsafeMutableBytes { buffer in
+            getattrlist(path, &request, buffer.baseAddress, buffer.count, UInt32(FSOPT_NOFOLLOW))
+        }
+        guard result == 0 else {
+            let code = errno
+            if code == ENOTSUP || code == EINVAL {
+                return nil
+            }
+            throw failure(code)
+        }
+        return reply.withUnsafeBytes { buffer -> Date? in
+            let returned = buffer.loadUnaligned(fromByteOffset: returnedOffset, as: attribute_set_t.self)
+            guard returned.commonattr & attrgroup_t(ATTR_CMN_ADDEDTIME) != 0 else {
+                return nil
+            }
+            let time = buffer.loadUnaligned(fromByteOffset: timeOffset, as: timespec.self)
+            return Date(timeIntervalSince1970: TimeInterval(time.tv_sec) + TimeInterval(time.tv_nsec) / 1_000_000_000)
+        }
+    }
+
+    private static func failure(_ code: Int32) -> Failure {
+        switch code {
+        case ENOENT, ENOTDIR:
+            .notFound
+        case EACCES, EPERM:
+            .accessDenied
+        default:
+            .other(reason: String(cString: strerror(code)))
+        }
     }
 }

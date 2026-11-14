@@ -45,7 +45,7 @@ struct ContentView: View {
             }
         }
         .sheet(item: presentedPlan) { presented in
-            CleanupPreviewSheet(plan: presented.plan) { _ in
+            CleanupPreviewSheet(plan: presented.plan, eligibility: model.eligibility) { _ in
                 // Files moved, so the rows on screen are stale.
                 model.refresh()
             }
@@ -93,7 +93,7 @@ struct ContentView: View {
 
     private func findDuplicates() {
         guard let location = model.location else { return }
-        duplicates.start(records: model.records, folderURL: location.folderURL)
+        duplicates.start(records: model.records, folderURL: location.folderURL, eligibility: model.eligibility)
     }
 
     @ViewBuilder

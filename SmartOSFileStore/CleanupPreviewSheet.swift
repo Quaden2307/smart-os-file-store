@@ -21,8 +21,8 @@ struct CleanupPreviewSheet: View {
     /// list's rows (nothing visible) instead of ticking every duplicate.
     @State private var selectAllMonitor: SelectAllKeyMonitor?
 
-    init(plan: CleanupPlan, onExecuted: @escaping @MainActor (CleanupResult) -> Void) {
-        _model = State(initialValue: CleanupPreviewModel(plan: plan, onExecuted: onExecuted))
+    init(plan: CleanupPlan, eligibility: CandidateEligibility, onExecuted: @escaping @MainActor (CleanupResult) -> Void) {
+        _model = State(initialValue: CleanupPreviewModel(plan: plan, eligibility: eligibility, onExecuted: onExecuted))
     }
 
     private var plan: CleanupPlan { model.plan }
@@ -89,7 +89,7 @@ struct CleanupPreviewSheet: View {
             ContentUnavailableView(
                 "No Duplicates Found",
                 systemImage: "checkmark.circle",
-                description: Text("No two files in this folder have the same content.")
+                description: Text("No two of the files checked have the same content. Files added or changed in the last hour are checked once they are an hour old.")
             )
         } else {
             groupList

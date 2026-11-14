@@ -20,16 +20,6 @@ struct ChangeDuringUseTests {
         try await scanner.scan(ScanLocation(folderURL: folder, source: .launchArgument)).records
     }
 
-    /// Writes `files` (name to text) into `folder`, backdated a minute so the planner counts them.
-    private func writeSettled(_ files: [String: String], in folder: URL) throws {
-        let settled = Date(timeIntervalSinceNow: -60)
-        for (name, text) in files {
-            let url = folder.appending(path: name)
-            try Data(text.utf8).write(to: url)
-            try FileManager.default.setAttributes([.modificationDate: settled], ofItemAtPath: url.path(percentEncoded: false))
-        }
-    }
-
     private func exists(_ url: URL) -> Bool {
         (try? FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false))) != nil
     }
@@ -117,7 +107,7 @@ struct ChangeDuringUseTests {
     @Test func plannerReportsFileRewrittenBeforeItsHashAndKeepsProgressComplete() async throws {
         let temp = try TemporaryFolder.make()
         defer { temp.remove() }
-        try writeSettled(["x.bin": "xxxxxxxx", "x (1).bin": "xxxxxxxx", "y.bin": "yy", "y (1).bin": "yy"], in: temp.url)
+        try FileDates.writeSettled(["x.bin": "xxxxxxxx", "x (1).bin": "xxxxxxxx", "y.bin": "yy", "y (1).bin": "yy"], in: temp.url)
         let records = try await scan(temp.url)
         let planner = DuplicatePlanner(hasher: ContentHasher(chunkSize: Self.kibibyte))
         let once = Once()
@@ -152,7 +142,7 @@ struct ChangeDuringUseTests {
     @Test func plannerToleratesFilesRemovedRenamedAndAddedWhileHashing() async throws {
         let temp = try TemporaryFolder.make()
         defer { temp.remove() }
-        try writeSettled(
+        try FileDates.writeSettled(
             [
                 "a.txt": "alpha", "a (1).txt": "alpha", "a (2).txt": "alpha",
                 "b.txt": "bravo", "b (1).txt": "bravo",
@@ -290,7 +280,7 @@ struct ChangeDuringUseTests {
         let temp = try TemporaryFolder.make()
         defer { temp.remove() }
         let folder = temp.url
-        try writeSettled(
+        try FileDates.writeSettled(
             [
                 "a.txt": "alpha", "a (1).txt": "alpha", "a (2).txt": "alpha", "a (3).txt": "alpha",
                 "b.txt": "bravo", "b (1).txt": "bravo",
@@ -341,7 +331,7 @@ struct ChangeDuringUseTests {
         let folder = temp.url.appending(path: "Work", directoryHint: .isDirectory)
         let renamed = temp.url.appending(path: "Work-renamed", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
-        try writeSettled(["a.txt": "alpha", "a (1).txt": "alpha", "a (2).txt": "alpha"], in: folder)
+        try FileDates.writeSettled(["a.txt": "alpha", "a (1).txt": "alpha", "a (2).txt": "alpha"], in: folder)
         let plan = try await planner.plan(records: scan(folder), in: folder)
         #expect(plan.changes.count == 2)
         let once = Once()

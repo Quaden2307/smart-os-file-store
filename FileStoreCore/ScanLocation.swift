@@ -90,7 +90,7 @@ public struct ScanLocation: Sendable, Equatable {
         }
         let url = URL(fileURLWithPath: expandedPath, isDirectory: true)
         return ScanLocation(folderURL: url, source: source)
-    }
+    }   
     #endif
 }
 

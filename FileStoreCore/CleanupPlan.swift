@@ -134,6 +134,12 @@ public enum CleanupSkipReason: Sendable, Hashable {
     /// The destination folder, or one on the way, is hidden (by flag), so the file would vanish
     /// from view in it.
     case destinationHidden
+
+    // The reason below arises for any operation.
+
+    /// The activity log could not be written, so the run stopped before this item was changed.
+    /// Nothing is ever changed that could not be recorded first.
+    case activityLogUnavailable
 }
 
 extension CleanupSkipReason {

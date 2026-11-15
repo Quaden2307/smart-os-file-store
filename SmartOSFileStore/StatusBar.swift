@@ -2,10 +2,12 @@ import FileStoreCore
 import SwiftUI
 
 /// The line under the table: item count and total size (of the filtered rows when a filter is on),
-/// skipped items, and a spinner while refreshing. Debug builds add a second line naming the folder
-/// being scanned.
+/// skipped items, a spinner while refreshing, and, once there is any, everything the app has moved
+/// to the Trash so far. Debug builds add two lines naming the folder being scanned and the
+/// activity log's file.
 struct StatusBar: View {
     let model: FileListModel
+    let activity: ActivityLogModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -25,6 +27,13 @@ struct StatusBar: View {
                         .accessibilityLabel("Refreshing")
                 }
                 Spacer()
+                if activity.totals.bytesMovedToTrash > 0 {
+                    // Everything every cleanup has moved there. "Moved", not "freed": the space
+                    // only comes back when the Trash is emptied.
+                    Text("\(activity.totals.bytesMovedToTrash.formattedFileSize) moved to the Trash in total")
+                        .foregroundStyle(.secondary)
+                        .help("Everything Smart OS File Store has moved to the Trash so far. The space is free once you empty the Trash.")
+                }
             }
             #if DEBUG
             if let location = model.location {
@@ -34,6 +43,14 @@ struct StatusBar: View {
                     .textSelection(.enabled)
                     .accessibilityLabel("Folder being scanned")
                     .accessibilityValue(location.folderURL.path(percentEncoded: false))
+            }
+            if let databaseURL = activity.location?.databaseURL {
+                Text("Activity log at \(databaseURL.path(percentEncoded: false))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .accessibilityLabel("Activity log file")
+                    .accessibilityValue(databaseURL.path(percentEncoded: false))
             }
             #endif
         }

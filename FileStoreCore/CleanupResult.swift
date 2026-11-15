@@ -76,6 +76,22 @@ public struct CleanupItemResult: Sendable, Hashable, Identifiable {
     }
 }
 
+/// The activity log failed while a plan was being carried out, which stopped the run.
+public struct CleanupLogFailure: Sendable, Hashable {
+    public let error: ActivityLogError
+
+    /// The one change whose row could not be completed after the log had recorded it as started:
+    /// its file may have been changed (the item's own result says what happened), and the log shows
+    /// it as started, not how it ended. Nil when the log failed before anything was started for an
+    /// item, or after every item was recorded.
+    public let unrecordedChangeID: ProposedChange.ID?
+
+    public init(error: ActivityLogError, unrecordedChangeID: ProposedChange.ID?) {
+        self.error = error
+        self.unrecordedChangeID = unrecordedChangeID
+    }
+}
+
 /// What carrying out a plan did: one result per confirmed change, in plan order.
 public struct CleanupResult: Sendable, Hashable {
     public let action: CleanupAction
@@ -88,11 +104,22 @@ public struct CleanupResult: Sendable, Hashable {
     /// reported as skipped; changes already made stand, since each one can be undone.
     public let wasCancelled: Bool
 
-    public init(action: CleanupAction, folderURL: URL, items: [CleanupItemResult], wasCancelled: Bool) {
+    /// Set when the activity log could not be written. The run stopped there: the items after it
+    /// are reported as skipped and were not touched.
+    public let logFailure: CleanupLogFailure?
+
+    public init(
+        action: CleanupAction,
+        folderURL: URL,
+        items: [CleanupItemResult],
+        wasCancelled: Bool,
+        logFailure: CleanupLogFailure? = nil
+    ) {
         self.action = action
         self.folderURL = folderURL
         self.items = items
         self.wasCancelled = wasCancelled
+        self.logFailure = logFailure
     }
 
     public var trashed: [CleanupItemResult] {

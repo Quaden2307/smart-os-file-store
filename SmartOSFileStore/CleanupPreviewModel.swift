@@ -33,14 +33,26 @@ final class CleanupPreviewModel {
     private let onExecuted: @MainActor (CleanupResult) -> Void
     private var executionTask: Task<Void, Never>?
     private let executor: CleanupExecutor
+    private let activity: ActivityLogModel
     private let logger = Logger(subsystem: "com.quaden2307.SmartOSFileStore", category: "Cleanup")
 
-    /// - Parameter eligibility: The rules the plan was made with; the executor checks them again.
-    init(plan: CleanupPlan, eligibility: CandidateEligibility, onExecuted: @escaping @MainActor (CleanupResult) -> Void) {
+    /// - Parameters:
+    ///   - eligibility: The rules the plan was made with; the executor checks them again.
+    ///   - log: The open activity log. Every change is written to it as it happens; there is no
+    ///     way to carry out a plan without one.
+    ///   - activity: Told when the run has ended, so the totals and the Activity window follow.
+    init(
+        plan: CleanupPlan,
+        eligibility: CandidateEligibility,
+        log: ActivityLog,
+        activity: ActivityLogModel,
+        onExecuted: @escaping @MainActor (CleanupResult) -> Void
+    ) {
         self.plan = plan
         self.isGroupedByDuplicates = plan.isGroupedByDuplicates
         self.isTrashOnly = plan.isTrashOnly
-        self.executor = CleanupExecutor(eligibility: eligibility)
+        self.executor = CleanupExecutor(recorder: log, eligibility: eligibility)
+        self.activity = activity
         self.onExecuted = onExecuted
         self.ticked = Set(plan.changes.map(\.id))
     }
@@ -116,6 +128,7 @@ final class CleanupPreviewModel {
 
         let executor = executor
         let plan = plan
+        let activity = activity
         // Weak throughout: the task must not keep the model alive, and `deinit` cancels the task.
         executionTask = Task { [weak self] in
             let result = await executor.execute(plan: plan, confirmedChangeIDs: confirmed) { progress in
@@ -123,6 +136,8 @@ final class CleanupPreviewModel {
                     self?.report(progress)
                 }
             }
+            // The app's log state hears of every run, even one whose sheet has gone meanwhile.
+            activity.runFinished(result)
             self?.finish(result)
         }
     }

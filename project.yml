@@ -8,6 +8,15 @@ options:
   xcodeVersion: "27.2"
   createIntermediateGroups: true
 
+# The only third-party dependency (CLAUDE.md). Only the engine links it; the app and the tests reach
+# the database through the engine's own types. Pinned by commit, not by tag: the resolved-versions
+# file lives in the generated project, which is not committed, and a tag can be moved. To update,
+# take the commit of the new release's tag (`git ls-remote --tags <url>`) and change both lines.
+packages:
+  GRDB:
+    url: https://github.com/groue/GRDB.swift
+    revision: 92a554cd0d5e8d67cb18993c6054e73fe42c066c   # v7.12.0
+
 # Applies to every target in every configuration.
 settings:
   base:
@@ -61,6 +70,8 @@ targets:
     platform: macOS
     sources:
       - FileStoreCore
+    dependencies:
+      - package: GRDB
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.quaden2307.FileStoreCore

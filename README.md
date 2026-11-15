@@ -17,6 +17,9 @@ Smart OS File Store is a native macOS file browser that will replace Finder, sta
 - **A filter** above the table and in the View menu (All, Never opened, Unused, Old). The status line shows how many items match and their total size.
 - **Download source**: hover over a row to see the site a file was downloaded from and the app that downloaded it. Copy Download Source, in the context menu and the Edit menu, copies the file's address.
 - **Rename and move in the engine**, for Fix messy names and Archive old downloads to use: exclusive, so nothing is ever replaced, through a handle on the folder, so no link is followed. Nothing proposes them yet.
+- **An activity log**: every confirmed cleanup is recorded as it happens, one row per file, in a local database. A row that says a change was started is written before the file changes and completed right after, so if the app crashes or is force-quit, no moved file is missing from the log. If the log cannot be written, the cleanup stops with the file untouched.
+- **The Activity window** (Window > Activity, ⇧⌘A): every cleanup, newest first. Open one to see each file with what was to be done, why, what happened and when. Reveal in Finder works for a file that is still where the log says it went.
+- **Moved to the Trash**: the summary says how much a cleanup moved to the Trash, and the status line shows the total so far. The space is free once you empty the Trash.
 
 The two thresholds live in the app's defaults. There is no settings window yet; to change them for good, or for one launch:
 
@@ -30,7 +33,7 @@ open build/Build/Products/Debug/SmartOSFileStore.app --args -CleanupUnusedAfterD
 
 - Only the top level of Downloads. No other folders and no subfolders.
 - Only exact duplicates. No other cleanup actions.
-- No undo beyond the Trash's Put Back, and no activity log.
+- No undo beyond the Trash's Put Back. The activity log records what an undo will need, but nothing undoes yet.
 - No watching of the folder: the list refreshes on launch, with ⌘R, and after Move to Trash.
 - No Stop button while files move; each move is quick, and closing the window stops between files.
 - Columns sort by clicking their headers only.
@@ -48,16 +51,28 @@ open build/Build/Products/Debug/SmartOSFileStore.app --args -CleanupUnusedAfterD
 | Preview | ↑ ↓ | Move between rows |
 | Preview | Space | Tick or untick the selected duplicate |
 | Preview | ⌘Y, double-click | Quick Look the selected row |
-| Preview | ⌘A, ⇧⌘A | Select all, select none |
+| Preview | ⌘A, ⌥⌘A | Select all, select none |
 | Preview | Return | Move to Trash (opens the confirmation) |
 | Preview | Esc | Close the preview |
 | Confirmation | Return, Esc | Cancel |
 | Confirmation | ⌘⌫ | Move to Trash |
 | Summary | Return, Esc | Done |
+| Anywhere | ⇧⌘A | Open the Activity window, or bring it forward |
+| Activity | ↑ ↓ | Move between cleanups and their files |
+| Activity | → ← | Open or close the selected cleanup |
+| Activity | ⌥⌘R | Reveal the selected files in Finder |
+
+## The activity log
+
+The log is one SQLite file, `~/Library/Application Support/com.quaden2307.SmartOSFileStore/FileStore.sqlite`, made the first time the app runs and readable by your user account only. It holds records about files (paths, sizes, dates, content hashes, what was done and why), never a file's content or a copy of one, and nothing in it leaves the Mac. Cleanups older than 90 days are removed at launch, at most once a day; the totals stay.
+
+If the file is damaged or cannot be opened, the main window says so and nothing can be cleaned up until it works: nothing is changed that cannot be recorded. Try Again opens it again. Start a Fresh Log keeps the existing file beside the new one as `FileStore.damaged-<date>-<time>.sqlite` and starts the total again from zero. It is not offered when a write failed (a full disk, or another copy of the app holding the file), since the file is most likely fine.
+
+The database library is [GRDB](https://github.com/groue/GRDB.swift) 7.12.0, the app's only dependency, used by the engine alone and pinned in `project.yml` to the commit of that release.
 
 ## Build, test and run
 
-Requirements: Xcode 27 or newer and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).
+Requirements: Xcode 27 or newer and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`). The first build downloads GRDB, so it needs a network connection.
 
 ```bash
 # Generate SmartOSFileStore.xcodeproj from project.yml (rerun after adding or moving files)
@@ -66,7 +81,7 @@ xcodegen generate
 # Build
 xcodebuild -scheme SmartOSFileStore -destination 'platform=macOS' -derivedDataPath build build
 
-# Run the unit tests (about 170 tests; the scale suite adds a few seconds)
+# Run the unit tests (about 250 tests; the scale suite adds a few seconds)
 xcodebuild -scheme SmartOSFileStore -destination 'platform=macOS' -derivedDataPath build test
 
 # Launch the app
@@ -106,6 +121,8 @@ Cleanup actions leave anything added or modified in the last hour alone. The scr
 ```bash
 open build/Build/Products/Debug/SmartOSFileStore.app --args -ScanFolder /path/to/FakeDownloads -GracePeriodSeconds 0
 ```
+
+While the scan folder is overridden, the activity log is a separate database under the temporary directory, one per fake folder, so hand testing never opens or writes the real log. The status line of a debug build shows its path. To see how the app handles a damaged log, quit the app, overwrite that file (`head -c 8192 /dev/urandom > "<path>"`) and launch again.
 
 Debug builds also have a **Debug** menu. Show Sample Messy Names Plan and Show Sample Old Downloads Plan open the cleanup preview with made-up files, so the preview of renames and moves can be looked at before any action proposes them. The files do not exist, and renames and moves cannot be applied from the preview yet.
 

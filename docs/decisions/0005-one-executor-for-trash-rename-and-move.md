@@ -1,5 +1,7 @@
 # 0005. One executor for the Trash, rename and move
 
+Where the activity log records a change is now decided by [0006](0006-activity-log-schema-and-crash-safety.md): before the last look, not at `beforeChange`.
+
 Date: 2026-11-14 · Segment: version 0.2, segment 3 (rename and move in the engine)
 
 ## Decision

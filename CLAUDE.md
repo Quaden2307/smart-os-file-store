@@ -17,7 +17,7 @@ A native macOS file browser that will replace Finder, starting with a self-clean
 - Deployment target macOS 26.0, Apple silicon. Bundle id `com.quaden2307.SmartOSFileStore`.
 - No App Sandbox (direct download, not the Mac App Store). Hardened Runtime on, so the app can be notarized later.
 - CryptoKit for hashing, Quick Look for previews, UniformTypeIdentifiers for file types.
-- No third-party dependencies without the owner's approval. GRDB (SQLite) is approved and is the only one; it is added in the database segment, not before.
+- No third-party dependencies without the owner's approval. GRDB (SQLite) is approved and is the only one. It is pinned to the commit of one release in `project.yml` and linked to `FileStoreCore` only; only the activity log's files (`ActivityLog*.swift`) import it, as `internal import GRDB`.
 - Interface uses system colours, fonts and controls only, with light and dark mode. No custom theme yet.
 
 ## Architecture

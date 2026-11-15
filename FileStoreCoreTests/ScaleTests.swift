@@ -179,4 +179,44 @@ struct ScaleTests {
         #expect(latency < .seconds(2), "the hash took \(Measured.milliseconds(latency)) ms to stop after cancel")
         Self.report("hash of a \(Measured.mebibytes(UInt64(Self.bigSize))) file stopped \(Measured.milliseconds(latency).formatted(.number.precision(.fractionLength(2)))) ms after cancel, after \(chunks.withLock { $0 }) chunks")
     }
+
+    /// The activity log stays small: ten thousand changes, written the way the executor writes them
+    /// (a started row, then its result, each handed to the disk), take well under 10 MB. Paths are
+    /// as long as real downloads' are, and every row carries a content hash, as a duplicate's does.
+    @Test func tenThousandLoggedChangesStayUnderTenMegabytes() async throws {
+        try await withLogSandbox { sandbox in
+            let location = try sandbox.realLocation()
+            let databaseURL = try #require(location.databaseURL)
+            let log = try await ActivityLog.open(location)
+            let count = 10_000
+            let limit: Int64 = 10 * 1_000_000
+            let largestWhileWriting = Mutex<Int64>(0)
+            let clock = ContinuousClock()
+            let start = clock.now
+
+            let runID = try LogSamples.writeRun(
+                to: log,
+                startedAt: .now,
+                count: count,
+                size: 2_500_000,
+                namePrefix: "Quarterly report – final version for review"
+            ) { written in
+                // The write-ahead file grows between checkpoints, so the size is watched on the way.
+                if written.isMultiple(of: 250) {
+                    let size = FileFacts.databaseSize(at: databaseURL)
+                    largestWhileWriting.withLock { $0 = max($0, size) }
+                }
+            }
+
+            let elapsed = clock.now - start
+            let size = FileFacts.databaseSize(at: databaseURL)
+            let largest = max(size, largestWhileWriting.withLock { $0 })
+            #expect(try await log.changes(inRun: runID).count == count)
+            #expect(try await log.totals() == ActivityTotals(bytesMovedToTrash: 2_500_000 * Int64(count), filesCleaned: count))
+            #expect(size < limit, "\(size) bytes for \(count) changes")
+            #expect(largest < limit, "\(largest) bytes at the largest, write-ahead file included")
+            let megabytes = { (bytes: Int64) in (Double(bytes) / 1_000_000).formatted(.number.precision(.fractionLength(2))) }
+            Self.report("activity log with \(count) changes: \(megabytes(size)) MB on disk (\(size / Int64(count)) bytes per change), \(megabytes(largest)) MB at the largest while writing, written in \(Measured.milliseconds(elapsed).formatted(.number.precision(.fractionLength(0)))) ms")
+        }
+    }
 }

@@ -18,7 +18,7 @@ struct CleanupSummaryView: View {
                     Text("^[\(result.trashedCount) file](inflect: true) moved to the Trash")
                         .font(.title2.weight(.semibold))
                         .accessibilityAddTraits(.isHeader)
-                    Text("\(result.bytesFreed.formattedFileSize) freed. You can put them back from the Trash.")
+                    Text("\(result.bytesFreed.formattedFileSize) moved to the Trash. The space is free once you empty the Trash; until then you can put the files back.")
                         .foregroundStyle(.secondary)
                 } else {
                     Text("No Files Were Moved")
@@ -32,6 +32,12 @@ struct CleanupSummaryView: View {
             .padding(24)
             .frame(maxWidth: .infinity)
             .accessibilityElement(children: .combine)
+
+            if let logFailure = result.logFailure {
+                LogFailureNotice(failure: logFailure, result: result)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 16)
+            }
 
             if result.leftAlone.isEmpty {
                 Spacer(minLength: 0)
@@ -65,5 +71,56 @@ private struct NotMovedRow: View {
                 .multilineTextAlignment(.trailing)
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// Says that the activity log stopped working during the run, and what that meant for the files:
+/// nothing changed when the run could not be opened in the log; otherwise which file, if any, was
+/// changed without its row being completed, and that the files after it were not touched.
+private struct LogFailureNotice: View {
+    let failure: CleanupLogFailure
+    let result: CleanupResult
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                if untouchedCount == result.items.count {
+                    Text("The activity log couldn’t be written, so nothing was changed.")
+                        .fontWeight(.semibold)
+                } else if untouchedCount == 0 {
+                    Text("Every file was recorded, but the activity log couldn’t mark the cleanup as finished.")
+                        .fontWeight(.semibold)
+                    Text("It is listed as interrupted in the Activity window.")
+                } else {
+                    Text("The activity log stopped working, so the cleanup stopped.")
+                        .fontWeight(.semibold)
+                    if let unrecorded {
+                        Text("\(unrecorded.change.record.displayName) was the last file reached, and the log could not record how it ended: \(unrecorded.outcome.localizedDescription)")
+                    }
+                    // No count here, so no verb has to agree with one; the list below names the files.
+                    Text("Nothing after it was touched.")
+                }
+                Text("See the message at the bottom of the main window.")
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .font(.callout)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// Files left alone because the log had stopped.
+    private var untouchedCount: Int {
+        result.items.count { $0.outcome == .skipped(.activityLogUnavailable) }
+    }
+
+    /// The item whose row could not be completed, when there is one.
+    private var unrecorded: CleanupItemResult? {
+        guard let id = failure.unrecordedChangeID else { return nil }
+        return result.items.first { $0.id == id }
     }
 }

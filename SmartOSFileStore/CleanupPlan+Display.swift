@@ -155,6 +155,8 @@ extension CleanupSkipReason {
             String(localized: "Something other than a folder is where the destination folder should be, so it was left alone.")
         case .destinationHidden:
             String(localized: "The destination folder is hidden, so the file was left where it is.")
+        case .activityLogUnavailable:
+            String(localized: "Left alone because the activity log stopped working.")
         }
     }
 }

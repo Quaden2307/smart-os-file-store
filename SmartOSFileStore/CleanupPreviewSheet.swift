@@ -23,8 +23,16 @@ struct CleanupPreviewSheet: View {
     /// list's rows (nothing visible) instead of ticking every duplicate.
     @State private var selectAllMonitor: SelectAllKeyMonitor?
 
-    init(plan: CleanupPlan, eligibility: CandidateEligibility, onExecuted: @escaping @MainActor (CleanupResult) -> Void) {
-        _model = State(initialValue: CleanupPreviewModel(plan: plan, eligibility: eligibility, onExecuted: onExecuted))
+    init(
+        plan: CleanupPlan,
+        eligibility: CandidateEligibility,
+        log: ActivityLog,
+        activity: ActivityLogModel,
+        onExecuted: @escaping @MainActor (CleanupResult) -> Void
+    ) {
+        _model = State(
+            initialValue: CleanupPreviewModel(plan: plan, eligibility: eligibility, log: log, activity: activity, onExecuted: onExecuted)
+        )
     }
 
     private var plan: CleanupPlan { model.plan }
@@ -277,8 +285,9 @@ struct CleanupPreviewSheet: View {
         Button("Select None") {
             model.selectNone()
         }
-        .keyboardShortcut("a", modifiers: [.command, .shift])
-        .help(model.isGroupedByDuplicates ? Text("Untick every duplicate (⇧⌘A)") : Text("Untick every change (⇧⌘A)"))
+        // Finder's shortcut for Deselect All. Shift-Command-A opens the Activity window.
+        .keyboardShortcut("a", modifiers: [.command, .option])
+        .help(model.isGroupedByDuplicates ? Text("Untick every duplicate (⌥⌘A)") : Text("Untick every change (⌥⌘A)"))
     }
 
     @ViewBuilder

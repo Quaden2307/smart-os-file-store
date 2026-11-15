@@ -9,6 +9,8 @@ All notable changes to Smart OS File Store are recorded here. The format follows
 - The main window is wider by default, to fit the sixth column.
 - The grace period is now one hour and counts both dates: a file added to the folder or modified in the last hour is never proposed, where version 0.1 skipped only files modified in the last ten seconds. A copy or a file moved in from elsewhere therefore waits an hour too. The rule is checked again right before each file moves, on its Date Added as read at that moment.
 - An item named Old downloads at the top of the folder, in any letter case, is never proposed: it is the archive a later version files old downloads into.
+- Select None in the preview is now ⌥⌘A, as Deselect All is in Finder. ⇧⌘A opens the Activity window.
+- The summary says how much was moved to the Trash, where it said "freed": the space is free once the Trash is emptied.
 
 ### Added
 
@@ -24,13 +26,21 @@ All notable changes to Smart OS File Store are recorded here. The format follows
 - The engine can rename a file in the scanned folder and move one into a folder inside it, making the folder if needed. Nothing proposes renames or moves yet. Each action may use only its own operation: Find Duplicates only moves to the Trash, Fix messy names (coming) only renames, Archive old downloads (coming) only moves. Every result names where the file went, and any folder made for it, so a later undo can reverse it.
 - The preview can show a plan without groups, one change per row with its checkbox, reason, and old name → new name or folder. Renames and moves are previewed only; they cannot be applied yet.
 - Debug builds have a Debug menu with two made-up plans, Show Sample Messy Names Plan and Show Sample Old Downloads Plan, to look at that preview.
+- An activity log: every confirmed cleanup is recorded in a local database, `~/Library/Application Support/com.quaden2307.SmartOSFileStore/FileStore.sqlite`, one row per file with the operation, where the file was and where it went, its size, modification date and content hash, the reason, the outcome and the time. The file is readable by its owner only, holds no file content, and never leaves the Mac. Cleanups older than 90 days are removed at launch, at most once a day.
+- An Activity window (Window > Activity, ⇧⌘A): cleanups newest first, each opening to its files, with Reveal in Finder for a file that is still where the log says it went.
+- The status line shows everything moved to the Trash so far, a total that pruning never lowers.
+- GRDB 7.12.0 (SQLite), the app's first and only dependency, linked to the engine alone and pinned to the commit of that release.
+- While a debug override chooses the scan folder, the log is a separate database under the temporary directory, so hand testing never touches the real one.
 
 ### Safety
 
 - A rename or a move never replaces anything: it is one exclusive step, so if anything already has the name, including in another letter case or Unicode form on a default APFS volume, nothing changes and the file is reported as left alone. No other app can slip an item in between a check and the rename.
 - Renames and moves look up every name through a handle on the scanned folder, never through a path, follow no symbolic link, and stay on the folder's disk. A move's destination must lie inside the folder, and a link or a hidden folder on the way is refused, wherever it points.
 - A new name must be one valid name that fits the disk. It may not be hidden, the archive's name or that of a download still in progress. Only regular files are renamed or moved, and each is checked again right before it changes, with the same rules as the Trash.
-- Every call that changes the disk now lives in one file, and a source-scanning test holds it to exactly three: the Trash, the exclusive rename and making a folder.
+- Every call that changes the disk now lives in one file, and a source-scanning test holds it to exactly four: the Trash, the exclusive rename, making a folder, and making the activity log's own empty database file, which is exclusive too and can never empty or replace a file.
+- A file is never changed before the log says so. A row that says the change was started, with any folders a move is about to make, is written and synced first and completed right after, so if the app crashes or is force-quit at most one file's outcome is unknown, and the log shows it as interrupted. The compiler enforces the order: the calls that change a user's file need a permit only that row provides.
+- If the log cannot be written, the cleanup stops: the file being looked at is left untouched, the files after it are not touched, nothing is tried twice, and the summary says which file, if any, was changed without its row being completed.
+- Without a working log nothing can be cleaned up. A damaged or unreadable database is found when the app opens it, and the app offers to start a fresh log; the old file is renamed aside, never removed, and its folders are never reached through a link.
 
 ## [0.1.0] - 2026-11-13
 

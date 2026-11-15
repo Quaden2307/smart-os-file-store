@@ -16,6 +16,7 @@ extension CleanupExecutor {
         folderIdentity: FileIdentity,
         now: Date,
         verifiedKept: inout [URL: VerifiedFile],
+        journal: inout RunJournal,
         beforeChange: (@Sendable (ProposedChange) -> Void)?
     ) async -> CleanupItemOutcome {
         // Membership: the plan's own data must propose exactly this change. The plan's URL values
@@ -114,6 +115,13 @@ extension CleanupExecutor {
             verifiedKept[keptURL] = expectedKept
         }
 
+        // The activity log first: a row that says this change was started, with the content just
+        // confirmed. It is written before the last look, so the write does not sit in the gap
+        // between that look and the move. Without the row there is no permit, and no move.
+        guard let permit = journal.intend(change, contentHash: group.contentHash) else {
+            return .skipped(.activityLogUnavailable)
+        }
+
         // Last look, after the reads and right before the move.
         if let refused = Self.lastLookRefusal(try? FileStatus.of(path: itemURL.path(percentEncoded: false)), checked: status) {
             return refused
@@ -122,7 +130,7 @@ extension CleanupExecutor {
             return .skipped(.cancelled)
         }
         beforeChange?(change)
-        return DiskChange.trash(itemURL)
+        return DiskChange.trash(itemURL, permit: permit)
     }
 }
 

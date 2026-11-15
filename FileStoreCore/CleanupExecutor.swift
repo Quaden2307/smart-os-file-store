@@ -10,6 +10,10 @@ import os
 /// (`CleanupExecutor+Duplicates`), the relocation checks for renames and moves
 /// (`CleanupExecutor+Relocation`). Items succeed, are skipped or fail one by one; the executor
 /// never throws.
+///
+/// Every run is written to the activity log as it happens, and there is no executor without one:
+/// a row that says a change was started goes in before the change, and is completed right after
+/// it. If the log cannot be written the run stops there, with the file untouched.
 public struct CleanupExecutor: Sendable {
     /// Allowed difference between the scan's modification date and the one read back now. Two
     /// conversions of the same timestamp can differ by floating-point noise; a real change is
@@ -21,12 +25,17 @@ public struct CleanupExecutor: Sendable {
     /// The rules every action shares. The grace period is checked again on dates read from disk.
     public let eligibility: CandidateEligibility
 
+    /// Where every run is written down: the activity log.
+    public let recorder: any CleanupRecording
+
     static let logger = Logger(subsystem: "com.quaden2307.FileStoreCore", category: "CleanupExecutor")
 
     public init(
+        recorder: any CleanupRecording,
         hasher: ContentHasher = ContentHasher(),
         eligibility: CandidateEligibility = CandidateEligibility()
     ) {
+        self.recorder = recorder
         self.hasher = hasher
         self.eligibility = eligibility
     }
@@ -41,10 +50,11 @@ public struct CleanupExecutor: Sendable {
     ///   - beforeChange: Called on the executing thread once an item has passed its checks,
     ///     immediately before its first change on disk: the change itself, or making a folder for a
     ///     move. It runs inside the gap those checks leave, so it must be quick. The activity log
-    ///     will record each change here before it happens; tests use it to change the folder at
-    ///     that very moment.
+    ///     has recorded the change as started by then. Tests use it to change the folder at that
+    ///     very moment.
     /// - Returns: One result per confirmed change. If the task is cancelled, the items not yet
-    ///   reached are reported as skipped and `wasCancelled` is set.
+    ///   reached are reported as skipped and `wasCancelled` is set. If the activity log fails, the
+    ///   items after the failure are reported as skipped and `logFailure` is set.
     @concurrent
     public func execute(
         plan: CleanupPlan,
@@ -73,25 +83,39 @@ public struct CleanupExecutor: Sendable {
         var bytesFreed: Int64 = 0
         var wasCancelled = false
         var verifiedKept: [URL: VerifiedFile] = [:]
+        // The run is opened in the activity log before anything is looked at. If that fails, the
+        // journal is stopped from the start and every item below is left alone.
+        var journal = RunJournal(recorder: recorder)
+        journal.begin(action: plan.action, folderURL: plan.folderURL, confirmedCount: confirmed.count)
+        var notReached: [CleanupRunFinish.NotReached] = []
         onProgress?(CleanupExecutionProgress(itemsCompleted: 0, itemsTotal: confirmed.count, bytesFreed: 0))
 
-        for change in confirmed {
+        for (sequence, change) in confirmed.enumerated() {
             let item: CleanupItemResult
-            if wasCancelled || Task.isCancelled {
+            if journal.isStopped {
+                // The log failed. Nothing more is changed, and nothing more is written.
+                item = CleanupItemResult(change: change, outcome: .skipped(.activityLogUnavailable))
+            } else if wasCancelled || Task.isCancelled {
                 wasCancelled = true
                 item = CleanupItemResult(change: change, outcome: .skipped(.cancelled))
+                // Never attempted, so not written one by one: the run's last write records them all.
+                notReached.append(CleanupRunFinish.NotReached(sequence: sequence, change: change))
             } else {
+                journal.startItem(sequence: sequence)
                 item = await process(
                     change,
                     context: context,
                     folder: folder,
                     now: now,
                     verifiedKept: &verifiedKept,
+                    journal: &journal,
                     beforeChange: beforeChange
                 )
                 if item.outcome == .skipped(.cancelled) {
                     wasCancelled = true
                 }
+                // The item's row, right after the attempt and before anything else is looked at.
+                journal.complete(item)
             }
             if item.isTrashed {
                 bytesFreed += change.sizeInBytes
@@ -103,7 +127,19 @@ public struct CleanupExecutor: Sendable {
             )
         }
 
-        let result = CleanupResult(action: plan.action, folderURL: plan.folderURL, items: items, wasCancelled: wasCancelled)
+        journal.finish(wasCancelled: wasCancelled, notReached: notReached)
+        let result = CleanupResult(
+            action: plan.action,
+            folderURL: plan.folderURL,
+            items: items,
+            wasCancelled: wasCancelled,
+            logFailure: journal.failure
+        )
+        if let failure = journal.failure {
+            Self.logger.error(
+                "The activity log failed (\(String(describing: failure.error), privacy: .public)); the run stopped. Change left unrecorded: \(failure.unrecordedChangeID != nil)"
+            )
+        }
         Self.logger.info(
             "Trashed \(result.trashedCount), renamed \(result.renamed.count), moved \(result.moved.count) of \(confirmed.count) confirmed items (\(result.bytesFreed) bytes freed), \(result.skipped.count) skipped, \(result.failed.count) failed, cancelled: \(wasCancelled), in \((clock.now - start).milliseconds, format: .fixed(precision: 1)) ms"
         )
@@ -119,6 +155,7 @@ public struct CleanupExecutor: Sendable {
         folder: DirectoryHandle?,
         now: Date,
         verifiedKept: inout [URL: VerifiedFile],
+        journal: inout RunJournal,
         beforeChange: (@Sendable (ProposedChange) -> Void)?
     ) async -> CleanupItemResult {
         // The folder itself is checked again for every item: it can be renamed, removed or replaced
@@ -146,6 +183,7 @@ public struct CleanupExecutor: Sendable {
                     folderIdentity: folderIdentity,
                     now: now,
                     verifiedKept: &verifiedKept,
+                    journal: &journal,
                     beforeChange: beforeChange
                 )
                 return CleanupItemResult(change: change, outcome: outcome)
@@ -163,6 +201,7 @@ public struct CleanupExecutor: Sendable {
                 context: context,
                 folderIdentity: folderIdentity,
                 now: now,
+                journal: &journal,
                 beforeChange: beforeChange
             )
         case .move(to: let destination, name: let name):
@@ -179,6 +218,7 @@ public struct CleanupExecutor: Sendable {
                 context: context,
                 folderIdentity: folderIdentity,
                 now: now,
+                journal: &journal,
                 beforeChange: beforeChange
             )
         }
@@ -422,6 +462,8 @@ extension CleanupSkipReason {
             "destination is not a folder"
         case .destinationHidden:
             "destination folder is hidden"
+        case .activityLogUnavailable:
+            "activity log unavailable"
         }
     }
 }

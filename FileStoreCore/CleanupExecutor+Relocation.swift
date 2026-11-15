@@ -27,6 +27,7 @@ extension CleanupExecutor {
         context: PlanContext,
         folderIdentity: FileIdentity,
         now: Date,
+        journal: inout RunJournal,
         beforeChange: (@Sendable (ProposedChange) -> Void)?
     ) -> CleanupItemResult {
         func result(_ outcome: CleanupItemOutcome, createdFolders: [URL] = []) -> CleanupItemResult {
@@ -102,6 +103,20 @@ extension CleanupExecutor {
             }
         }
 
+        // The activity log first: a row that says this change was started, with the folders it is
+        // about to make, written before the last look so the write does not sit in the gap between
+        // that look and the change. Without the row there is no permit: no folder is made and
+        // nothing is renamed.
+        var foldersToMake: [URL] = []
+        var folderToMake = destinationURL
+        for folderName in missing {
+            folderToMake.append(path: folderName, directoryHint: .isDirectory)
+            foldersToMake.append(folderToMake)
+        }
+        guard let permit = journal.intend(change, contentHash: nil, foldersToMake: foldersToMake) else {
+            return result(.skipped(.activityLogUnavailable))
+        }
+
         // Last look before anything changes: the very file checked above, unchanged.
         if let refused = Self.lastLookRefusal(try? folder.status(of: name), checked: status) {
             return result(refused)
@@ -115,7 +130,7 @@ extension CleanupExecutor {
         // app made meanwhile is opened and checked like any other, and is not reported as made here.
         var createdFolders: [URL] = []
         for folderName in missing {
-            let failure = DiskChange.makeFolder(named: folderName, in: destination)
+            let failure = DiskChange.makeFolder(named: folderName, in: destination, permit: permit)
             if let failure, failure != EEXIST {
                 // ENOENT: the folder it was to be made in went away after it was opened.
                 let outcome = failure == ENOENT ? .skipped(.changedSinceScan) : Self.outcome(changeFailure: failure, name: folderName)
@@ -140,7 +155,7 @@ extension CleanupExecutor {
         if let refused = Self.lastLookRefusal(try? folder.status(of: name), checked: status) {
             return result(refused, createdFolders: createdFolders)
         }
-        if let failure = DiskChange.renameWithoutReplacing(name, in: folder, to: relocation.name, in: destination) {
+        if let failure = DiskChange.renameWithoutReplacing(name, in: folder, to: relocation.name, in: destination, permit: permit) {
             // ENOENT is "not found" only when the file is gone; otherwise the destination folder
             // went away after it was opened.
             if failure == ENOENT, (try? folder.status(of: name)) != nil {

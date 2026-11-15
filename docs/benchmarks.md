@@ -26,3 +26,13 @@ The benchmark is not part of the normal test run; README.md has the command. It 
 A commit cannot record its own hash, so a row made before its commit names the commit it was built on. The first row's files carried no attributes and its scan read none, so its scan is listed as a scan without metadata.
 
 Reading the three attributes adds about 0.6 s per 10,000 items, about 60 µs per item. The scan runs off the main actor, so the window stays responsive while it does. After a scan of 10,000 files, the main actor does about 25 ms of work: the keyed sort plus filtering. Peak memory grew by about 30 MiB from the first row. The likely reasons are that records now hold their download sources, and that each run now keeps two scans and two sorted copies alive at once.
+
+## Activity log size
+
+`FileStoreCoreTests/ScaleTests.swift` (`tenThousandLoggedChangesStayUnderTenMegabytes`) writes 10,000 changes to a log in a temporary folder the way the executor writes them: a started row, then its result, each in its own transaction handed to the disk (write-ahead mode, `synchronous = FULL`). Every change is a move to the Trash with paths as long as real downloads have and a 32-byte content hash. The test fails if the database, its write-ahead file included, reaches 10 MB at any point; it runs with the normal tests and reports its figures in a `SCALE` line.
+
+| Date | Mac | macOS | Build | Commit | Changes | On disk | Per change | Largest while writing | Time to write |
+|---|---|---|---|---|---|---|---|---|---|
+| 2026-11-14 | MacBook Pro 13-inch, M1, 2020 (MacBookPro17,1), 8 GB | 27.2.1 (26B131) | Debug | `cf2b349` + this segment (committed as *Add database and activity log*) | 10,000 | 2.91 MB | 290 bytes | 6.56 MB | 2.9 s |
+
+"On disk" is the database after the run's last write, which empties the write-ahead file. "Largest while writing" includes that file, which grows to about 4 MB between checkpoints. Writing takes about 0.15 ms per logged row, two rows per change. Runs older than 90 days are pruned, so the log holds at most 90 days of cleanups.

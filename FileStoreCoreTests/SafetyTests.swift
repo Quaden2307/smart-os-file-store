@@ -3,7 +3,8 @@ import Foundation
 import Testing
 
 /// Properties the whole app rests on, kept as tests so a later change cannot quietly break them:
-/// production code has exactly one way to remove a file and it is the Trash; scanning and planning
+/// production code has exactly one way to remove a file and it is the Trash; every call that changes
+/// the disk sits in one file; only the activity log uses the database library; scanning and planning
 /// write nothing; and the folders the tests use live under the temporary directory.
 @Suite("Safety")
 struct SafetyTests {
@@ -48,20 +49,34 @@ struct SafetyTests {
         #"\bcreateFile\s*\("#, #"\bcreateDirectory\s*\("#, #"\bcreateSymbolicLink\s*\("#, #"\bmkdir\s*\("#,
         #"\bwrite\s*\(\s*to"#, #"\bsetAttributes\s*\("#,
         #"\bFileHandle\s*\(\s*forWritingTo"#, #"\bFileHandle\s*\(\s*forUpdating"#,
-        #"\bO_WRONLY\b"#, #"\bO_RDWR\b"#, #"\bO_TRUNC\b"#, #"\bO_CREAT\b"#,
+        #"\bO_WRONLY\b"#, #"\bO_RDWR\b"#, #"\bO_TRUNC\b"#,
         #"\bf?setxattr\s*\("#, #"\bf?removexattr\s*\("#, #"\bf?setattrlist(at)?\s*\("#,
+        #"\bf?chmod(at)?\s*\("#, #"\bf?chflags\s*\("#,
     ]
 
     /// The engine's only calls that change the disk, with how often each may appear. All of them
-    /// live in `DiskChange.swift` and nowhere else, in the engine or the app.
+    /// live in `DiskChange.swift` and nowhere else, in the engine or the app. `O_CREAT` is the one
+    /// file the app ever makes: the activity log's empty database, before SQLite opens it.
     private static let diskChangingCalls = [
         (pattern: #"\btrashItem\s*\("#, count: 1),
         (pattern: #"\brenameatx_np\s*\("#, count: 1),
         (pattern: #"\bmkdirat\s*\("#, count: 1),
+        (pattern: #"\bO_CREAT\b"#, count: 1),
     ]
 
     /// A whole `renameatx_np` call, its arguments included (one level of nested parentheses).
     private static let renameCall = #"\brenameatx_np\s*\((?:[^()]|\([^()]*\))*\)"#
+
+    /// A whole `openat` call, its arguments included.
+    private static let openatCall = #"\bopenat\s*\((?:[^()]|\([^()]*\))*\)"#
+
+    /// The files that may ask `DiskChange` for a change: the executor's two halves, for a user's
+    /// files, and the activity log's storage, for its own folder and database.
+    private static let diskChangeCallers = [
+        "FileStoreCore/ActivityLogStorage.swift",
+        "FileStoreCore/CleanupExecutor+Duplicates.swift",
+        "FileStoreCore/CleanupExecutor+Relocation.swift",
+    ]
 
     /// Constructs that crash or bypass the type checker. Forbidden anywhere near user files.
     private static let forcedPathPatterns = [
@@ -147,6 +162,21 @@ struct SafetyTests {
         for call in renameCalls {
             #expect(call.output[0].substring?.contains("RENAME_EXCL") == true, "\(call.output[0].substring ?? "")")
         }
+        // The one file ever made is made exclusively, for its owner only, and through no link: the
+        // call can neither empty nor replace a file that is already there.
+        let creatingCalls = diskChange.code.matches(of: try Self.regex(Self.openatCall))
+            .compactMap { $0.output[0].substring }
+            .filter { $0.contains("O_CREAT") }
+        #expect(creatingCalls.count == 1)
+        for call in creatingCalls {
+            #expect(call.contains("O_EXCL"), "\(call)")
+            #expect(call.contains("O_NOFOLLOW"), "\(call)")
+            #expect(call.contains("0o600"), "\(call)")
+        }
+        // Only the executor and the log's storage ask for a change at all.
+        let diskChangeUse = try Self.regex(#"\bDiskChange\s*\."#)
+        let users = (engine + app).filter { $0.contains(diskChangeUse) }.map(\.label)
+        #expect(users == Self.diskChangeCallers)
         let trashCall = try Self.regex(#"\btrashItem\s*\("#)
 
         // The app never touches the Trash itself; it hands a confirmed plan to the engine.
@@ -165,6 +195,31 @@ struct SafetyTests {
                 let regex = try Self.regex(pattern)
                 #expect(!source.contains(regex), "\(source.label) matches \(pattern)")
             }
+        }
+    }
+
+    /// The database library is the engine's alone, and within the engine the activity log's alone.
+    /// It is imported as it is: a `@preconcurrency` import would hide what strict concurrency checks.
+    @Test func onlyTheActivityLogUsesTheDatabaseLibrary() throws {
+        let engine = try Self.sources(of: "FileStoreCore")
+        let app = try Self.sources(of: "SmartOSFileStore")
+        let databaseImport = try Self.regex(#"\bimport\s+GRDB\b"#)
+        let unqualifiedImport = try Self.regex(#"^\s*import\s+GRDB\b"#).anchorsMatchLineEndings()
+        let preconcurrencyImport = try Self.regex(#"@preconcurrency\s+import\b"#)
+
+        let importers = engine.filter { $0.contains(databaseImport) }
+        #expect(!importers.isEmpty)
+        for source in importers {
+            #expect(source.name.hasPrefix("ActivityLog"), "\(source.label) imports GRDB")
+            // `internal import`: the compiler then refuses any public declaration that names a
+            // GRDB type, so the app and the tests can never come to depend on the library.
+            #expect(!source.contains(unqualifiedImport), "\(source.label) must import GRDB as `internal import GRDB`")
+        }
+        for source in app {
+            #expect(!source.contains(databaseImport), "\(source.label) must reach the database through the engine")
+        }
+        for source in engine + app {
+            #expect(!source.contains(preconcurrencyImport), "\(source.label) uses a @preconcurrency import")
         }
     }
 

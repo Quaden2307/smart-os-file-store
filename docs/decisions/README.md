@@ -34,3 +34,4 @@ One short record per segment for each decision a reader of the code would otherw
 - [0003. Age marks and the download source](0003-marks-and-download-source.md)
 - [0004. Sorting the file list by keys read once](0004-sorting-by-keys.md)
 - [0005. One executor for the Trash, rename and move](0005-one-executor-for-trash-rename-and-move.md)
+- [0006. The activity log: schema and crash safety](0006-activity-log-schema-and-crash-safety.md)

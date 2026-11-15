@@ -15,6 +15,7 @@ struct SmartOSFileStoreApp: App {
         .commands {
             UndoCommands()
             RevealInFinderCommands()
+            KeepCommands()
             CopyDownloadSourceCommands()
             FilterCommands()
             // View > Show/Hide Sidebar, so the toolbar's sidebar button has a menu item and a shortcut.

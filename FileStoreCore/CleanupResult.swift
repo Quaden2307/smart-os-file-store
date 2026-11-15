@@ -104,8 +104,8 @@ public struct CleanupResult: Sendable, Hashable {
     /// reported as skipped; changes already made stand, since each one can be undone.
     public let wasCancelled: Bool
 
-    /// Set when the activity log could not be written. The run stopped there: the items after it
-    /// are reported as skipped and were not touched.
+    /// Set when the activity log could not be written, or its Kept list read. The run stopped
+    /// there: the items after it are reported as skipped and were not touched.
     public let logFailure: CleanupLogFailure?
 
     /// The run's row in the activity log, so the run can be undone from its summary. Nil when the

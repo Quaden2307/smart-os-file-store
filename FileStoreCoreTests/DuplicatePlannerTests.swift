@@ -40,7 +40,7 @@ struct DuplicatePlannerTests {
     }
 
     private func makePlan(_ records: [FileRecord], hashes: [FileRecord.ID: ContentHash]) -> CleanupPlan {
-        DuplicatePlanner.makePlan(folderURL: Self.folder, records: records, hashes: hashes)
+        DuplicatePlanner.makePlan(folderURL: Self.folder, records: records, hashes: hashes, keptItems: KeptItems())
     }
 
     private func permutations<T>(of items: [T]) -> [[T]] {

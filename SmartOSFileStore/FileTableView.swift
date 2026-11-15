@@ -3,9 +3,9 @@ import QuickLook
 import SwiftUI
 
 /// The sortable file table, showing the rows the filter lets through. Space, Command-Y or a double
-/// click opens Quick Look; the context menu and the File menu reveal the selection in Finder, and
-/// the context menu copies where a file was downloaded from. Hovering anywhere on a row shows the
-/// site and app it came from.
+/// click opens Quick Look; the context menu and the File menu reveal the selection in Finder and
+/// keep it (Keep This File, Command-K), and the context menu copies where a file was downloaded
+/// from. Hovering anywhere on a row shows the site and app it came from.
 struct FileTableView: View {
     @Bindable var model: FileListModel
     @Binding var selection: Set<FileRecord.ID>
@@ -13,6 +13,9 @@ struct FileTableView: View {
     /// False while another place of the window is shown. The table stays, out of sight, so it keeps
     /// its scroll position and column widths; Quick Look closes, since nothing on screen would own it.
     var isShown = true
+
+    /// False while the Kept list cannot be changed: Keep This File is then shown disabled.
+    var canChangeKept = false
 
     @State private var previewItem: URL?
     @State private var previewItems: [URL] = []
@@ -81,6 +84,12 @@ struct FileTableView: View {
             Button("Reveal in Finder") {
                 RevealInFinder.reveal(urls(for: ids))
             }
+            Divider()
+            let toggle = model.keepToggle(for: ids)
+            Button((toggle ?? .keep).title) {
+                model.toggleKept(ids)
+            }
+            .disabled(!canChangeKept || toggle == nil)
             Divider()
             Button("Copy Download Source") {
                 Clipboard.copy(model.downloadAddresses(for: ids).joined(separator: "\n"))

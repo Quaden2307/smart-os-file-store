@@ -24,16 +24,17 @@ struct ActivityLogSchemaTests {
             #expect(databaseURL.lastPathComponent == "FileStore.sqlite")
             #expect(canonicalPath(databaseURL.deletingLastPathComponent()).hasSuffix("/Application Support/" + LogSandbox.appIdentifier))
 
-            // The migrations made exactly the four tables, with one totals row and one maintenance row.
+            // The migrations made exactly the five tables, with one totals row and one maintenance row.
             try await log.close()
             let raw = try RawDatabase(databaseURL)
             let tables = try raw.text(
                 "SELECT group_concat(name, ',') FROM (SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'grdb_%' ORDER BY name)"
             )
-            #expect(tables == "changes,maintenance,runs,totals")
+            #expect(tables == "changes,keptItems,maintenance,runs,totals")
+            #expect(try raw.text("SELECT count(*) FROM keptItems") == "0")
             #expect(try raw.text("SELECT count(*) FROM totals") == "1")
             #expect(try raw.text("SELECT count(*) FROM maintenance") == "1")
-            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2")
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3")
         }
     }
 
@@ -113,7 +114,7 @@ struct ActivityLogSchemaTests {
             }
 
             let raw = try RawDatabase(databaseURL)
-            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v999")
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v999")
             #expect(try raw.text("SELECT count(*) FROM runs") == "1")
         }
     }

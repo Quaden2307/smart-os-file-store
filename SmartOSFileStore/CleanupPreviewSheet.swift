@@ -5,7 +5,8 @@ import SwiftUI
 /// The preview of a cleanup plan: what stays, what would change and why. A plan of duplicates is
 /// shown by group with its kept copy; any other plan one change per row, with the new name or
 /// folder for a rename or a move. Every proposed change has a checkbox, which Space toggles for the
-/// selected row; Command-Y opens Quick Look. Move to Trash asks for confirmation, carries out the
+/// selected row; Command-Y opens Quick Look. Keep This File, in the context menu or with Command-K,
+/// takes the selected change out of the plan and marks its file Kept. Move to Trash asks for confirmation, carries out the
 /// ticked changes and then shows what happened; renames and moves are shown but not applied yet.
 /// Every cleanup action shares this screen.
 struct CleanupPreviewSheet: View {
@@ -31,12 +32,20 @@ struct CleanupPreviewSheet: View {
         eligibility: CandidateEligibility,
         log: ActivityLog,
         activity: ActivityLogModel,
+        markKept: @escaping @MainActor ([FileRecord], @escaping @MainActor (Bool) -> Void) -> Void,
         onUndo: (@MainActor (ActivityRun.ID) -> Void)? = nil,
         onExecuted: @escaping @MainActor (CleanupResult) -> Void
     ) {
         self.onUndo = onUndo
         _model = State(
-            initialValue: CleanupPreviewModel(plan: plan, eligibility: eligibility, log: log, activity: activity, onExecuted: onExecuted)
+            initialValue: CleanupPreviewModel(
+                plan: plan,
+                eligibility: eligibility,
+                log: log,
+                activity: activity,
+                markKept: markKept,
+                onExecuted: onExecuted
+            )
         )
     }
 
@@ -84,7 +93,10 @@ struct CleanupPreviewSheet: View {
             Text(plan.action.title)
                 .font(.title2.weight(.semibold))
                 .accessibilityAddTraits(.isHeader)
-            if plan.isEmpty {
+            if plan.isEmpty, model.keptCount > 0 {
+                Text("^[\(model.keptCount) file](inflect: true) kept")
+                    .foregroundStyle(.secondary)
+            } else if plan.isEmpty {
                 Text(plan.action.emptyTitle)
                     .foregroundStyle(.secondary)
             } else if model.result == nil {
@@ -112,6 +124,12 @@ struct CleanupPreviewSheet: View {
     private var content: some View {
         if let result = model.result {
             CleanupSummaryView(result: result)
+        } else if plan.isEmpty, plan.skippedItems.isEmpty, model.keptCount > 0 {
+            ContentUnavailableView(
+                "Nothing Left to Clean Up",
+                systemImage: "checkmark.circle",
+                description: Text("You kept every file this cleanup proposed.")
+            )
         } else if plan.isEmpty, plan.skippedItems.isEmpty {
             ContentUnavailableView(
                 plan.action.emptyTitle,
@@ -169,6 +187,12 @@ struct CleanupPreviewSheet: View {
             Button("Quick Look") {
                 preview(urls)
             }
+            Divider()
+            // Proposed rows only: the copy a group keeps and the unchecked files are not in the plan.
+            Button("Keep This File") {
+                model.keep(urls)
+            }
+            .disabled(!model.canKeep(urls))
         } primaryAction: { urls in
             preview(urls)
         }
@@ -181,12 +205,21 @@ struct CleanupPreviewSheet: View {
             return .handled
         }
         .onKeyPress(phases: .down) { press in
-            // Command-Y, as in Finder, handled by the list itself.
-            guard press.key == "y", press.modifiers == .command, selectedRow != nil || previewItem != nil else {
+            guard press.modifiers == .command else { return .ignored }
+            switch press.key {
+            case "y":
+                // Command-Y, as in Finder, handled by the list itself.
+                guard selectedRow != nil || previewItem != nil else { return .ignored }
+                toggleQuickLook()
+                return .handled
+            case "k":
+                // Command-K, as in the main window: Keep This File for the selected row.
+                guard let selectedRow, model.canKeep([selectedRow]) else { return .ignored }
+                model.keep([selectedRow])
+                return .handled
+            default:
                 return .ignored
             }
-            toggleQuickLook()
-            return .handled
         }
         .onKeyPress(.return) {
             // A list answers Return with its primary action (Quick Look) before the default button
@@ -304,6 +337,10 @@ struct CleanupPreviewSheet: View {
 
     @ViewBuilder
     private var skippedNote: some View {
+        if model.keepFailed {
+            Text("Couldn’t mark files Kept: the activity log stopped working.")
+                .foregroundStyle(.secondary)
+        }
         if !plan.skippedItems.isEmpty {
             Text("^[\(plan.skippedItems.count) file](inflect: true) could not be checked")
                 .foregroundStyle(.secondary)

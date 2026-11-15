@@ -103,17 +103,31 @@ extension CleanupExecutor {
             }
         }
 
-        // The activity log first: a row that says this change was started, with the folders it is
-        // about to make and the file's disk ID, which undo checks, written before the last look so the write does not sit in the gap between
-        // that look and the change. Without the row there is no permit: no folder is made and
-        // nothing is renamed.
+        // The activity log first: whether the file is Kept by the list as it is now, then a row that
+        // says this change was started, with the folders it is about to make and the file's disk ID,
+        // which undo checks, written before the last look so the write does not sit in the gap
+        // between that look and the change. Without the row there is no permit: no folder is made
+        // and nothing is renamed.
         var foldersToMake: [URL] = []
         var folderToMake = destinationURL
         for folderName in missing {
             folderToMake.append(path: folderName, directoryHint: .isDirectory)
             foldersToMake.append(folderToMake)
         }
-        guard let permit = journal.intend(change, contentHash: nil, foldersToMake: foldersToMake, fileNumber: UInt64(status.identity.inode)) else {
+        let permit: ChangePermit
+        switch journal.intend(
+            change,
+            contentHash: nil,
+            foldersToMake: foldersToMake,
+            fileNumber: UInt64(status.identity.inode),
+            itemURL: itemURL,
+            identity: context.volume?.identity(of: status)
+        ) {
+        case .permitted(let granted):
+            permit = granted
+        case .markedKept:
+            return result(.skipped(.markedKept))
+        case .stopped:
             return result(.skipped(.activityLogUnavailable))
         }
 

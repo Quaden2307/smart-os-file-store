@@ -167,7 +167,7 @@ enum LogSamples {
         let hash = ContentHash(bytes: [UInt8](repeating: 0xAB, count: 32))
         for index in 0..<count {
             let change = trashChange("\(namePrefix) (\(index + 1)).pdf", size: size)
-            let changeID = try log.recordIntent(
+            let changeID = try log.recordedIntent(
                 CleanupChangeIntent(runID: runID, sequence: index, change: change, contentHash: hash, attemptedAt: startedAt)
             )
             try log.recordResult(

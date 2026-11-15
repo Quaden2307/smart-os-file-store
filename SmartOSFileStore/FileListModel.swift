@@ -15,7 +15,12 @@ final class FileListModel {
     let eligibility: CandidateEligibility
 
     /// Records from the latest successful scan, in file-system order.
-    private(set) var records: [FileRecord] = []
+    private(set) var records: [FileRecord] = [] {
+        didSet { recordsByID = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }) }
+    }
+
+    /// `records` by their ID, so a selection is looked up without going through every record.
+    private var recordsByID: [FileRecord.ID: FileRecord] = [:]
 
     /// `records` in the table's current sort order. Re-sorted only when either input changes.
     private(set) var sortedRecords: [FileRecord] = []
@@ -26,8 +31,12 @@ final class FileListModel {
     /// Total size of `visibleRecords`, counted like `totalBytes`.
     private(set) var visibleBytes: Int64 = 0
 
-    /// Each record's marks at the time of the latest scan. Records without marks have no entry.
+    /// Each record's marks at the time of the latest scan, with Kept as the Kept list now has it.
+    /// Records without marks have no entry.
     private(set) var marksByID: [FileRecord.ID: [FileMark]] = [:]
+
+    /// The Kept list as last read from the activity log. Empty until the log has been read.
+    private(set) var keptItems = KeptItems()
 
     /// Items the last scan saw but could not read.
     private(set) var skippedItems: [FolderScanResult.SkippedItem] = []
@@ -72,7 +81,32 @@ final class FileListModel {
     /// scan in flight. Cleanup actions work on those rows, so they wait for this.
     var isSettled: Bool { hasLoadedOnce && failure == nil && !isLoading }
 
+    /// True while the Kept list is being changed or read back. A search started now could miss the
+    /// change, so Find Duplicates waits for this.
+    var isChangingKept: Bool { pendingKeptOperations > 0 }
+
+    /// True when the Kept list can be changed: the log is open and the folder is known.
+    var canChangeKept: Bool { activity?.log != nil && location != nil }
+
     private var scanTask: Task<Void, Never>?
+
+    /// The activity log's state, which holds the Kept list. Set once, when the window appears.
+    private var activity: ActivityLogModel?
+
+    /// The latest Kept operation. Each new one waits for it, so changes and reads of the list happen
+    /// in the order they were asked for and results never land out of order.
+    private var keptChain: Task<Void, Never>?
+    private var pendingKeptOperations = 0
+
+    /// Works the marks out again after the Kept list changed between scans.
+    private var marksTask: Task<Void, Never>?
+
+    /// Increases each time marks are worked out again between scans, so the window can drop
+    /// selected rows the filter now hides.
+    private(set) var marksRevision = 0
+
+    /// The time and settings the latest scan's marks were worked out with.
+    private var markInputs: (now: Date, settings: CleanupSettings)?
     private let scanner = FolderScanner()
     private let logger = Logger(subsystem: "com.quaden2307.SmartOSFileStore", category: "FileList")
 
@@ -93,10 +127,19 @@ final class FileListModel {
     /// A finished scan and the marks worked out from it.
     private struct ScanOutcome: Sendable {
         let result: FolderScanResult
+        let settings: CleanupSettings
+        /// The Kept list the marks were worked out with.
+        let keptItems: KeptItems
         let marksByID: [FileRecord.ID: [FileMark]]
     }
 
-    /// Starts a new scan, cancelling any that is still running.
+    /// Connects the list to the activity log's state, where the Kept list is read and changed.
+    func connect(to activity: ActivityLogModel) {
+        self.activity = activity
+    }
+
+    /// Starts a new scan, cancelling any that is still running. Once it has finished, the Kept list
+    /// is read again, which drops the entries of items that no longer exist.
     func refresh() {
         guard let location else { return }
         scanTask?.cancel()
@@ -104,19 +147,133 @@ final class FileListModel {
         let scanner = scanner
         // Read again on every scan, so a threshold changed with `defaults write` applies on ⌘R.
         let settings = CleanupSettings.load(from: UserDefaults.standard)
+        let keptItems = keptItems
         scanTask = Task {
             let outcome: Result<ScanOutcome, FolderScanError>
             do throws(FolderScanError) {
                 let result = try await scanner.scan(location)
-                let marksByID = await Self.marks(for: result.records, now: result.scannedAt, settings: settings)
-                outcome = .success(ScanOutcome(result: result, marksByID: marksByID))
+                let marksByID = await Self.marks(for: result.records, now: result.scannedAt, settings: settings, keptItems: keptItems)
+                outcome = .success(ScanOutcome(result: result, settings: settings, keptItems: keptItems, marksByID: marksByID))
             } catch {
                 outcome = .failure(error)
             }
             // A superseded scan must not overwrite the state of the one that replaced it.
             guard !Task.isCancelled else { return }
             apply(outcome)
+            if case .success = outcome {
+                reloadKeptItems()
+            }
         }
+    }
+
+    // MARK: - Kept
+
+    /// What Keep This File would do for the listed items in `ids`: stop keeping them when every one
+    /// is Kept, otherwise keep them. Nil when `ids` names no listed item.
+    func keepToggle(for ids: Set<FileRecord.ID>) -> KeepToggle? {
+        let selected = records(for: ids)
+        guard !selected.isEmpty else { return nil }
+        return selected.allSatisfy(keptItems.contains) ? .stopKeeping : .keep
+    }
+
+    /// Keeps the listed items in `ids`, or stops keeping them when every one is already Kept.
+    func toggleKept(_ ids: Set<FileRecord.ID>) {
+        let selected = records(for: ids)
+        switch keepToggle(for: ids) {
+        case .keep:
+            let toKeep = selected.filter { !keptItems.contains($0) }
+            enqueueKeptOperation(keeping: toKeep) { log throws(ActivityLogError) in try await log.keep(toKeep) }
+        case .stopKeeping:
+            enqueueKeptOperation { log throws(ActivityLogError) in try await log.stopKeeping(selected) }
+        case nil:
+            break
+        }
+    }
+
+    /// Marks `records` Kept: the preview's Keep This File, for files it took out of its plan. Only
+    /// items in the listing are marked. `onFinish` hears whether the list could be changed.
+    func keep(_ records: [FileRecord], onFinish: @escaping @MainActor (Bool) -> Void) {
+        let toKeep = records.filter { recordsByID[$0.id] != nil }
+        enqueueKeptOperation(keeping: toKeep, onFinish: onFinish) { log throws(ActivityLogError) in try await log.keep(toKeep) }
+    }
+
+    /// Empties the Kept list. The window asks first.
+    func stopKeepingAll() {
+        enqueueKeptOperation { log throws(ActivityLogError) in try await log.stopKeepingAll() }
+    }
+
+    /// Reads the Kept list again: after a scan, when the log has opened or been replaced, and after
+    /// the preview has marked files Kept.
+    func reloadKeptItems() {
+        enqueueKeptOperation { _ in }
+    }
+
+    /// Runs `operation` on the open log once every earlier Kept operation has finished, then reads
+    /// the list back. A failure is the log's, and is reported as one, unless that log has been
+    /// replaced meanwhile. `onFinish` hears whether the operation itself was carried out.
+    ///
+    /// - Parameter keeping: The items `operation` marks Kept. One that does not read as Kept
+    ///   afterwards was changed on disk since the scan (saved as a new copy, say), so it is marked
+    ///   by what is there now; the list is scanned again to show it.
+    private func enqueueKeptOperation(
+        keeping: [FileRecord] = [],
+        onFinish: (@MainActor (Bool) -> Void)? = nil,
+        _ operation: @escaping @Sendable (ActivityLog) async throws(ActivityLogError) -> Void
+    ) {
+        guard let activity, let log = activity.log, let folderURL = location?.folderURL else {
+            onFinish?(false)
+            return
+        }
+        let opening = activity.openings
+        let previous = keptChain
+        pendingKeptOperations += 1
+        keptChain = Task {
+            await previous?.value
+            var changed = false
+            do throws(ActivityLogError) {
+                try await operation(log)
+                changed = true
+                let kept = try await log.keptItems(forFolder: folderURL)
+                apply(kept)
+                if keeping.contains(where: { !kept.contains($0) }) {
+                    refresh()
+                }
+            } catch {
+                logger.error("The Kept list could not be used: \(String(describing: error), privacy: .public)")
+                // A log closed and replaced meanwhile is not the one on screen now.
+                if activity.openings == opening {
+                    activity.logFailed(error)
+                }
+            }
+            pendingKeptOperations -= 1
+            onFinish?(changed)
+        }
+    }
+
+    private func apply(_ keptItems: KeptItems) {
+        guard keptItems != self.keptItems else { return }
+        self.keptItems = keptItems
+        remark()
+    }
+
+    /// Works the marks out again for the records on screen, off the main actor, with the Kept list
+    /// as it is now. A later scan or change replaces the result before it lands.
+    private func remark() {
+        guard let markInputs else { return }
+        marksTask?.cancel()
+        let records = records
+        let keptItems = keptItems
+        marksTask = Task {
+            let marksByID = await Self.marks(for: records, now: markInputs.now, settings: markInputs.settings, keptItems: keptItems)
+            guard !Task.isCancelled else { return }
+            self.marksByID = marksByID
+            refilter()
+            marksRevision += 1
+        }
+    }
+
+    private func records(for ids: Set<FileRecord.ID>) -> [FileRecord] {
+        ids.compactMap { recordsByID[$0] }
     }
 
     private func apply(_ outcome: Result<ScanOutcome, FolderScanError>) {
@@ -132,8 +289,14 @@ final class FileListModel {
             records = result.records
             skippedItems = result.skippedItems
             totalBytes = result.records.reduce(0) { $0 + ($1.sizeInBytes ?? 0) }
+            marksTask?.cancel()
             marksByID = outcome.marksByID
+            markInputs = (now: result.scannedAt, settings: outcome.settings)
             resort()
+            // The Kept list changed while the scan ran: its marks were worked out with the old one.
+            if outcome.keptItems != keptItems {
+                remark()
+            }
             logger.info(
                 "Listed \(result.records.count) items, skipped \(result.skippedItems.count), marked \(self.marksByID.count); sorting and filtering on the main actor took \((clock.now - start).milliseconds, format: .fixed(precision: 1)) ms"
             )
@@ -143,7 +306,9 @@ final class FileListModel {
             sortedRecords = []
             visibleRecords = []
             visibleBytes = 0
+            marksTask?.cancel()
             marksByID = [:]
+            markInputs = nil
             skippedItems = []
             totalBytes = 0
             logger.error("Scan failed: \(String(describing: error), privacy: .private)")
@@ -185,14 +350,37 @@ final class FileListModel {
     /// Built with a loop rather than `Dictionary(uniqueKeysWithValues:)`, which traps on a repeated
     /// key; a listing never repeats a URL, but a crash is not the way to find out.
     @concurrent
-    private nonisolated static func marks(for records: [FileRecord], now: Date, settings: CleanupSettings) async -> [FileRecord.ID: [FileMark]] {
+    private nonisolated static func marks(
+        for records: [FileRecord],
+        now: Date,
+        settings: CleanupSettings,
+        keptItems: KeptItems
+    ) async -> [FileRecord.ID: [FileMark]] {
         var marksByID: [FileRecord.ID: [FileMark]] = [:]
         for record in records {
-            let marks = FileMarker.marks(for: record, now: now, settings: settings)
+            let marks = FileMarker.marks(for: record, now: now, settings: settings, keptItems: keptItems)
             if !marks.isEmpty {
                 marksByID[record.id] = marks
             }
         }
         return marksByID
+    }
+}
+
+/// What Keep This File does for a selection.
+enum KeepToggle: Equatable {
+    /// Some of the items are not Kept yet: keep them.
+    case keep
+    /// Every item is Kept: stop keeping them.
+    case stopKeeping
+
+    /// The menu item's title.
+    var title: String {
+        switch self {
+        case .keep:
+            String(localized: "Keep This File")
+        case .stopKeeping:
+            String(localized: "Stop Keeping")
+        }
     }
 }

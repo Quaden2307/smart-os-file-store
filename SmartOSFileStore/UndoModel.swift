@@ -82,7 +82,7 @@ final class UndoModel {
             } catch {
                 isPlanning = false
                 logger.error("Undo could not be planned: \(String(describing: error), privacy: .public)")
-                activity.readFailed(error)
+                activity.logFailed(error)
             }
         }
     }

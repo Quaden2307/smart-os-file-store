@@ -30,6 +30,21 @@ struct FolderScannerTests {
         }
     }
 
+    @Test func recordsCarryTheIdentityTheExecutorReads() async throws {
+        try await withFakeDownloadsFolder { fixture in
+            let result = try await scanner.scan(location(fixture.url))
+            let volume = try fixture.url.resourceValues(forKeys: [.volumeUUIDStringKey]).volumeUUIDString
+            for name in [Names.reportPDF, Names.symlink, "Subfolder"] {
+                let record = try #require(result.records.first { $0.displayName == name })
+                let identity = try #require(record.persistentIdentity, "no identity for \(name)")
+                #expect(identity.volumeUUID == volume)
+                // The item's own number, a link's included: what `lstat` reads, never its target's.
+                #expect(identity.fileNumber == DiskState.inode(of: fixture.url(for: name)))
+            }
+            #expect(Set(result.records.compactMap(\.persistentIdentity)).count == result.records.count)
+        }
+    }
+
     @Test func listsFolderWithoutSize() async throws {
         try await withFakeDownloadsFolder { fixture in
             let result = try await scanner.scan(location(fixture.url))

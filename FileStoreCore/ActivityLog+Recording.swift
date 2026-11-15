@@ -20,8 +20,12 @@ extension ActivityLog: CleanupRecording {
         }
     }
 
-    public func recordIntent(_ intent: CleanupChangeIntent) throws(ActivityLogError) -> Int64 {
+    public func recordIntent(_ intent: CleanupChangeIntent) throws(ActivityLogError) -> CleanupIntentDecision {
         try write { db in
+            // In the same transaction as the row, so no Kept mark can land in between.
+            if try Self.isKept(intent.keptProbe, in: db) {
+                return .markedKept
+            }
             try Self.insertChange(
                 db,
                 runID: intent.runID,
@@ -33,7 +37,7 @@ extension ActivityLog: CleanupRecording {
                 fileNumber: intent.fileNumber,
                 attemptedAt: intent.attemptedAt
             )
-            return db.lastInsertedRowID
+            return .recorded(rowID: db.lastInsertedRowID)
         }
     }
 

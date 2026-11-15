@@ -97,6 +97,9 @@ public enum CleanupSkipReason: Sendable, Hashable {
     /// or it no longer fits the action's scope (empty, still downloading, hidden).
     case notInPlan
 
+    /// The user marked the item Kept, after the plan was made. A Kept item is never changed.
+    case markedKept
+
     /// The item is not directly inside the scanned folder.
     case outsideFolder
 

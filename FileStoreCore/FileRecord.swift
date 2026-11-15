@@ -57,6 +57,10 @@ public struct FileRecord: Sendable, Identifiable, Hashable {
     /// date means unknown, not never opened.
     public let canReadLastOpened: Bool
 
+    /// Which file this is on its volume, however it is named later: what the Kept list follows.
+    /// Nil when the volume gives its items no lasting identity, or it could not be read.
+    public let persistentIdentity: PersistentFileIdentity?
+
     public init(
         url: URL,
         displayName: String,
@@ -69,7 +73,8 @@ public struct FileRecord: Sendable, Identifiable, Hashable {
         isDownloading: Bool,
         lastOpened: Date? = nil,
         downloadSource: DownloadSource? = nil,
-        canReadLastOpened: Bool = true
+        canReadLastOpened: Bool = true,
+        persistentIdentity: PersistentFileIdentity? = nil
     ) {
         self.url = url
         self.displayName = displayName
@@ -83,6 +88,7 @@ public struct FileRecord: Sendable, Identifiable, Hashable {
         self.lastOpened = lastOpened
         self.downloadSource = downloadSource
         self.canReadLastOpened = canReadLastOpened
+        self.persistentIdentity = persistentIdentity
     }
 
     /// True when a missing last-opened date means the item was never opened: it is a kind macOS
@@ -119,12 +125,12 @@ public struct FileRecord: Sendable, Identifiable, Hashable {
 }
 
 extension FileRecord {
-    /// Builds a record from resource values the scanner already fetched for `url`, and the metadata
-    /// it read for it.
+    /// Builds a record from resource values the scanner already fetched for `url`, the metadata it
+    /// read for it, and its identity.
     ///
     /// Resource values describe a symbolic link itself, not its target, so a link is never
     /// mistaken for a folder. A package is also a directory, so it is checked before `folder`.
-    init(url: URL, values: URLResourceValues, metadata: FileMetadata) {
+    init(url: URL, values: URLResourceValues, metadata: FileMetadata, identity: PersistentFileIdentity?) {
         let kind: Kind
         if values.isSymbolicLink == true {
             kind = .symlink
@@ -156,7 +162,8 @@ extension FileRecord {
             isDownloading: Self.isInProgressDownload(url),
             lastOpened: metadata.lastOpened,
             downloadSource: metadata.downloadSource,
-            canReadLastOpened: metadata.canReadLastOpened
+            canReadLastOpened: metadata.canReadLastOpened,
+            persistentIdentity: identity
         )
     }
 }

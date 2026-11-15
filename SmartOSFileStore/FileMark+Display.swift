@@ -5,6 +5,8 @@ extension FileMark {
     /// The badge text and the filter's name for the mark.
     var title: String {
         switch self {
+        case .kept:
+            String(localized: "Kept")
         case .neverOpened:
             String(localized: "Never opened")
         case .unused:

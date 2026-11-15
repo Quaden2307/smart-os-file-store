@@ -14,7 +14,8 @@ final class CleanupPreviewModel {
         case finished(CleanupResult)
     }
 
-    let plan: CleanupPlan
+    /// The plan as shown: the one found, less any files taken out with Keep This File.
+    private(set) var plan: CleanupPlan
 
     /// Whether the preview shows duplicate groups or one change per row, worked out once.
     let isGroupedByDuplicates: Bool
@@ -30,7 +31,16 @@ final class CleanupPreviewModel {
 
     private(set) var phase: Phase = .reviewing
 
+    /// True once files taken out with Keep This File could not be marked Kept. They stay out of
+    /// this cleanup all the same.
+    private(set) var keepFailed = false
+
+    /// How many files Keep This File has taken out of the plan, so an empty plan is not shown as one
+    /// in which nothing was found.
+    private(set) var keptCount = 0
+
     private let onExecuted: @MainActor (CleanupResult) -> Void
+    private let markKept: @MainActor ([FileRecord], @escaping @MainActor (Bool) -> Void) -> Void
     private var executionTask: Task<Void, Never>?
     private let executor: CleanupExecutor
     private let activity: ActivityLogModel
@@ -41,14 +51,18 @@ final class CleanupPreviewModel {
     ///   - log: The open activity log. Every change is written to it as it happens; there is no
     ///     way to carry out a plan without one.
     ///   - activity: Told when the run has ended, so the totals and the Activity place follow.
+    ///   - markKept: Marks files Kept, then says whether it could; the main window's list does it,
+    ///     so its badges follow and a search started next sees the change.
     init(
         plan: CleanupPlan,
         eligibility: CandidateEligibility,
         log: ActivityLog,
         activity: ActivityLogModel,
+        markKept: @escaping @MainActor ([FileRecord], @escaping @MainActor (Bool) -> Void) -> Void,
         onExecuted: @escaping @MainActor (CleanupResult) -> Void
     ) {
         self.plan = plan
+        self.markKept = markKept
         self.isGroupedByDuplicates = plan.isGroupedByDuplicates
         self.isTrashOnly = plan.isTrashOnly
         self.executor = CleanupExecutor(recorder: log, eligibility: eligibility)
@@ -115,6 +129,30 @@ final class CleanupPreviewModel {
     func selectNone() {
         guard isReviewing else { return }
         ticked = []
+    }
+
+    /// True when Keep This File can take the rows in `ids` out of the plan: still reviewing, and at
+    /// least one of them is a proposed change.
+    func canKeep(_ ids: Set<URL>) -> Bool {
+        isReviewing && plan.changes.contains { ids.contains($0.id) }
+    }
+
+    /// Keep This File: unticks the proposed changes in `ids`, takes them out of the plan, and marks
+    /// their files Kept. They are out of this cleanup whether or not the mark could be written.
+    func keep(_ ids: Set<URL>) {
+        guard isReviewing else { return }
+        let records = plan.changes.filter { ids.contains($0.id) }.map(\.record)
+        guard !records.isEmpty else { return }
+        let removed = Set(records.map(\.id))
+        ticked.subtract(removed)
+        plan = plan.removing(removed)
+        keptCount += records.count
+        logger.info("Took \(records.count) files out of the plan to keep them")
+        markKept(records) { [weak self] succeeded in
+            if !succeeded {
+                self?.keepFailed = true
+            }
+        }
     }
 
     /// Moves the ticked files to the Trash. The sheet calls this from the confirmation's

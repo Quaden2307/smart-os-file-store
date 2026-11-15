@@ -14,10 +14,13 @@ public protocol CleanupRecording: Sendable {
     /// - Returns: The run's identifier, for the calls that follow.
     func beginRun(_ start: CleanupRunStart) throws(ActivityLogError) -> Int64
 
-    /// Records that a change is about to happen, as a row in the `started` state. Called once the
-    /// item has passed its checks and before anything is changed for it.
-    /// - Returns: The row's identifier, for `recordResult`.
-    func recordIntent(_ intent: CleanupChangeIntent) throws(ActivityLogError) -> Int64
+    /// Records that a change is about to happen, as a row in the `started` state, but only while the
+    /// file is not Kept: the Kept list is checked in the same step as the row is written, so a file
+    /// marked Kept at any moment before is never changed. Called once the item has passed every
+    /// other check and before anything is changed for it.
+    /// - Returns: The row's identifier, for `recordResult`, or that the file is Kept and must be left
+    ///   exactly as it is.
+    func recordIntent(_ intent: CleanupChangeIntent) throws(ActivityLogError) -> CleanupIntentDecision
 
     /// Records what happened to one item, in one step with the run's counts and the running totals.
     /// With `changeID`, completes that item's `started` row; without, the item was refused before
@@ -63,6 +66,14 @@ public struct CleanupRunStart: Sendable, Hashable {
     }
 }
 
+/// What the log said to a change about to happen.
+public enum CleanupIntentDecision: Sendable, Hashable {
+    /// The started row is in, with this identifier: the change may go ahead.
+    case recorded(rowID: Int64)
+    /// The user has marked the file Kept: no row was written, and the file must be left alone.
+    case markedKept
+}
+
 public struct CleanupChangeIntent: Sendable, Hashable {
     public let runID: Int64
     /// The item's place among the run's confirmed changes, from zero.
@@ -76,6 +87,8 @@ public struct CleanupChangeIntent: Sendable, Hashable {
     /// The file's number on its disk (inode), as the executor read it right before the change.
     /// Undo checks it to know the file it finds later is this one.
     public let fileNumber: UInt64?
+    /// The file as the Kept list is asked about it: its identity as just read and its paths.
+    public let keptProbe: KeptItemProbe
     public let attemptedAt: Date
 
     public init(
@@ -85,6 +98,7 @@ public struct CleanupChangeIntent: Sendable, Hashable {
         contentHash: ContentHash?,
         foldersToMake: [URL] = [],
         fileNumber: UInt64? = nil,
+        keptProbe: KeptItemProbe? = nil,
         attemptedAt: Date
     ) {
         self.runID = runID
@@ -93,6 +107,8 @@ public struct CleanupChangeIntent: Sendable, Hashable {
         self.contentHash = contentHash
         self.foldersToMake = foldersToMake
         self.fileNumber = fileNumber
+        // Without an identity, every entry made at the plan's path counts: the protective reading.
+        self.keptProbe = keptProbe ?? KeptItemProbe(identity: nil, paths: [change.record.keptItemPath])
         self.attemptedAt = attemptedAt
     }
 }

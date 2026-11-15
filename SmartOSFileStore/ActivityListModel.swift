@@ -107,7 +107,7 @@ final class ActivityListModel {
                 hasLoaded = true
             } catch {
                 guard generation == self.generation else { return }
-                activity.readFailed(error)
+                activity.logFailed(error)
             }
         }
     }
@@ -140,7 +140,7 @@ final class ActivityListModel {
                 assessments.merge(looked.assessments) { _, new in new }
             } catch {
                 guard generation == self.generation else { return }
-                activity.readFailed(error)
+                activity.logFailed(error)
             }
         }
     }

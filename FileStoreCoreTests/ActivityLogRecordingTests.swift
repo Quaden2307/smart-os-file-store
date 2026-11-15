@@ -260,7 +260,7 @@ struct ActivityLogRecordingTests {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let runID = try log.beginRun(CleanupRunStart(action: .findDuplicates, folderURL: LogSamples.folderURL, confirmedCount: 1, startedAt: now))
         let change = LogSamples.trashChange("report (1).pdf", size: 700)
-        let changeID = try log.recordIntent(CleanupChangeIntent(runID: runID, sequence: 0, change: change, contentHash: nil, attemptedAt: now))
+        let changeID = try log.recordedIntent(CleanupChangeIntent(runID: runID, sequence: 0, change: change, contentHash: nil, attemptedAt: now))
         let result = CleanupChangeResult(runID: runID, changeID: changeID, sequence: 0, item: LogSamples.trashed(change), attemptedAt: now)
         try log.recordResult(result)
 
@@ -325,7 +325,7 @@ struct ActivityLogRecordingTests {
                 CleanupRunStart(action: .findDuplicates, folderURL: LogSamples.folderURL, confirmedCount: 2, startedAt: now)
             )
             let change = LogSamples.trashChange("report (1).pdf")
-            _ = try log.recordIntent(CleanupChangeIntent(runID: runID, sequence: 0, change: change, contentHash: nil, attemptedAt: now))
+            _ = try log.recordedIntent(CleanupChangeIntent(runID: runID, sequence: 0, change: change, contentHash: nil, attemptedAt: now))
             #expect(try await log.runs().first?.state == .running)
             try await log.close()
 
@@ -350,7 +350,7 @@ struct ActivityLogRecordingTests {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let skips: [CleanupSkipReason] = [
             .changedSinceScan, .notFound, .accessDenied, .notDownloaded, .notARegularFile,
-            .unreadable(reason: "Input/output error"), .keptFile, .notInPlan, .outsideFolder, .folderUnavailable,
+            .unreadable(reason: "Input/output error"), .keptFile, .notInPlan, .markedKept, .outsideFolder, .folderUnavailable,
             .keptFileMissing(name: "kept – ✓.pdf"), .keptFileNotVerified(name: "kept.pdf"), .cancelled,
             .destinationExists(name: "taken.txt"), .invalidName, .destinationOutsideFolder, .destinationNotAFolder,
             .destinationHidden, .activityLogUnavailable,

@@ -14,12 +14,14 @@ Smart OS File Store is a native macOS file browser that will replace Finder, sta
 
 - **Last Opened column**: the date macOS records when a file is opened (the `com.apple.lastuseddate#PS` attribute Launch Services writes), read from the file itself, so it shows at once in any folder, indexed by Spotlight or not. Files never opened show "Never" and sort as the oldest. Folders, apps, links and Finder aliases, which macOS does not date when they are opened, show a dash unless a date is recorded, as does an item whose date could not be read.
 - **Marks**, as small badges after the name: Never opened (no last-opened date, added more than 30 days ago), Unused (last opened more than 30 days ago) and Old (added more than 90 days ago, opened or not). Folders, apps, links, aliases, hidden items and downloads in progress get none.
-- **A filter** above the table and in the View menu (All, Never opened, Unused, Old). The status line shows how many items match and their total size.
+- **A filter** above the table and in the View menu (All, Kept, Never opened, Unused, Old). The status line shows how many items match and their total size.
 - **Download source**: hover over a row to see the site a file was downloaded from and the app that downloaded it. Copy Download Source, in the context menu and the Edit menu, copies the file's address.
 - **Rename and move in the engine**, for Fix messy names and Archive old downloads to use: exclusive, so nothing is ever replaced, through a handle on the folder, so no link is followed. Nothing proposes them yet.
 - **An activity log**: every confirmed cleanup is recorded as it happens, one row per file, in a local database. A row that says a change was started is written before the file changes and completed right after, so if the app crashes or is force-quit, no moved file is missing from the log. If the log cannot be written, the cleanup stops with the file untouched.
 - **Activity**, in the main window's sidebar beside Downloads (also View > Activity, ⇧⌘A): every cleanup, newest first. Open one to see each file with what was to be done, why, what happened and when. Reveal in Finder works for a file that is still where the log says it went.
 - **Moved to the Trash**: the summary says how much a cleanup moved to the Trash, and the status line shows the total so far. The space is free once you empty the Trash.
+- **Undo**: Edit > Undo (⌘Z) undoes the newest cleanup; Activity undoes any cleanup or single file that can still be put back.
+- **Keep This File** (⌘K, File menu and context menu): marks files and folders Kept, so no cleanup ever proposes them. Kept items show a Kept badge and a Kept choice in the filter; File > Stop Keeping All clears them, after asking. In the preview, Keep This File takes a file out of the plan and marks it Kept. Kept follows the file through renames and moves; editing it in an app that saves a new copy makes it a new, unkept file. When one copy of a duplicate is Kept, that copy is the one kept.
 
 The two thresholds live in the app's defaults. There is no settings window yet; to change them for good, or for one launch:
 
@@ -33,7 +35,6 @@ open build/Build/Products/Debug/SmartOSFileStore.app --args -CleanupUnusedAfterD
 
 - Only the top level of Downloads. No other folders and no subfolders.
 - Only exact duplicates. No other cleanup actions.
-- No undo beyond the Trash's Put Back. The activity log records what an undo will need, but nothing undoes yet.
 - An Activity entry cannot be opened for more detail yet. That is planned for later, perhaps with an Apple Intelligence summary.
 - No watching of the folder: the list refreshes on launch, with ⌘R, and after Move to Trash.
 - No Stop button while files move; each move is quick, and closing the window stops between files.
@@ -49,10 +50,12 @@ open build/Build/Products/Debug/SmartOSFileStore.app --args -CleanupUnusedAfterD
 | Main window | ⌘R | Refresh the list |
 | Main window | Space, ⌘Y, double-click | Quick Look the selection (press again to close) |
 | Main window | ⌥⌘R | Reveal the selection in Finder |
+| Main window | ⌘K | Keep the selection, or stop keeping it when all of it is Kept |
 | Preview | ↑ ↓ | Move between rows |
 | Preview | Space | Tick or untick the selected duplicate |
 | Preview | ⌘Y, double-click | Quick Look the selected row |
 | Preview | ⌘A, ⌥⌘A | Select all, select none |
+| Preview | ⌘K | Keep the selected file: take it out of the plan and mark it Kept |
 | Preview | Return | Move to Trash (opens the confirmation) |
 | Preview | Esc | Close the preview |
 | Confirmation | Return, Esc | Cancel |
@@ -83,7 +86,7 @@ xcodegen generate
 # Build
 xcodebuild -scheme SmartOSFileStore -destination 'platform=macOS' -derivedDataPath build build
 
-# Run the unit tests (about 250 tests; the scale suite adds a few seconds)
+# Run the unit tests (about 310 tests; the scale suite adds a few seconds)
 xcodebuild -scheme SmartOSFileStore -destination 'platform=macOS' -derivedDataPath build test
 
 # Launch the app

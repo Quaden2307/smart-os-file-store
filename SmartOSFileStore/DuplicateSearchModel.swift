@@ -52,28 +52,48 @@ final class DuplicateSearchModel {
     }
 
     /// Starts a search over `records`, cancelling any that is still running. `eligibility` decides
-    /// which records may take part at all.
-    func start(records: [FileRecord], folderURL: URL, eligibility: CandidateEligibility) {
+    /// which records may take part at all; the Kept list is read from `log` first, so the search
+    /// always plans with the list as it is now. If it cannot be read, nothing is planned and the
+    /// failure goes to `activity`.
+    func start(records: [FileRecord], folderURL: URL, eligibility: CandidateEligibility, log: ActivityLog, activity: ActivityLogModel) {
         searchTask?.cancel()
         generation += 1
         let generation = generation
         presentedPlan = nil
         phase = .running(DuplicateScanProgress(filesHashed: 0, filesToHash: 0, bytesHashed: 0, bytesToHash: 0))
         logger.info("Finding duplicates among \(records.count) records")
+        let opening = activity.openings
 
-        let planner = DuplicatePlanner(eligibility: eligibility)
         // Weak throughout: the task must not keep the model alive, and `deinit` cancels the task.
         searchTask = Task { [weak self] in
-            let outcome: Result<CleanupPlan, DuplicatePlanError>
-            do throws(DuplicatePlanError) {
-                let plan = try await planner.plan(records: records, in: folderURL) { progress in
-                    Task { @MainActor in
-                        self?.report(progress, generation: generation)
+            let outcome: Result<CleanupPlan?, CleanupPlanningError>
+            do throws(ActivityLogError) {
+                let keptItems = try await log.keptItems(forFolder: folderURL)
+                do throws(CleanupPlanningError) {
+                    let plan = try await CleanupPlanners.plan(
+                        .findDuplicates,
+                        records: records,
+                        in: folderURL,
+                        eligibility: eligibility,
+                        keptItems: keptItems
+                    ) { progress in
+                        Task { @MainActor in
+                            self?.report(progress, generation: generation)
+                        }
                     }
+                    outcome = .success(plan)
+                } catch {
+                    outcome = .failure(error)
                 }
-                outcome = .success(plan)
             } catch {
-                outcome = .failure(error)
+                // Planning without the Kept list could propose a Kept file, so there is no plan.
+                guard !Task.isCancelled else { return }
+                // A log closed and replaced meanwhile is not the one on screen now.
+                if activity.openings == opening {
+                    activity.logFailed(error)
+                }
+                self?.finish(.failure(.cancelled), generation: generation)
+                return
             }
             // A cancelled or superseded search must not overwrite the state of the current one.
             guard !Task.isCancelled else { return }
@@ -110,16 +130,18 @@ final class DuplicateSearchModel {
         phase = .running(progress)
     }
 
-    private func finish(_ outcome: Result<CleanupPlan, DuplicatePlanError>, generation: Int) {
+    private func finish(_ outcome: Result<CleanupPlan?, CleanupPlanningError>, generation: Int) {
         guard generation == self.generation else { return }
         phase = .idle
         searchTask = nil
         switch outcome {
-        case .success(let plan):
+        case .success(let plan?):
             presentedPlan = PresentedPlan(plan: plan)
             logger.info(
                 "Found \(plan.duplicateGroups.count) duplicate groups, \(plan.changes.count) files to trash, \(plan.skippedItems.count) skipped"
             )
+        case .success(nil):
+            logger.error("Find Duplicates has no planner")
         case .failure(.cancelled):
             break
         }

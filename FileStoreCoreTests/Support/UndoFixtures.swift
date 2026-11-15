@@ -81,7 +81,7 @@ enum UndoFixtures {
             let change = ProposedChange(record: record, operation: .moveToTrash, reason: .sameContent(asFileNamed: "kept.txt"))
             let hash = try await ContentHasher().hash(contentsOf: record.url)
             let inode = try #require(DiskState.inode(of: record.url))
-            let changeID = try log.recordIntent(
+            let changeID = try log.recordedIntent(
                 CleanupChangeIntent(runID: runID, sequence: sequence, change: change, contentHash: hash, fileNumber: inode, attemptedAt: now)
             )
             let trashURL = try trash.take(record.url)

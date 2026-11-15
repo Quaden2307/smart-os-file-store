@@ -126,9 +126,9 @@ final class ActivityLogModel {
         reloadTotals()
     }
 
-    /// Called when reading the open log failed elsewhere, such as in the Activity place. A log that
-    /// cannot be read cannot be trusted to record a cleanup either.
-    func readFailed(_ error: ActivityLogError) {
+    /// Called when using the open log failed elsewhere: reading it in the Activity place, or reading
+    /// or changing the Kept list. A log that cannot be used cannot be trusted to record a cleanup either.
+    func logFailed(_ error: ActivityLogError) {
         fail(error)
     }
 

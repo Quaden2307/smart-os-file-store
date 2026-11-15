@@ -161,7 +161,10 @@ public struct CleanupExecutor: Sendable {
     ) async -> CleanupItemResult {
         // The folder itself is checked again for every item: it can be renamed, removed or replaced
         // while earlier items are being changed, and nothing may be changed in a different folder.
+        // Without its volume no item's identity can be made for the Kept check, and comparing paths
+        // alone could miss a Kept file that was renamed, so nothing is changed then either.
         guard let folderIdentity = context.folderIdentity,
+              context.volume != nil,
               let folderNow = try? FileStatus.of(path: context.folderURL.path(percentEncoded: false), followingLinks: true),
               folderNow.isDirectory,
               folderNow.identity == folderIdentity else {
@@ -231,7 +234,8 @@ public struct CleanupExecutor: Sendable {
     /// scan's record, so a plan built elsewhere cannot get round them: not hidden, past the grace
     /// period by the Date Added read now, the size and modification date the scan saw, and not
     /// locked. A file put here since the scan, under the same name and with an old modification
-    /// date, is as new as a freshly written one.
+    /// date, is as new as a freshly written one. Whether it is Kept is asked last of all, when the
+    /// journal is asked for the change's permit.
     ///
     /// - Parameter readDateAdded: Reads the item's Date Added from disk, only if it is needed.
     /// - Returns: Nil when the item may go on to its operation's own checks, otherwise why not.
@@ -264,6 +268,9 @@ public struct CleanupExecutor: Sendable {
             return .skipped(.notInPlan)
         case .insideGracePeriod:
             return .skipped(.changedSinceScan)
+        case .kept:
+            // The rules on what the disk says know no Kept list; the journal checks it (`intend`).
+            return .skipped(.markedKept)
         }
         guard status.sizeInBytes == change.sizeInBytes,
               let scannedDate = change.dateModified,
@@ -351,8 +358,8 @@ public struct CleanupExecutor: Sendable {
 /// The executor's name until it learnt to rename and move. Find Duplicates' tests still use it.
 public typealias TrashExecutor = CleanupExecutor
 
-/// What the executor needs from the plan, looked up once: the folder's identity, the kept files'
-/// URLs and identities, and each duplicate's group.
+/// What the executor needs from the plan, looked up once: the folder's identity and volume, the kept
+/// files' URLs and identities, and each duplicate's group.
 struct PlanContext: Sendable {
     let action: CleanupAction
 
@@ -360,6 +367,10 @@ struct PlanContext: Sendable {
 
     /// Nil when the folder cannot be read or is not a folder; nothing is changed then.
     let folderIdentity: FileIdentity?
+
+    /// The folder's volume, which an item's identity for the Kept list is made with. Nil when it
+    /// could not be read; nothing is changed then.
+    let volume: VolumeIdentity?
 
     /// Every group's kept file, by the plan's own URL value.
     let keptURLs: Set<URL>
@@ -376,6 +387,7 @@ struct PlanContext: Sendable {
         folderURL = plan.folderURL
         let folderStatus = try? FileStatus.of(path: plan.folderURL.path(percentEncoded: false), followingLinks: true)
         folderIdentity = folderStatus?.isDirectory == true ? folderStatus?.identity : nil
+        volume = VolumeIdentity.of(folderPath: plan.folderURL.path(percentEncoded: false))
 
         var keptURLs: Set<URL> = []
         var keptIdentities: Set<FileIdentity> = []
@@ -443,6 +455,8 @@ extension CleanupSkipReason {
             "is a kept file"
         case .notInPlan:
             "not in plan"
+        case .markedKept:
+            "marked Kept"
         case .outsideFolder:
             "outside the folder"
         case .folderUnavailable:

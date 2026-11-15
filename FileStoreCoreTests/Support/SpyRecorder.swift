@@ -4,7 +4,8 @@ import Synchronization
 
 /// A `CleanupRecording` for tests. It keeps every call in the order it arrived, can make one chosen
 /// call fail the way a broken database would, and can pass the calls it lets through on to a real
-/// log, so a test can watch the order of writes and read the rows they left.
+/// log, so a test can watch the order of writes and read the rows they left. A started row the log
+/// refused because the file is Kept was not written, so it is not among the calls.
 final class SpyRecorder: CleanupRecording {
     enum Kind: Sendable, Hashable {
         case beginRun
@@ -135,10 +136,17 @@ final class SpyRecorder: CleanupRecording {
         return remember(.beginRun(start), keepingID: id)
     }
 
-    func recordIntent(_ intent: CleanupChangeIntent) throws(ActivityLogError) -> Int64 {
+    /// Without a real log, nothing is Kept.
+    func recordIntent(_ intent: CleanupChangeIntent) throws(ActivityLogError) -> CleanupIntentDecision {
         try admit(.recordIntent)
-        let id = try log?.recordIntent(intent)
-        return remember(.recordIntent(intent), keepingID: id)
+        guard let log else {
+            return .recorded(rowID: remember(.recordIntent(intent)))
+        }
+        let decision = try log.recordIntent(intent)
+        if case .recorded(let rowID) = decision {
+            return .recorded(rowID: remember(.recordIntent(intent), keepingID: rowID))
+        }
+        return decision
     }
 
     func recordResult(_ result: CleanupChangeResult) throws(ActivityLogError) {
@@ -190,6 +198,19 @@ final class SpyRecorder: CleanupRecording {
         return id ?? own
     }
 }
+
+extension ActivityLog {
+    /// A started row for a change the test knows is not Kept: the row's identifier.
+    func recordedIntent(_ intent: CleanupChangeIntent) throws -> Int64 {
+        guard case .recorded(let rowID) = try recordIntent(intent) else {
+            throw UnexpectedlyKept()
+        }
+        return rowID
+    }
+}
+
+/// A test wrote a started row for a file it had not marked Kept, and the log said it was Kept.
+struct UnexpectedlyKept: Error {}
 
 extension CleanupExecutor {
     /// The executor as most tests use it: recording into a throwaway `SpyRecorder`. The engine

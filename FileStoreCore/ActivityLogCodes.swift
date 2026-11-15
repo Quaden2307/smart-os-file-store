@@ -154,6 +154,8 @@ extension CleanupSkipReason {
             ActivityLogCode(code: "keptFile")
         case .notInPlan:
             ActivityLogCode(code: "notInPlan")
+        case .markedKept:
+            ActivityLogCode(code: "markedKept")
         case .outsideFolder:
             ActivityLogCode(code: "outsideFolder")
         case .folderUnavailable:
@@ -198,6 +200,8 @@ extension CleanupSkipReason {
             self = .keptFile
         case "notInPlan":
             self = .notInPlan
+        case "markedKept":
+            self = .markedKept
         case "outsideFolder":
             self = .outsideFolder
         case "folderUnavailable":

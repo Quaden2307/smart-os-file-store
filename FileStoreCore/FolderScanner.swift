@@ -6,7 +6,8 @@ import os
 /// The scanner does not descend into subfolders, does not follow symbolic links, and skips
 /// hidden items. It runs off the caller's actor and stops early when its task is cancelled.
 /// Each record carries the metadata its reader finds: by default, last opened and download source
-/// read from the item's extended attributes.
+/// read from the item's extended attributes. It also carries the item's identity on its volume,
+/// read with `lstat` as the executor reads it, so the Kept list can follow the file.
 public struct FolderScanner: Sendable {
     /// The resource values fetched for every item in one call, so each record costs no extra
     /// file-system round trip.
@@ -67,6 +68,13 @@ public struct FolderScanner: Sendable {
             throw scanError
         }
 
+        // Read once for the whole folder. Without it, records have no identity and the Kept list
+        // compares paths instead, which still protects every item marked at its current path.
+        let volume = VolumeIdentity.of(folderPath: folderURL.path(percentEncoded: false))
+        if volume == nil {
+            Self.logger.error("Could not read the volume of \(folderURL.path(percentEncoded: false), privacy: .private); items carry no identity")
+        }
+
         var records: [FileRecord] = []
         records.reserveCapacity(urls.count)
         var skippedItems: [FolderScanResult.SkippedItem] = []
@@ -82,7 +90,8 @@ public struct FolderScanner: Sendable {
                 if values.isHidden == true {
                     continue
                 }
-                records.append(FileRecord(url: url, values: values, metadata: metadataReader.metadata(for: url)))
+                let identity = (try? FileStatus.of(path: url.path(percentEncoded: false))).flatMap { volume?.identity(of: $0) }
+                records.append(FileRecord(url: url, values: values, metadata: metadataReader.metadata(for: url), identity: identity))
             } catch {
                 skippedItems.append(
                     FolderScanResult.SkippedItem(

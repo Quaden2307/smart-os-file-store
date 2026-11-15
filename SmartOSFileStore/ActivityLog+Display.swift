@@ -15,15 +15,15 @@ struct ActivityLogFailure: Equatable {
         switch error {
         case .damaged:
             title = String(localized: "The Activity Log Is Damaged")
-            message = String(localized: "Its file can’t be read as a database, so nothing can be cleaned up for now. You can start a fresh log; the damaged file is kept beside it.")
+            message = String(localized: "Its file can’t be read as a database, so nothing can be cleaned up for now. You can start a fresh log; the damaged file is kept beside it. A fresh log has no history and no files marked Kept.")
             canStartFresh = true
         case .unreadable:
             title = String(localized: "The Activity Log Can’t Be Opened")
-            message = String(localized: "Its file or folder can’t be read or written, so nothing can be cleaned up for now. Check that the disk isn’t full and try again, or start a fresh log; the existing file is kept beside it.")
+            message = String(localized: "Its file or folder can’t be read or written, so nothing can be cleaned up for now. Check that the disk isn’t full and try again, or start a fresh log; the existing file is kept beside it. A fresh log has no history and no files marked Kept.")
             canStartFresh = true
         case .newerVersion:
             title = String(localized: "The Activity Log Is From a Newer Version")
-            message = String(localized: "A newer version of Smart OS File Store made this log, and this version must not change it. Update the app, or start a fresh log; the existing file is kept beside it.")
+            message = String(localized: "A newer version of Smart OS File Store made this log, and this version must not change it. Update the app, or start a fresh log; the existing file is kept beside it. A fresh log has no history and no files marked Kept.")
             canStartFresh = true
         case .writeFailed:
             // The file itself is most likely sound: a full disk, or another copy of the app holding
@@ -33,7 +33,7 @@ struct ActivityLogFailure: Equatable {
             canStartFresh = false
         case .inconsistent:
             title = String(localized: "The Activity Log Can’t Be Trusted")
-            message = String(localized: "The log no longer holds what was just written to it, so cleanup stopped. Try again, or start a fresh log; the existing file is kept beside it.")
+            message = String(localized: "The log no longer holds what was just written to it, so cleanup stopped. Try again, or start a fresh log; the existing file is kept beside it. A fresh log has no history and no files marked Kept.")
             canStartFresh = true
         case .locationUnavailable:
             title = String(localized: "The Activity Log Has Nowhere to Go")

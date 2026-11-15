@@ -40,11 +40,17 @@ public struct DuplicatePlanner: Sendable {
     /// The records that may take part at all: those the shared rules allow at `now` (see
     /// `CandidateEligibility.allows`: not hidden, not the archive, not still downloading, past the
     /// grace period), and of those only regular files with content. Folders, packages, symbolic
-    /// links and empty files are never candidates.
+    /// links and empty files are never candidates. A file the user marked Kept takes part too, but
+    /// only ever as the copy its group keeps (`makePlan`); it is never proposed.
     public func candidates(in records: [FileRecord], now: Date) -> [FileRecord] {
         records.filter { record in
             guard record.kind == .file, let size = record.sizeInBytes, size > 0 else { return false }
-            return eligibility.allows(record, now: now)
+            switch eligibility.refusal(for: record, now: now) {
+            case nil, .kept:
+                return true
+            case .excludedName, .downloadInProgress, .insideGracePeriod:
+                return false
+            }
         }
     }
 
@@ -71,10 +77,15 @@ public struct DuplicatePlanner: Sendable {
 
     /// Builds the plan from records whose hashes are known. Records missing from `hashes` are
     /// ignored. Pure: nothing here touches the disk.
+    ///
+    /// A file in `keptItems` is never proposed. When a group has one, that copy is the one kept,
+    /// whatever its name; with several, the keep rule picks among them. A group in which every copy
+    /// is Kept proposes nothing and is left out.
     public static func makePlan(
         folderURL: URL,
         records: [FileRecord],
         hashes: [FileRecord.ID: ContentHash],
+        keptItems: KeptItems,
         skippedItems: [CleanupPlan.SkippedItem] = []
     ) -> CleanupPlan {
         var byHash: [ContentHash: [FileRecord]] = [:]
@@ -85,10 +96,12 @@ public struct DuplicatePlanner: Sendable {
 
         var groups: [DuplicateGroup] = []
         for (hash, members) in byHash where members.count >= 2 {
-            guard let kept = keptFile(among: members) else { continue }
+            let markedKept = members.filter(keptItems.contains)
+            guard let kept = keptFile(among: markedKept.isEmpty ? members : markedKept) else { continue }
             let duplicates = members
-                .filter { $0.id != kept.id }
+                .filter { $0.id != kept.id && !keptItems.contains($0) }
                 .sorted(by: nameOrder)
+            guard !duplicates.isEmpty else { continue }
             groups.append(
                 DuplicateGroup(
                     contentHash: hash,
@@ -208,11 +221,15 @@ public struct DuplicatePlanner: Sendable {
         try Self.throwIfCancelled()
         tracker.emitNow()
 
+        // A Kept file that could not be read is left out of the plan altogether, not listed as
+        // unchecked: no plan ever names a Kept file except as the copy a group keeps.
+        let keptURLs = Set(toHash.filter(eligibility.keptItems.contains).map(\.url))
         let plan = Self.makePlan(
             folderURL: folderURL,
             records: toHash,
             hashes: hashes,
-            skippedItems: skippedItems
+            keptItems: eligibility.keptItems,
+            skippedItems: skippedItems.filter { !keptURLs.contains($0.url) }
         )
 
         Self.logger.info(

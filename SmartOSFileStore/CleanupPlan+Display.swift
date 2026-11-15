@@ -148,6 +148,8 @@ extension CleanupSkipReason {
             String(localized: "This is the copy that is kept.")
         case .notInPlan:
             String(localized: "Not proposed by this scan. Run Find Duplicates again.")
+        case .markedKept:
+            String(localized: "You marked it Kept, so it was left alone.")
         case .outsideFolder:
             String(localized: "No longer directly inside the folder.")
         case .folderUnavailable:

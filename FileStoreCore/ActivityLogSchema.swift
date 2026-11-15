@@ -13,6 +13,10 @@ internal import GRDB
 /// it undid and the bytes it took back out of the Trash; an undo row names the change it reverses
 /// (`undoesChangeID`). An undo run is a `runs` row with the action `undo`.
 ///
+/// `v3` adds `keptItems`: one row per file or folder the user marked Kept, by its volume's UUID and
+/// its number there, or by its path alone where the volume gives no lasting numbers (decision
+/// record 0009). It has no link to `runs`, so pruning never touches it.
+///
 /// Every time is a `Date.timeIntervalSinceReferenceDate`, the number a `Date` itself holds, so a
 /// modification date read back is bit for bit the one the scan saw. Paths are stored as text;
 /// file content never is.
@@ -88,6 +92,23 @@ enum ActivityLogSchema {
                 CREATE INDEX changes_undoesChangeID ON changes (undoesChangeID);
                 ALTER TABLE runs ADD COLUMN undoneAction TEXT;
                 ALTER TABLE runs ADD COLUMN bytesTakenFromTrash INTEGER NOT NULL DEFAULT 0;
+                """)
+        }
+        migrator.registerMigration("v3") { db in
+            // An item is recorded once: by its identity when it has one, by its path when it has
+            // none. The two kinds of row never share a uniqueness rule.
+            try db.execute(sql: """
+                CREATE TABLE keptItems (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    volumeUUID TEXT,
+                    fileNumber INTEGER,
+                    path TEXT NOT NULL,
+                    keptAt REAL NOT NULL,
+                    CHECK ((volumeUUID IS NULL) = (fileNumber IS NULL))
+                ) STRICT;
+
+                CREATE UNIQUE INDEX keptItems_identity ON keptItems (volumeUUID, fileNumber) WHERE volumeUUID IS NOT NULL;
+                CREATE UNIQUE INDEX keptItems_path ON keptItems (path) WHERE volumeUUID IS NULL;
                 """)
         }
         return migrator

@@ -34,6 +34,9 @@ All notable changes to Smart OS File Store are recorded here. The format follows
 - While a debug override chooses the scan folder, the log is a separate database under the temporary directory, so hand testing never touches the real one.
 - Undo, for one change or a whole cleanup: Undo buttons on each cleanup and each file in Activity (greyed out with the reason when a change can't be undone, such as "The Trash was emptied" or "A file with the original name now exists"), an Undo button in the cleanup summary, and Edit > Undo (⌘Z), named after the newest cleanup ("Undo Find Duplicates"). Edit > Undo Selected and the context menu undo what is selected in Activity. Undoing more than one file asks first, with the count. A summary then lists what was put back and what was not, and the file list refreshes.
 - Each undo is listed in Activity as its own entry, the undone changes show when they were put back, and the "moved to the Trash" total goes down by what was put back.
+- Keep This File (⌘K, in the File menu and the context menu): marks the selected files and folders Kept, so no cleanup ever proposes them. The same item reads Stop Keeping when everything selected is already Kept. Kept items show a Kept badge and have their own choice in the filter. File > Stop Keeping All asks first, with the count. In the preview, Keep This File (context menu or ⌘K) takes a file out of the plan and marks it Kept.
+- Kept follows the file, not its name: a Kept file renamed or moved within the folder stays Kept, and a different file that later takes its name is not Kept. A Kept file that no longer exists is forgotten quietly. Editing a Kept file in an app that saves by writing a new copy (most document apps) makes it a new file, which is not Kept.
+- When one copy of a duplicate is Kept, Find Duplicates keeps that copy, whatever its name, and proposes the others. Kept copies are never proposed.
 
 ### Safety
 
@@ -45,6 +48,7 @@ All notable changes to Smart OS File Store are recorded here. The format follows
 - A file is never changed before the log says so. A row that says the change was started, with any folders a move is about to make, is written and synced first and completed right after, so if the app crashes or is force-quit at most one file's outcome is unknown, and the log shows it as interrupted. The compiler enforces the order: the calls that change a user's file need a permit only that row provides.
 - If the log cannot be written, the cleanup stops: the file being looked at is left untouched, the files after it are not touched, nothing is tried twice, and the summary says which file, if any, was changed without its row being completed.
 - Without a working log nothing can be cleaned up. A damaged or unreadable database is found when the app opens it, and the app offers to start a fresh log; the old file is renamed aside, never removed, and its folders are never reached through a link.
+- A Kept file is never changed, even if it was marked after its preview appeared: the Kept list is checked again right before each change, in the same step as the change's row is written, and a file without a row is never changed. If the list cannot be read, the cleanup stops with the file untouched, and Find Duplicates does not search without it. A fresh log starts with no Kept files, and its offer says so.
 
 ## [0.1.0] - 2026-11-13
 

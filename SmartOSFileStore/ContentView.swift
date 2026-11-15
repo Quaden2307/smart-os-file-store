@@ -17,6 +17,9 @@ struct ContentView: View {
     /// A run the cleanup summary asked to undo, started once its sheet has gone.
     @State private var runToUndoAfterSheet: ActivityRun.ID?
 
+    /// True while Stop Keeping All asks for confirmation.
+    @State private var isConfirmingStopKeepingAll = false
+
     /// Which place's list has keyboard focus, when the View menu moves it there.
     @FocusState private var focusedPlace: SidebarSection?
 
@@ -39,6 +42,9 @@ struct ContentView: View {
                 plan: presented.plan,
                 eligibility: model.eligibility,
                 activity: activity,
+                markKept: { records, onFinish in
+                    model.keep(records, onFinish: onFinish)
+                },
                 onExecuted: {
                     // Files moved, so the rows on screen are stale.
                     model.refresh()
@@ -49,6 +55,11 @@ struct ContentView: View {
             )
             // A later plan must start with its own ticks and its own log, never an earlier sheet's.
             .id(presented.id)
+        }
+        .sheet(isPresented: $isConfirmingStopKeepingAll) {
+            StopKeepingAllSheet(itemCount: model.keptItems.count) {
+                model.stopKeepingAll()
+            }
         }
     }
 
@@ -64,6 +75,7 @@ struct ContentView: View {
             .focusedSceneValue(\.fileListFilter, actsOnWindow && section == .downloads ? $model.filter : nil)
             .focusedSceneValue(\.placeSwitcher, actsOnWindow ? PlaceSwitcher(show: show) : nil)
             .focusedSceneValue(\.undoCommands, actsOnWindow ? undoCommands : nil)
+            .focusedSceneValue(\.keepCommands, actsOnWindow && section == .downloads ? keepCommands : nil)
             #if DEBUG
             .focusedSceneValue(\.duplicateSearch, duplicates)
             #endif
@@ -72,6 +84,7 @@ struct ContentView: View {
     private func observingChanges(_ view: some View) -> some View {
         view
             .onAppear {
+                model.connect(to: activity)
                 activity.open()
                 model.refresh()
             }
@@ -92,9 +105,15 @@ struct ContentView: View {
                 // Rows the filter hides must not stay selected, or menu commands would act on them.
                 keepSelectionVisible()
             }
+            .onChange(of: model.marksRevision) {
+                // Marks changed with the Kept list, so the Kept filter may hide selected rows now.
+                keepSelectionVisible()
+            }
             .onChange(of: activity.openings) {
-                // Another log: its runs and items are not the ones that were selected.
+                // Another log: its runs and items are not the ones that were selected, and its Kept
+                // list is the one that counts.
                 activitySelection = []
+                model.reloadKeptItems()
             }
             .onChange(of: section) { _, section in
                 guard placeToFocus == section else { return }
@@ -172,9 +191,35 @@ struct ContentView: View {
         }
     }
 
-    /// True while menu commands may act on the window: no preview or undo sheet is up in front of it.
+    /// True while menu commands may act on the window: no preview, undo or confirmation sheet is up
+    /// in front of it.
     private var actsOnWindow: Bool {
-        duplicates.presentedPlan == nil && undo.presented == nil
+        duplicates.presentedPlan == nil && undo.presented == nil && !isConfirmingStopKeepingAll
+    }
+
+    // MARK: - Kept
+
+    /// True while the Kept list may be changed from the window: the log works, and no duplicate
+    /// search is running (it read the list when it started, so a file Kept now could still appear in
+    /// its preview) and no earlier change is still being written.
+    private var canChangeKept: Bool {
+        model.canChangeKept && !duplicates.isRunning && !model.isChangingKept
+    }
+
+    /// File > Keep This File or Stop Keeping for the selection, and Stop Keeping All.
+    private var keepCommands: KeepCommandTarget {
+        let toggle = model.keepToggle(for: selection)
+        return KeepCommandTarget(
+            toggle: toggle,
+            canToggle: canChangeKept && toggle != nil,
+            toggleSelection: {
+                model.toggleKept(selection)
+            },
+            canStopKeepingAll: canChangeKept && !model.keptItems.isEmpty,
+            stopKeepingAll: {
+                isConfirmingStopKeepingAll = true
+            }
+        )
     }
 
     // MARK: - Undo
@@ -271,6 +316,7 @@ struct ContentView: View {
     /// be cleaned up, so nothing is searched for either.
     private var canFindDuplicates: Bool {
         model.isSettled && !duplicates.isRunning && duplicates.presentedPlan == nil && activity.log != nil && !undo.isBusy
+            && !model.isChangingKept && !isConfirmingStopKeepingAll
     }
 
     /// `.sheet(item:)` keeps showing the plan while the sheet animates away; setting it to nil
@@ -291,8 +337,8 @@ struct ContentView: View {
     }
 
     private func findDuplicates() {
-        guard let location = model.location else { return }
-        duplicates.start(records: model.records, folderURL: location.folderURL, eligibility: model.eligibility)
+        guard canFindDuplicates, let location = model.location, let log = activity.log else { return }
+        duplicates.start(records: model.records, folderURL: location.folderURL, eligibility: model.eligibility, log: log, activity: activity)
     }
 
     @ViewBuilder
@@ -312,7 +358,7 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 FileFilterBar(filter: $model.filter)
                 Divider()
-                FileTableView(model: model, selection: $selection, isShown: section == .downloads)
+                FileTableView(model: model, selection: $selection, isShown: section == .downloads, canChangeKept: canChangeKept)
                     .focused($focusedPlace, equals: .downloads)
             }
         }
@@ -327,6 +373,7 @@ private struct PresentedPlanSheet: View {
     let plan: CleanupPlan
     let eligibility: CandidateEligibility
     let activity: ActivityLogModel
+    let markKept: @MainActor ([FileRecord], @escaping @MainActor (Bool) -> Void) -> Void
     let onExecuted: @MainActor () -> Void
     let onUndo: @MainActor (ActivityRun.ID) -> Void
 
@@ -336,12 +383,14 @@ private struct PresentedPlanSheet: View {
         plan: CleanupPlan,
         eligibility: CandidateEligibility,
         activity: ActivityLogModel,
+        markKept: @escaping @MainActor ([FileRecord], @escaping @MainActor (Bool) -> Void) -> Void,
         onExecuted: @escaping @MainActor () -> Void,
         onUndo: @escaping @MainActor (ActivityRun.ID) -> Void
     ) {
         self.plan = plan
         self.eligibility = eligibility
         self.activity = activity
+        self.markKept = markKept
         self.onExecuted = onExecuted
         self.onUndo = onUndo
         _log = State(initialValue: activity.log)
@@ -349,7 +398,7 @@ private struct PresentedPlanSheet: View {
 
     var body: some View {
         if let log {
-            CleanupPreviewSheet(plan: plan, eligibility: eligibility, log: log, activity: activity, onUndo: onUndo) { _ in
+            CleanupPreviewSheet(plan: plan, eligibility: eligibility, log: log, activity: activity, markKept: markKept, onUndo: onUndo) { _ in
                 onExecuted()
             }
         } else {

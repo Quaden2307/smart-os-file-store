@@ -4,6 +4,8 @@ import os
 /// The rules that decide whether an item may take part in a cleanup action at all, before the
 /// action's own rules look at it. Every planner filters with `allows`, and the executor applies
 /// `refusal` again with dates read from disk right before acting, so the rules live in one place.
+/// The Kept list is one of them: planners match records against the list given here, and the
+/// executor reads the list from the activity log again before each change.
 ///
 /// The current time is always a parameter, never read here, so tests decide what "now" is.
 public struct CandidateEligibility: Sendable, Equatable {
@@ -15,6 +17,9 @@ public struct CandidateEligibility: Sendable, Equatable {
         case downloadInProgress
         /// Added or modified within the grace period, or its modification date is unknown.
         case insideGracePeriod
+        /// The user marked it Kept. Checked last, so an action that compares files can tell a Kept
+        /// item that would otherwise take part from one the other rules keep out.
+        case kept
     }
 
     /// An item added or modified more recently than this is left alone: it may still be
@@ -32,10 +37,21 @@ public struct CandidateEligibility: Sendable, Equatable {
     /// How long after it was added or last modified an item becomes a candidate.
     public let gracePeriod: TimeInterval
 
+    /// The items the user marked Kept, as read from the activity log before planning. No plan ever
+    /// proposes a change to one of them.
+    public let keptItems: KeptItems
+
     /// A negative grace period counts as none. A value that is not a number gets the default, so a
     /// mistake never makes the rule looser.
-    public init(gracePeriod: TimeInterval = Self.defaultGracePeriod) {
+    public init(gracePeriod: TimeInterval = Self.defaultGracePeriod, keptItems: KeptItems = KeptItems()) {
         self.gracePeriod = gracePeriod.isNaN ? Self.defaultGracePeriod : max(0, gracePeriod)
+        self.keptItems = keptItems
+    }
+
+    /// These rules with `keptItems` as the Kept list: what a planner is given once the list has
+    /// been read.
+    public func keeping(_ keptItems: KeptItems) -> CandidateEligibility {
+        CandidateEligibility(gracePeriod: gracePeriod, keptItems: keptItems)
     }
 
     /// The rules for this run: the default grace period, or in a debug build the one given with
@@ -89,17 +105,27 @@ public struct CandidateEligibility: Sendable, Equatable {
         return nil
     }
 
-    /// True when the shared rules let `record` take part at `now`. Each action adds its own rules
-    /// on top, such as which kinds of item it handles. An action with its own rule for downloads in
-    /// progress combines `isExcludedName` and `isSettled` itself.
-    public func allows(_ record: FileRecord, now: Date) -> Bool {
-        refusal(
+    /// The rules every action shares, for `record` as the scan saw it: nil when it may be proposed
+    /// for a change at `now`, otherwise the first rule that keeps it out, with Kept last.
+    public func refusal(for record: FileRecord, now: Date) -> Refusal? {
+        if let refusal = refusal(
             name: record.displayName,
             isDownloading: record.isDownloading,
             dateAdded: record.dateAdded,
             dateModified: record.dateModified,
             now: now
-        ) == nil
+        ) {
+            return refusal
+        }
+        return keptItems.contains(record) ? .kept : nil
+    }
+
+    /// True when the shared rules let `record` be proposed for a change at `now`: it is not hidden,
+    /// not the archive, not still downloading, past the grace period, and not Kept. Each action adds
+    /// its own rules on top, such as which kinds of item it handles. An action with its own rule for
+    /// downloads in progress combines `isExcludedName`, `isSettled` and `keptItems` itself.
+    public func allows(_ record: FileRecord, now: Date) -> Bool {
+        refusal(for: record, now: now) == nil
     }
 
     #if DEBUG

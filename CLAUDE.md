@@ -35,7 +35,7 @@ A native macOS file browser that will replace Finder, starting with a self-clean
 - In-progress downloads (`.crdownload`, `.download`, `.part`) are untouched by every action except Clear failed downloads, which has its own rule.
 - A folder named "Old downloads" at the top level of the scanned folder is the archive. No action treats it or its contents as a candidate.
 - Every executed change is recorded in the activity log with enough information to undo it.
-- Files the user marked Keep never appear in any plan.
+- Files the user marked Keep never appear as a proposed change in any plan.
 - Each segment adds a short decision record under `docs/decisions/` (what was decided, the alternatives, why).
 - The scanned folder is Downloads by default. Debug builds accept an override (launch argument `-ScanFolder <path>` or environment variable `SMARTOS_SCAN_FOLDER`) so hand testing uses a fake folder, and `-GracePeriodSeconds <n>` so freshly made files can be candidates. Release builds ignore all three.
 

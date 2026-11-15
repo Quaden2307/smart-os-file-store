@@ -10,6 +10,10 @@ struct FileTableView: View {
     @Bindable var model: FileListModel
     @Binding var selection: Set<FileRecord.ID>
 
+    /// False while another place of the window is shown. The table stays, out of sight, so it keeps
+    /// its scroll position and column widths; Quick Look closes, since nothing on screen would own it.
+    var isShown = true
+
     @State private var previewItem: URL?
     @State private var previewItems: [URL] = []
 
@@ -96,6 +100,11 @@ struct FileTableView: View {
             return .handled
         }
         .quickLookPreview($previewItem, in: previewItems)
+        .onChange(of: isShown) { _, isShown in
+            if !isShown {
+                previewItem = nil
+            }
+        }
         .accessibilityLabel("Files")
         .overlay {
             if model.visibleRecords.isEmpty, case .marked(let mark) = model.filter {

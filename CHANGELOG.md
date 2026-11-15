@@ -9,7 +9,8 @@ All notable changes to Smart OS File Store are recorded here. The format follows
 - The main window is wider by default, to fit the sixth column.
 - The grace period is now one hour and counts both dates: a file added to the folder or modified in the last hour is never proposed, where version 0.1 skipped only files modified in the last ten seconds. A copy or a file moved in from elsewhere therefore waits an hour too. The rule is checked again right before each file moves, on its Date Added as read at that moment.
 - An item named Old downloads at the top of the folder, in any letter case, is never proposed: it is the archive a later version files old downloads into.
-- Select None in the preview is now ⌥⌘A, as Deselect All is in Finder. ⇧⌘A opens the Activity window.
+- Select None in the preview is now ⌥⌘A, as Deselect All is in Finder. ⇧⌘A shows Activity.
+- The main window has a sidebar, like Finder's, with Downloads and Activity. It is wider by default to fit it.
 - The summary says how much was moved to the Trash, where it said "freed": the space is free once the Trash is emptied.
 
 ### Added
@@ -27,7 +28,7 @@ All notable changes to Smart OS File Store are recorded here. The format follows
 - The preview can show a plan without groups, one change per row with its checkbox, reason, and old name → new name or folder. Renames and moves are previewed only; they cannot be applied yet.
 - Debug builds have a Debug menu with two made-up plans, Show Sample Messy Names Plan and Show Sample Old Downloads Plan, to look at that preview.
 - An activity log: every confirmed cleanup is recorded in a local database, `~/Library/Application Support/com.quaden2307.SmartOSFileStore/FileStore.sqlite`, one row per file with the operation, where the file was and where it went, its size, modification date and content hash, the reason, the outcome and the time. The file is readable by its owner only, holds no file content, and never leaves the Mac. Cleanups older than 90 days are removed at launch, at most once a day.
-- An Activity window (Window > Activity, ⇧⌘A): cleanups newest first, each opening to its files, with Reveal in Finder for a file that is still where the log says it went.
+- Activity, a place in the main window's sidebar (also View > Activity, ⇧⌘A): cleanups newest first, each opening to its files, with Reveal in Finder for a file that is still where the log says it went.
 - The status line shows everything moved to the Trash so far, a total that pruning never lowers.
 - GRDB 7.12.0 (SQLite), the app's first and only dependency, linked to the engine alone and pinned to the commit of that release.
 - While a debug override chooses the scan folder, the log is a separate database under the temporary directory, so hand testing never touches the real one.

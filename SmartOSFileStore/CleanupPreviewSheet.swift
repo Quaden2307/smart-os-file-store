@@ -285,7 +285,7 @@ struct CleanupPreviewSheet: View {
         Button("Select None") {
             model.selectNone()
         }
-        // Finder's shortcut for Deselect All. Shift-Command-A opens the Activity window.
+        // Finder's shortcut for Deselect All. Shift-Command-A shows Activity.
         .keyboardShortcut("a", modifiers: [.command, .option])
         .help(model.isGroupedByDuplicates ? Text("Untick every duplicate (⌥⌘A)") : Text("Untick every change (⌥⌘A)"))
     }

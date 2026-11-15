@@ -3,8 +3,8 @@ import AppKit
 /// Sees Command-A pressed in a sheet before the sheet does and hands it to `select`, which returns
 /// true when it used the key. Lives as long as its owner keeps it; removing the monitor is its deinit.
 ///
-/// Only a key press in a sheet counts. Another window, such as Activity, can be in front while the
-/// sheet is up, and Command-A there means that window's own Select All.
+/// Only a key press in a sheet counts: Command-A in any other window means that window's own Select
+/// All, even while a sheet is up elsewhere.
 ///
 /// AppKit, because a SwiftUI list claims Command-A as the standard Select All in the window's own
 /// key-equivalent pass, ahead of any `keyboardShortcut` on a button, so a sheet that wants

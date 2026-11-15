@@ -18,7 +18,7 @@ Smart OS File Store is a native macOS file browser that will replace Finder, sta
 - **Download source**: hover over a row to see the site a file was downloaded from and the app that downloaded it. Copy Download Source, in the context menu and the Edit menu, copies the file's address.
 - **Rename and move in the engine**, for Fix messy names and Archive old downloads to use: exclusive, so nothing is ever replaced, through a handle on the folder, so no link is followed. Nothing proposes them yet.
 - **An activity log**: every confirmed cleanup is recorded as it happens, one row per file, in a local database. A row that says a change was started is written before the file changes and completed right after, so if the app crashes or is force-quit, no moved file is missing from the log. If the log cannot be written, the cleanup stops with the file untouched.
-- **The Activity window** (Window > Activity, ⇧⌘A): every cleanup, newest first. Open one to see each file with what was to be done, why, what happened and when. Reveal in Finder works for a file that is still where the log says it went.
+- **Activity**, in the main window's sidebar beside Downloads (also View > Activity, ⇧⌘A): every cleanup, newest first. Open one to see each file with what was to be done, why, what happened and when. Reveal in Finder works for a file that is still where the log says it went.
 - **Moved to the Trash**: the summary says how much a cleanup moved to the Trash, and the status line shows the total so far. The space is free once you empty the Trash.
 
 The two thresholds live in the app's defaults. There is no settings window yet; to change them for good, or for one launch:
@@ -34,6 +34,7 @@ open build/Build/Products/Debug/SmartOSFileStore.app --args -CleanupUnusedAfterD
 - Only the top level of Downloads. No other folders and no subfolders.
 - Only exact duplicates. No other cleanup actions.
 - No undo beyond the Trash's Put Back. The activity log records what an undo will need, but nothing undoes yet.
+- An Activity entry cannot be opened for more detail yet. That is planned for later, perhaps with an Apple Intelligence summary.
 - No watching of the folder: the list refreshes on launch, with ⌘R, and after Move to Trash.
 - No Stop button while files move; each move is quick, and closing the window stops between files.
 - Columns sort by clicking their headers only.
@@ -57,9 +58,10 @@ open build/Build/Products/Debug/SmartOSFileStore.app --args -CleanupUnusedAfterD
 | Confirmation | Return, Esc | Cancel |
 | Confirmation | ⌘⌫ | Move to Trash |
 | Summary | Return, Esc | Done |
-| Anywhere | ⇧⌘A | Open the Activity window, or bring it forward |
+| Main window | ⇧⌘A | Show Activity |
+| Sidebar | ↑ ↓ | Move between Downloads and Activity (Tab moves into the sidebar) |
 | Activity | ↑ ↓ | Move between cleanups and their files |
-| Activity | → ← | Open or close the selected cleanup |
+| Activity | → ←, Return, double-click | Open or close the selected cleanup |
 | Activity | ⌥⌘R | Reveal the selected files in Finder |
 
 ## The activity log

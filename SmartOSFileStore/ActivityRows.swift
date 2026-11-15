@@ -1,12 +1,29 @@
 import FileStoreCore
 import SwiftUI
 
-/// One cleanup in the Activity window: its action, when it ran, and what it did in numbers.
+/// One cleanup in the Activity place: an arrow that shows or hides its files, its action, when it
+/// ran, and what it did in numbers.
 struct ActivityRunRow: View {
+    /// How far a cleanup's files are set in under it.
+    static let itemIndent: CGFloat = 22
+
     let run: ActivityRun
+    let isExpanded: Bool
+    let toggle: @MainActor () -> Void
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Button(action: toggle) {
+                Text(Image(systemName: "chevron.right"))
+                    .fontWeight(.semibold)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .frame(width: 14)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help(isExpanded ? Text("Hide the files") : Text("Show the files"))
+            // VoiceOver offers the same through the row's own action, below.
+            .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(run.title)
@@ -38,6 +55,7 @@ struct ActivityRunRow: View {
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
+        .accessibilityAction(named: isExpanded ? Text("Hide Files") : Text("Show Files"), toggle)
     }
 
     private var separator: some View {

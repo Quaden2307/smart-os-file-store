@@ -4,7 +4,8 @@ import Observation
 import os
 
 /// The activity log as the app holds it: whether it is open, the running totals, and a counter
-/// that tells views when its content changed. One for the whole app, shared by both windows. Lives
+/// that tells views when its content changed. One for the whole app, shared by the main window's
+/// places and the cleanup preview. Lives
 /// on the main actor; every read and write of the database runs elsewhere.
 ///
 /// Cleanup needs a working log, so the main window offers cleanup only while `log` is set.
@@ -26,6 +27,10 @@ final class ActivityLogModel {
 
     /// Increases whenever the log's content may have changed, so views that show it load it again.
     private(set) var revision = 0
+
+    /// Increases each time a log is opened: at launch, after Try Again, after Start a Fresh Log. What
+    /// was read from one opening must not be mixed with the next; a fresh log numbers its runs anew.
+    private(set) var openings = 0
 
     /// The database a fresh log replaced, kept beside it under a new name. Shown until dismissed,
     /// and kept even when opening the fresh log then failed, so its place is never lost.
@@ -79,7 +84,7 @@ final class ActivityLogModel {
     /// True when opening the log again could help: there is a place for it.
     var canRetry: Bool { location != nil }
 
-    /// Opens the log, once. Each window calls this when it appears; only the first call does anything.
+    /// Opens the log, once. The main window calls this when it appears; later calls do nothing.
     func open() {
         guard !hasStartedOpening else { return }
         hasStartedOpening = true
@@ -108,7 +113,7 @@ final class ActivityLogModel {
         reloadTotals()
     }
 
-    /// Called when reading the open log failed elsewhere, such as in the Activity window. A log that
+    /// Called when reading the open log failed elsewhere, such as in the Activity place. A log that
     /// cannot be read cannot be trusted to record a cleanup either.
     func readFailed(_ error: ActivityLogError) {
         fail(error)
@@ -138,6 +143,7 @@ final class ActivityLogModel {
                     logger.error("The activity log could not be pruned: \(String(describing: error), privacy: .public)")
                 }
                 totals = try await opened.totals()
+                openings += 1
                 state = .ready(opened)
             } catch {
                 state = .failed(error)

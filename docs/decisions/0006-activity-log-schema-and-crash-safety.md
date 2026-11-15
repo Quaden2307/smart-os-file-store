@@ -1,5 +1,7 @@
 # 0006. The activity log: schema and crash safety
 
+Where the log is shown is now decided by [0007](0007-activity-in-the-main-window.md): in the main window's sidebar, not a window of its own.
+
 Date: 2026-11-14 · Segment: version 0.2, segment 4 (database, activity log and space counter)
 
 ## Decision

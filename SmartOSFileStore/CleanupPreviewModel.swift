@@ -40,7 +40,7 @@ final class CleanupPreviewModel {
     ///   - eligibility: The rules the plan was made with; the executor checks them again.
     ///   - log: The open activity log. Every change is written to it as it happens; there is no
     ///     way to carry out a plan without one.
-    ///   - activity: Told when the run has ended, so the totals and the Activity window follow.
+    ///   - activity: Told when the run has ended, so the totals and the Activity place follow.
     init(
         plan: CleanupPlan,
         eligibility: CandidateEligibility,

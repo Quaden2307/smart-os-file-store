@@ -89,22 +89,6 @@ struct ActivityLogProblemBanner: View {
     }
 }
 
-/// The problem filling a window: the Activity window's content while the log cannot be used.
-struct ActivityLogProblemView: View {
-    let activity: ActivityLogModel
-    let failure: ActivityLogFailure
-
-    var body: some View {
-        ContentUnavailableView {
-            Label(failure.title, systemImage: "exclamationmark.triangle")
-        } description: {
-            Text(failure.message)
-        } actions: {
-            ActivityLogRecoveryButtons(activity: activity, failure: failure)
-        }
-    }
-}
-
 /// Shown instead of a cleanup preview when the log stopped working after the search began: nothing
 /// may be carried out, so nothing is offered.
 struct ActivityLogUnavailableSheet: View {

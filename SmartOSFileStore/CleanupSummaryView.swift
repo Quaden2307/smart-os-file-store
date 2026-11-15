@@ -93,7 +93,7 @@ private struct LogFailureNotice: View {
                 } else if untouchedCount == 0 {
                     Text("Every file was recorded, but the activity log couldn’t mark the cleanup as finished.")
                         .fontWeight(.semibold)
-                    Text("It is listed as interrupted in the Activity window.")
+                    Text("It is listed as interrupted in Activity.")
                 } else {
                     Text("The activity log stopped working, so the cleanup stopped.")
                         .fontWeight(.semibold)

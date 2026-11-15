@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct SmartOSFileStoreApp: App {
-    /// The activity log, one for the whole app: both windows show it and every cleanup writes to it.
+    /// The activity log, one for the whole app: every cleanup writes to it and Activity shows it.
     @State private var activity = ActivityLogModel()
 
     var body: some Scene {
@@ -10,23 +10,18 @@ struct SmartOSFileStoreApp: App {
             ContentView()
                 .environment(activity)
         }
-        .defaultSize(width: 1_140, height: 640)
+        // The six columns at their ideal widths, plus the sidebar.
+        .defaultSize(width: 1_320, height: 640)
         .commands {
             RevealInFinderCommands()
             CopyDownloadSourceCommands()
             FilterCommands()
+            // View > Show/Hide Sidebar, so the toolbar's sidebar button has a menu item and a shortcut.
+            SidebarCommands()
+            PlaceCommands()
             #if DEBUG
             DebugCommands()
             #endif
         }
-
-        // A window of its own, which the Window menu lists by itself. The shortcut belongs to that
-        // menu item: it opens the window, or brings it forward when it is open.
-        Window("Activity", id: ActivityWindow.id) {
-            ActivityWindow()
-                .environment(activity)
-        }
-        .defaultSize(width: 760, height: 520)
-        .keyboardShortcut("a", modifiers: [.command, .shift])
     }
 }

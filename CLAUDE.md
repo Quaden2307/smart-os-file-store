@@ -84,3 +84,5 @@ Plus:
 9. A Tidy Now overview.
 
 Out of scope until the owner asks: watching Downloads automatically, user-defined rules, schedules, folders beyond Downloads, subfolders, the full storage view, search, tags, sharing, AI features, custom theme.
+
+Noted for later by the owner (2026-11-14): each entry in Activity should open to further details about what was done, perhaps with an Apple Intelligence summary (on device). Not part of any segment yet; ask before starting it.

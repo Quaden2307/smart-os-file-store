@@ -9,22 +9,28 @@ struct StatusBar: View {
     let model: FileListModel
     let activity: ActivityLogModel
 
+    /// False while a place other than Downloads is shown: the item counts and the filter they
+    /// follow belong to the file list.
+    var showsFileCounts = true
+
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 8) {
-                if model.filter == .all {
-                    Text("^[\(model.itemCount) item](inflect: true), \(model.totalBytes.formattedFileSize)")
-                } else {
-                    Text("\(model.visibleCount) of ^[\(model.itemCount) item](inflect: true), \(model.visibleBytes.formattedFileSize)")
-                }
-                if !model.skippedItems.isEmpty {
-                    Text("^[\(model.skippedItems.count) item](inflect: true) could not be read")
-                        .foregroundStyle(.secondary)
-                }
-                if model.isLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                        .accessibilityLabel("Refreshing")
+                if showsFileCounts {
+                    if model.filter == .all {
+                        Text("^[\(model.itemCount) item](inflect: true), \(model.totalBytes.formattedFileSize)")
+                    } else {
+                        Text("\(model.visibleCount) of ^[\(model.itemCount) item](inflect: true), \(model.visibleBytes.formattedFileSize)")
+                    }
+                    if !model.skippedItems.isEmpty {
+                        Text("^[\(model.skippedItems.count) item](inflect: true) could not be read")
+                            .foregroundStyle(.secondary)
+                    }
+                    if model.isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Refreshing")
+                    }
                 }
                 Spacer()
                 if activity.totals.bytesMovedToTrash > 0 {

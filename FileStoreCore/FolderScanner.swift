@@ -7,7 +7,9 @@ import os
 /// hidden items. It runs off the caller's actor and stops early when its task is cancelled.
 /// Each record carries the metadata its reader finds: by default, last opened and download source
 /// read from the item's extended attributes. It also carries the item's identity on its volume,
-/// read with `lstat` as the executor reads it, so the Kept list can follow the file.
+/// read with `lstat` as the executor reads it, so the Kept list can follow the file. For a folder
+/// whose name ends in `.download` (Safari's partial download), and for no other folder, it reads
+/// what is inside (`PackageContents`), so Clear Failed Downloads can tell when it last changed.
 public struct FolderScanner: Sendable {
     /// The resource values fetched for every item in one call, so each record costs no extra
     /// file-system round trip.
@@ -75,6 +77,10 @@ public struct FolderScanner: Sendable {
             Self.logger.error("Could not read the volume of \(folderURL.path(percentEncoded: false), privacy: .private); items carry no identity")
         }
 
+        // Opened only if there is a `.download` folder to read into, and through it alone, so a
+        // link put in a name's place is never followed.
+        var folderHandle: Result<DirectoryHandle, PackageContents.Failure>?
+
         var records: [FileRecord] = []
         records.reserveCapacity(urls.count)
         var skippedItems: [FolderScanResult.SkippedItem] = []
@@ -90,8 +96,24 @@ public struct FolderScanner: Sendable {
                 if values.isHidden == true {
                     continue
                 }
-                let identity = (try? FileStatus.of(path: url.path(percentEncoded: false))).flatMap { volume?.identity(of: $0) }
-                records.append(FileRecord(url: url, values: values, metadata: metadataReader.metadata(for: url), identity: identity))
+                // A folder's URL ends in `/`, and `lstat` on that would follow a link put at the name.
+                let identity = (try? FileStatus.of(path: url.storedPath)).flatMap { volume?.identity(of: $0) }
+                var packageContents: Result<PackageContents, PackageContents.Failure>?
+                if values.isDirectory == true, values.isSymbolicLink != true,
+                   FailedDownloadPlanner.partialShape(ofName: url.lastPathComponent) == .folder {
+                    let handle = folderHandle ?? Self.openHandle(on: folderURL)
+                    folderHandle = handle
+                    packageContents = handle.flatMap { PackageContents.read(named: url.lastPathComponent, in: $0) }
+                }
+                records.append(
+                    FileRecord(
+                        url: url,
+                        values: values,
+                        metadata: metadataReader.metadata(for: url),
+                        identity: identity,
+                        packageContents: packageContents
+                    )
+                )
             } catch {
                 skippedItems.append(
                     FolderScanResult.SkippedItem(
@@ -118,6 +140,15 @@ public struct FolderScanner: Sendable {
             skippedItems: skippedItems,
             scannedAt: .now
         )
+    }
+
+    /// A handle on the scanned folder, which may itself be a link (Downloads can be).
+    private static func openHandle(on folderURL: URL) -> Result<DirectoryHandle, PackageContents.Failure> {
+        do throws(DirectoryHandle.OpenFailure) {
+            return .success(try DirectoryHandle.open(path: folderURL.path(percentEncoded: false)))
+        } catch {
+            return .failure(PackageContents.Failure(openFailure: error))
+        }
     }
 
     /// Typed-throws stand-in for `Task.checkCancellation()`, which throws `CancellationError`.

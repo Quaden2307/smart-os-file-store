@@ -90,14 +90,18 @@ struct FakeDownloadsFolderTests {
         }
     }
 
-    /// Under the default thresholds only the three age cases carry marks. Everything else is two
-    /// hours old, a folder, a link or a download in progress, and carries none.
+    /// Under the default thresholds only the three age cases carry age marks, and only the three
+    /// stale partial downloads carry Failed download. Everything else is two hours old, a folder, a
+    /// link or a download still in progress, and carries none.
     @Test func ageCasesCarryTheirMarks() async throws {
         try await withFakeDownloadsFolder { fixture in
             let expected: [String: [FileMark]] = [
                 Names.oldReceipt: [.unused, .old],
                 Names.oldManual: [.neverOpened, .old],
                 Names.taxForm: [.old],
+                Names.chromeDownload: [.failedDownload],
+                Names.partialDownload: [.failedDownload],
+                Names.safariDownload: [.failedDownload],
             ]
             let now = Date.now
             let settings = CleanupSettings()

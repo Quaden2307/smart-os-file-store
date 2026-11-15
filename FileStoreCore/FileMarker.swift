@@ -1,12 +1,14 @@
 import Foundation
 
-/// Decides which marks an item carries. Pure: it reads only the record, the settings, the Kept list
-/// and the time it is given, so tests decide what "now" is.
+/// Decides which marks an item carries. Pure: it reads only the record, the settings, the shared
+/// rules with the Kept list, and the time it is given, so tests decide what "now" is.
 public enum FileMarker {
     /// The marks `record` carries at `now`, in `FileMark.allCases` order.
     ///
-    /// - Kept: `keptItems` contains it. Any item can be Kept, folders and apps included, so this mark
-    ///   comes before every rule below.
+    /// - Kept: the Kept list in `eligibility` contains it. Any item can be Kept, folders and apps
+    ///   included, so this mark comes before every rule below.
+    /// - Failed download: Clear Failed Downloads would propose it (`FailedDownloadPlanner.isCandidate`),
+    ///   which a Kept item never is.
     /// - Never opened: no last-opened date, and added more than `settings.unusedAfter` ago.
     /// - Unused: last opened more than `settings.unusedAfter` ago.
     /// - Old: added more than `settings.oldAfter` ago, opened or not, so it can join either of the two.
@@ -21,9 +23,13 @@ public enum FileMarker {
         for record: FileRecord,
         now: Date,
         settings: CleanupSettings,
-        keptItems: KeptItems = KeptItems()
+        eligibility: CandidateEligibility = CandidateEligibility()
     ) -> [FileMark] {
-        var marks: [FileMark] = keptItems.contains(record) ? [.kept] : []
+        var marks: [FileMark] = eligibility.keptItems.contains(record) ? [.kept] : []
+        // Only a download in progress can be a failed one; the flag spares every other item the check.
+        if record.isDownloading, FailedDownloadPlanner(eligibility: eligibility).isCandidate(record, now: now) {
+            marks.append(.failedDownload)
+        }
         guard record.recordsLastOpened,
               !CandidateEligibility.isExcludedName(record.displayName),
               !record.isDownloading

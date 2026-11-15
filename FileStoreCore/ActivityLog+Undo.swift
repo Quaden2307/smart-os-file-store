@@ -72,7 +72,8 @@ extension ActivityLog {
                     sizeInBytes: step.evidence.sizeInBytes,
                     dateModified: step.evidence.dateModified,
                     fileNumber: intent.fileNumber,
-                    contentHash: step.evidence.contentHash
+                    contentHash: step.evidence.contentHash,
+                    isFolder: step.evidence.isFolder
                 ),
                 attemptedAt: intent.attemptedAt
             )
@@ -233,8 +234,8 @@ extension ActivityLog {
             INSERT INTO changes (
                 runID, sequence, operation, originalPath, resultingPath, sizeInBytes, dateModified, contentHash,
                 reasonCode, outcome, outcomeCode, outcomeDetail, errorDomain, errorCode, errorText,
-                attemptedAt, fileNumber, undoesChangeID
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                attemptedAt, fileNumber, undoesChangeID, isFolder
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """)
         // A change refused before anything was known about it may be one this version cannot read;
         // its row keeps an operation code no version reads as one it knows.
@@ -244,6 +245,7 @@ extension ActivityLog {
             evidence?.dateModified?.timeIntervalSinceReferenceDate, evidence?.contentHash.map { Data($0.bytes) },
             undoReasonCode, outcome.outcome, outcome.code, outcome.detail, outcome.errorDomain, outcome.errorNumber, outcome.errorText,
             attemptedAt.timeIntervalSinceReferenceDate, evidence?.fileNumber.map(storedFileNumber), item.changeID,
+            evidence?.isFolder ?? false,
         ])
     }
 }

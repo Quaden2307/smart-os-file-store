@@ -118,11 +118,18 @@ struct FileMarkerTests {
             record("report alias", contentType: .aliasFile, added: ancient),
             record(".hidden-file", added: ancient),
             record("Old downloads", kind: .folder, contentType: .folder, added: ancient),
-            record("movie.mp4.crdownload", contentType: nil, added: ancient),
-            record("partial.part", contentType: nil, added: ancient, lastOpened: ancient),
         ]
         for item in cases {
             #expect(marks(item) == [], "\(item.displayName) should carry no age marks")
+        }
+        // A download in progress carries no age marks either. These two stopped long ago, so Clear
+        // Failed Downloads would propose them, and that is the one mark they carry.
+        let partials: [FileRecord] = [
+            record("movie.mp4.crdownload", contentType: nil, added: ancient),
+            record("partial.part", contentType: nil, added: ancient, lastOpened: ancient),
+        ]
+        for item in partials {
+            #expect(marks(item) == [.failedDownload], "\(item.displayName) should carry no age marks, only Failed download")
         }
     }
 

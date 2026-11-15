@@ -111,10 +111,11 @@ struct ChangeRow: View {
                 FileIconView(record: change.record)
                 VStack(alignment: .leading, spacing: 1) {
                     names
+                    // Two lines, so a reason's second sentence ("movie.mp4 is next to it.") shows.
                     Text(change.reason.localizedDescription)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(2)
                 }
                 Spacer()
                 DateCell(date: change.record.dateAdded)
@@ -155,6 +156,8 @@ struct ChangeRow: View {
 /// A file the search could not check, and why. It is left alone.
 struct SkippedFileRow: View {
     let item: CleanupPlan.SkippedItem
+    /// The action whose search skipped it, for the advice in its reason.
+    let action: CleanupAction
 
     var body: some View {
         HStack(spacing: 8) {
@@ -165,7 +168,7 @@ struct SkippedFileRow: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer()
-            Text(item.reason.localizedDescription)
+            Text(item.reason.localizedDescription(for: action))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }

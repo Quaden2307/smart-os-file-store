@@ -4,13 +4,13 @@ import SwiftUI
 
 extension FocusedValues {
     /// The frontmost window's search model, whose preview sheet shows the samples. Debug builds only.
-    @Entry var duplicateSearch: DuplicateSearchModel?
+    @Entry var cleanupSearch: CleanupSearchModel?
 }
 
 /// The Debug menu, in debug builds only: made-up plans of renames and moves, so the preview of
 /// plans without groups can be looked at before any action proposes them.
 struct DebugCommands: Commands {
-    @FocusedValue(\.duplicateSearch) private var search
+    @FocusedValue(\.cleanupSearch) private var search
 
     var body: some Commands {
         CommandMenu("Debug") {

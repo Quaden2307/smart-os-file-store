@@ -116,8 +116,9 @@ struct ActivityChangeRow: View {
                     if let reason = change.reason {
                         Text(verbatim: "·")
                             .accessibilityHidden(true)
-                        Text(reason.localizedDescription)
-                            .lineLimit(1)
+                        // Two lines, so a reason's second sentence ("movie.mp4 was next to it.") shows.
+                        Text(reason.historyDescription)
+                            .lineLimit(2)
                             .truncationMode(.middle)
                     }
                 }

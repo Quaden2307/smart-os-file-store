@@ -13,28 +13,16 @@ struct ActivityLogCode: Hashable {
 }
 
 extension CleanupAction {
+    /// The definition's identifier, which is written out there for the same reason as every code here.
     var logCode: String {
-        switch self {
-        case .findDuplicates:
-            "findDuplicates"
-        case .fixMessyNames:
-            "fixMessyNames"
-        case .archiveOldDownloads:
-            "archiveOldDownloads"
-        }
+        definition.identifier
     }
 
     init?(logCode: String) {
-        switch logCode {
-        case "findDuplicates":
-            self = .findDuplicates
-        case "fixMessyNames":
-            self = .fixMessyNames
-        case "archiveOldDownloads":
-            self = .archiveOldDownloads
-        default:
+        guard let action = Self.allCases.first(where: { $0.definition.identifier == logCode }) else {
             return nil
         }
+        self = action
     }
 }
 
@@ -118,10 +106,15 @@ extension ProposedChange.Reason {
             ActivityLogCode(code: "messyName")
         case .oldDownload:
             ActivityLogCode(code: "oldDownload")
+        case .failedDownload(_, let finishedFileName):
+            // The date is the change's `dateModified`, already in the row, so it is not stored twice.
+            ActivityLogCode(code: "failedDownload", detail: finishedFileName)
         }
     }
 
-    init?(logCode: ActivityLogCode) {
+    /// The reason a row's codes describe. `dateModified` is the row's own, which a failed
+    /// download's date is; a failed download without one reads as unknown, as an unknown code does.
+    init?(logCode: ActivityLogCode, dateModified: Date?) {
         switch logCode.code {
         case "sameContent":
             self = .sameContent(asFileNamed: logCode.detail ?? "")
@@ -129,6 +122,11 @@ extension ProposedChange.Reason {
             self = .messyName
         case "oldDownload":
             self = .oldDownload
+        case "failedDownload":
+            guard let dateModified else {
+                return nil
+            }
+            self = .failedDownload(stoppedOn: dateModified, finishedFileName: logCode.detail)
         default:
             return nil
         }
@@ -387,11 +385,11 @@ extension ActivityLogOutcomeCode {
     init(_ outcome: CleanupItemOutcome) {
         switch outcome {
         case .trashed(let trashURL):
-            self.init(outcome: "trashed", resultingPath: trashURL?.path(percentEncoded: false))
+            self.init(outcome: "trashed", resultingPath: trashURL?.storedPath)
         case .renamed(_, let newURL):
-            self.init(outcome: "renamed", resultingPath: newURL.path(percentEncoded: false))
+            self.init(outcome: "renamed", resultingPath: newURL.storedPath)
         case .moved(_, let newURL):
-            self.init(outcome: "moved", resultingPath: newURL.path(percentEncoded: false))
+            self.init(outcome: "moved", resultingPath: newURL.storedPath)
         case .skipped(let reason):
             let reasonCode = reason.logCode
             self.init(outcome: "skipped", code: reasonCode.code, detail: reasonCode.detail)

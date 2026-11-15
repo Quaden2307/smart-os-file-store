@@ -97,7 +97,7 @@ struct CleanupPreviewSheet: View {
                 Text("^[\(model.keptCount) file](inflect: true) kept")
                     .foregroundStyle(.secondary)
             } else if plan.isEmpty {
-                Text(plan.action.emptyTitle)
+                Text(plan.action.display.emptyTitle)
                     .foregroundStyle(.secondary)
             } else if model.result == nil {
                 // Once files have moved, the summary below says what happened instead.
@@ -132,9 +132,9 @@ struct CleanupPreviewSheet: View {
             )
         } else if plan.isEmpty, plan.skippedItems.isEmpty {
             ContentUnavailableView(
-                plan.action.emptyTitle,
+                plan.action.display.emptyTitle,
                 systemImage: "checkmark.circle",
-                description: Text(plan.action.emptyDescription)
+                description: Text(plan.action.display.emptyDescription)
             )
         } else {
             changeList
@@ -178,7 +178,7 @@ struct CleanupPreviewSheet: View {
             if !plan.skippedItems.isEmpty {
                 Section("Not Checked") {
                     ForEach(plan.skippedItems) { item in
-                        SkippedFileRow(item: item)
+                        SkippedFileRow(item: item, action: plan.action)
                     }
                 }
             }

@@ -7,12 +7,30 @@ extension FileMark {
         switch self {
         case .kept:
             String(localized: "Kept")
+        case .failedDownload:
+            String(localized: "Failed download")
         case .neverOpened:
             String(localized: "Never opened")
         case .unused:
             String(localized: "Unused")
         case .old:
             String(localized: "Old")
+        }
+    }
+
+    /// What the list says when the filter for the mark matches nothing.
+    var emptyFilterDescription: String {
+        switch self {
+        case .kept:
+            String(localized: "No files are marked Kept.")
+        case .failedDownload:
+            String(localized: "No failed downloads.")
+        case .neverOpened:
+            String(localized: "No files are marked Never opened.")
+        case .unused:
+            String(localized: "No files are marked Unused.")
+        case .old:
+            String(localized: "No files are marked Old.")
         }
     }
 }

@@ -22,6 +22,7 @@ The benchmark is not part of the normal test run; README.md has the command. It 
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 2026-11-13 | MacBook Pro 13-inch, M1, 2020 (MacBookPro17,1), 8 GB | 27.2.1 (26B131) | 27.2 (27B52) | Release | `ded25d2` + this segment (committed as *Prepare for version 0.2*) | 645.8 ms (593.5–665.5) | — | — | — | — | 2,204.0 ms (2,026.2–2,471.8) | 78.3 MiB (+56.0 MiB) | 78.3 MiB |
 | 2026-11-14 | MacBook Pro 13-inch, M1, 2020 (MacBookPro17,1), 8 GB | 27.2.1 (26B131) | 27.2 (27B52) | Release | `39977b4` + this segment (committed as *Add last opened, download source and marks*) | 571.7 ms (564.8–598.1) | 1,175.3 ms (1,079.8–1,190.8) | 11.6 ms (11.2–16.7) | 149.8 ms (145.4–151.1) | 22.2 ms (21.6–23.0) | 1,944.6 ms (1,928.4–1,969.1) | 108.0 MiB (+82.7 MiB) | 108.0 MiB |
+| 2026-11-15 | MacBook Pro 13-inch, M1, 2020 (MacBookPro17,1), 8 GB | 27.2.1 (26B131) | 27.2 (27B52) | Release | `0749095` + this segment (Clear Failed Downloads; marks now include Kept and Failed download) | 617.2 ms (599.2–677.9) | 1,095.9 ms (1,093.1–1,232.8) | 19.6 ms (19.1–54.3) | 160.7 ms (159.7–164.3) | 23.0 ms (22.7–24.5) | 1,998.5 ms (1,975.5–2,041.4) | 110.5 MiB (+84.5 MiB) | 110.7 MiB |
 
 A commit cannot record its own hash, so a row made before its commit names the commit it was built on. The first row's files carried no attributes and its scan read none, so its scan is listed as a scan without metadata.
 

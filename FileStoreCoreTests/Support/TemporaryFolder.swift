@@ -26,3 +26,10 @@ func withTemporaryFolder<T>(_ body: (URL) throws -> T) throws -> T {
     defer { folder.remove() }
     return try body(folder.url)
 }
+
+/// Runs `body`, which may suspend, with a fresh temporary folder and removes it afterwards.
+func withTemporaryFolderAsync<T>(_ body: (URL) async throws -> T) async throws -> T {
+    let folder = try TemporaryFolder.make()
+    defer { folder.remove() }
+    return try await body(folder.url)
+}

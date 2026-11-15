@@ -28,6 +28,11 @@ public struct ProposedChange: Sendable, Hashable, Identifiable {
 
         /// The file is an old download, filed into the archive.
         case oldDownload
+
+        /// A download that stopped at `stoppedOn`, its last change, and never finished.
+        /// `finishedFileName` names a finished item beside it with the name the download would
+        /// have had (`movie.mp4` beside `movie.mp4.crdownload`), when there is one.
+        case failedDownload(stoppedOn: Date, finishedFileName: String?)
     }
 
     public var id: URL { record.url }
@@ -39,13 +44,15 @@ public struct ProposedChange: Sendable, Hashable, Identifiable {
 
     public let reason: Reason
 
-    /// Size at scan time. Execution rechecks it right before acting.
+    /// Size at scan time: for a folder whose contents the scan read, the total of its files.
+    /// Execution rechecks it right before acting.
     public let sizeInBytes: Int64
 
-    /// Modification date at scan time. Execution rechecks it right before acting.
+    /// Modification date at scan time: for a folder whose contents the scan read, its last change
+    /// (`FileRecord.lastChange`). Execution rechecks it right before acting.
     public let dateModified: Date?
 
-    /// Where the file was, so a later undo can put it back.
+    /// Where the file was, so a later undo can put it back. Never ends in `/`, even for a folder.
     public let originalPath: String
 
     /// Where the file would be after a rename or a move, so a later undo can find it there. Nil for
@@ -56,16 +63,26 @@ public struct ProposedChange: Sendable, Hashable, Identifiable {
         self.record = record
         self.operation = operation
         self.reason = reason
-        self.sizeInBytes = record.sizeInBytes ?? 0
-        self.dateModified = record.dateModified
-        self.originalPath = record.url.path(percentEncoded: false)
+        self.sizeInBytes = record.contentSizeInBytes ?? 0
+        self.dateModified = record.lastChange
+        self.originalPath = record.url.storedPath
         switch operation {
         case .moveToTrash:
             self.destinationPath = nil
         case .rename(to: let newName):
-            self.destinationPath = record.url.deletingLastPathComponent().appending(path: newName).path(percentEncoded: false)
+            self.destinationPath = record.url.deletingLastPathComponent().appending(path: newName).storedPath
         case .move(to: let folder, name: let name):
-            self.destinationPath = folder.appending(path: name).path(percentEncoded: false)
+            self.destinationPath = folder.appending(path: name).storedPath
+        }
+    }
+
+    /// True when the item is a folder, a package included, rather than a file.
+    public var isFolder: Bool {
+        switch record.kind {
+        case .folder, .package:
+            true
+        case .file, .symlink:
+            false
         }
     }
 }

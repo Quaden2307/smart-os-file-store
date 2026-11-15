@@ -6,7 +6,8 @@ import os
 /// started and does not know whether the file moved. The reconciler looks, and records what it sees.
 ///
 /// It finds the file only by what the row recorded: its two paths, size, modification date, the
-/// disk ID read right before the move, and the content hash when there is one. It moves nothing.
+/// disk ID read right before the move, and the content hash when there is one. A folder is found by
+/// its disk ID alone, which its row always has (`UndoEvidence`). It moves nothing.
 ///
 /// - The file is at its original place and no longer at the place it was taken from: the move
 ///   happened. The row is completed as undone, exactly as the executor would have done it.

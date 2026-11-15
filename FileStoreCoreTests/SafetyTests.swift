@@ -70,12 +70,13 @@ struct SafetyTests {
     /// A whole `openat` call, its arguments included.
     private static let openatCall = #"\bopenat\s*\((?:[^()]|\([^()]*\))*\)"#
 
-    /// The files that may ask `DiskChange` for a change: the executor's three parts, for a user's
-    /// files (the Trash, renames and moves, and undo), and the activity log's storage, for its own
-    /// folder and database.
+    /// The files that may ask `DiskChange` for a change: the executor's four parts, for a user's
+    /// files (the Trash for duplicates and for failed downloads, renames and moves, and undo), and
+    /// the activity log's storage, for its own folder and database.
     private static let diskChangeCallers = [
         "FileStoreCore/ActivityLogStorage.swift",
         "FileStoreCore/CleanupExecutor+Duplicates.swift",
+        "FileStoreCore/CleanupExecutor+FailedDownloads.swift",
         "FileStoreCore/CleanupExecutor+Relocation.swift",
         "FileStoreCore/CleanupExecutor+Undo.swift",
     ]

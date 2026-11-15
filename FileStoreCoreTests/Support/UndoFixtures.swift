@@ -100,6 +100,49 @@ enum UndoFixtures {
         return (runID, trashURLs)
     }
 
+    /// A Clear Failed Downloads run that moved each named item of `folder` into `trash`, files and
+    /// `.download` folders alike, recorded as the executor records one: a started row with the disk
+    /// ID and no content hash (no folder is ever hashed), the move, the result.
+    @discardableResult
+    static func failedDownloadRun(
+        _ names: [String],
+        in folder: URL,
+        to trash: FakeTrash,
+        log: ActivityLog
+    ) async throws -> (runID: Int64, trashURLs: [String: URL]) {
+        let records = try await RelocationPlans.records(in: folder)
+        let runID = try log.beginRun(
+            CleanupRunStart(action: .clearFailedDownloads, folderURL: folder, confirmedCount: names.count, startedAt: now)
+        )
+        var trashURLs: [String: URL] = [:]
+        for (sequence, name) in names.enumerated() {
+            let record = try RelocationPlans.record(named: name, in: records)
+            let stoppedOn = try #require(record.lastChange)
+            let change = ProposedChange(
+                record: record,
+                operation: .moveToTrash,
+                reason: .failedDownload(stoppedOn: stoppedOn, finishedFileName: nil)
+            )
+            let inode = try #require(DiskState.inode(of: record.url))
+            let changeID = try log.recordedIntent(
+                CleanupChangeIntent(runID: runID, sequence: sequence, change: change, contentHash: nil, fileNumber: inode, attemptedAt: now)
+            )
+            let trashURL = try trash.take(folder.appending(path: name))
+            trashURLs[name] = trashURL
+            try log.recordResult(
+                CleanupChangeResult(
+                    runID: runID,
+                    changeID: changeID,
+                    sequence: sequence,
+                    item: CleanupItemResult(change: change, outcome: .trashed(trashURL: trashURL)),
+                    attemptedAt: now
+                )
+            )
+        }
+        try log.finishRun(CleanupRunFinish(runID: runID, finishedAt: now, wasCancelled: false, notReached: []))
+        return (runID, trashURLs)
+    }
+
     /// Plans `target` from the log and the disk now, and carries it out.
     static func undo(
         _ target: UndoTarget,

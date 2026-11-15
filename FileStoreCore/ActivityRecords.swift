@@ -188,6 +188,11 @@ public struct ActivityChange: Sendable, Hashable, Identifiable {
     /// every cleanup row.
     public let undoesChangeID: Int64?
 
+    /// True when the item was a folder (a package included) rather than a file: undo then proves it
+    /// by its disk ID and what is inside, not by its size and date (decision record 0010). False
+    /// for every change recorded before folders could be changed.
+    public let isFolder: Bool
+
     public init(
         id: Int64,
         runID: Int64,
@@ -204,7 +209,8 @@ public struct ActivityChange: Sendable, Hashable, Identifiable {
         attemptedAt: Date,
         undoneAt: Date?,
         fileNumber: UInt64? = nil,
-        undoesChangeID: Int64? = nil
+        undoesChangeID: Int64? = nil,
+        isFolder: Bool = false
     ) {
         self.id = id
         self.runID = runID
@@ -222,6 +228,7 @@ public struct ActivityChange: Sendable, Hashable, Identifiable {
         self.undoneAt = undoneAt
         self.fileNumber = fileNumber
         self.undoesChangeID = undoesChangeID
+        self.isFolder = isFolder
     }
 
     /// True when the change was carried out: trashed, renamed, moved, or for an undo row, undone.

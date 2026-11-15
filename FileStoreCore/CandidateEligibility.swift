@@ -22,6 +22,15 @@ public struct CandidateEligibility: Sendable, Equatable {
         case kept
     }
 
+    /// How the rules treat a download still in progress.
+    public enum DownloadsInProgress: Sendable, Equatable {
+        /// Never a candidate: every action but Clear Failed Downloads.
+        case refused
+        /// May take part: Clear Failed Downloads, whose own rule decides which are failed and which
+        /// still in progress. The other rules still apply, the grace period included.
+        case allowed
+    }
+
     /// An item added or modified more recently than this is left alone: it may still be
     /// downloading, being unpacked or being looked at for the first time.
     public static let defaultGracePeriod: TimeInterval = 60 * 60
@@ -92,11 +101,24 @@ public struct CandidateEligibility: Sendable, Equatable {
     /// still in progress, and its dates: nil when the item may take part, otherwise the first rule
     /// that keeps it out. Planners pass a scan's record (`allows`); the executor passes what it
     /// reads from disk right before acting, so both apply exactly the same rules.
-    public func refusal(name: String, isDownloading: Bool, dateAdded: Date?, dateModified: Date?, now: Date) -> Refusal? {
+    ///
+    /// - Parameters:
+    ///   - dateModified: When the item last changed: for a folder whose contents were read, its
+    ///     last change (`FileRecord.lastChange`).
+    ///   - downloads: Whether a download still in progress may take part. Only Clear Failed
+    ///     Downloads passes `.allowed`.
+    public func refusal(
+        name: String,
+        isDownloading: Bool,
+        dateAdded: Date?,
+        dateModified: Date?,
+        now: Date,
+        downloads: DownloadsInProgress = .refused
+    ) -> Refusal? {
         if Self.isExcludedName(name) {
             return .excludedName
         }
-        if isDownloading {
+        if isDownloading, downloads == .refused {
             return .downloadInProgress
         }
         if !isSettled(dateAdded: dateAdded, dateModified: dateModified, now: now) {
@@ -106,14 +128,17 @@ public struct CandidateEligibility: Sendable, Equatable {
     }
 
     /// The rules every action shares, for `record` as the scan saw it: nil when it may be proposed
-    /// for a change at `now`, otherwise the first rule that keeps it out, with Kept last.
-    public func refusal(for record: FileRecord, now: Date) -> Refusal? {
+    /// for a change at `now`, otherwise the first rule that keeps it out, with Kept last. The grace
+    /// period counts from the record's last change, which is its modification date for everything
+    /// but a `.download` folder whose contents were read.
+    public func refusal(for record: FileRecord, now: Date, downloads: DownloadsInProgress = .refused) -> Refusal? {
         if let refusal = refusal(
             name: record.displayName,
             isDownloading: record.isDownloading,
             dateAdded: record.dateAdded,
-            dateModified: record.dateModified,
-            now: now
+            dateModified: record.lastChange,
+            now: now,
+            downloads: downloads
         ) {
             return refusal
         }
@@ -122,8 +147,8 @@ public struct CandidateEligibility: Sendable, Equatable {
 
     /// True when the shared rules let `record` be proposed for a change at `now`: it is not hidden,
     /// not the archive, not still downloading, past the grace period, and not Kept. Each action adds
-    /// its own rules on top, such as which kinds of item it handles. An action with its own rule for
-    /// downloads in progress combines `isExcludedName`, `isSettled` and `keptItems` itself.
+    /// its own rules on top, such as which kinds of item it handles. Clear Failed Downloads, the one
+    /// action with its own rule for downloads in progress, passes `.allowed` to the rules above.
     public func allows(_ record: FileRecord, now: Date) -> Bool {
         refusal(for: record, now: now) == nil
     }

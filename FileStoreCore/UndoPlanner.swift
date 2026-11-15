@@ -251,6 +251,12 @@ public struct UndoPlanner: Sendable {
 extension ActivityChange {
     /// What the log recorded to prove that a file found later is this change's file.
     public var undoEvidence: UndoEvidence {
-        UndoEvidence(sizeInBytes: sizeInBytes, dateModified: dateModified, fileNumber: fileNumber, contentHash: contentHash)
+        UndoEvidence(
+            sizeInBytes: sizeInBytes,
+            dateModified: dateModified,
+            fileNumber: fileNumber,
+            contentHash: contentHash,
+            isFolder: isFolder
+        )
     }
 }

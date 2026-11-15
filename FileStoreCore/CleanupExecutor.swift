@@ -6,9 +6,9 @@ import os
 /// This is the engine's one executor, and only it calls `DiskChange`, the one place that changes a
 /// user's disk. Nothing is ever deleted permanently and nothing is ever overwritten. A plan may
 /// only use the operation its action allows (`CleanupAction.allows`), and each item is checked
-/// again right before it changes, by its operation's rules: the duplicate checks for the Trash
-/// (`CleanupExecutor+Duplicates`), the relocation checks for renames and moves
-/// (`CleanupExecutor+Relocation`). Items succeed, are skipped or fail one by one; the executor
+/// again right before it changes, by its action's and operation's rules: the duplicate checks
+/// (`CleanupExecutor+Duplicates`) and the failed-download checks (`CleanupExecutor+FailedDownloads`)
+/// for the Trash, the relocation checks for renames and moves (`CleanupExecutor+Relocation`). Items succeed, are skipped or fail one by one; the executor
 /// never throws.
 ///
 /// Every run is written to the activity log as it happens, and there is no executor without one:
@@ -74,9 +74,9 @@ public struct CleanupExecutor: Sendable {
             Self.logger.error("Ignoring \(unknown.count) confirmed items that are not in the plan")
         }
         let context = PlanContext(plan: plan)
-        // Renames and moves look up every name through one handle on the folder, opened only when
-        // the plan has some and only if it is the folder the plan names.
-        let folder = confirmed.contains { $0.operation != .moveToTrash } ? context.openFolder() : nil
+        // Checks that look up names do it through one handle on the folder, opened only if it is the
+        // folder the plan names. Opening it costs one call, so it is opened for every plan.
+        let folder = context.openFolder()
 
         var items: [CleanupItemResult] = []
         items.reserveCapacity(confirmed.count)
@@ -177,7 +177,7 @@ public struct CleanupExecutor: Sendable {
 
         switch change.operation {
         case .moveToTrash:
-            // The Trash checks are the duplicate action's. Another action that trashes must add
+            // Each action that trashes has its own checks. Another action that trashes must add
             // its own before it may use this executor; the switch is exhaustive on purpose.
             switch context.action {
             case .findDuplicates:
@@ -187,6 +187,20 @@ public struct CleanupExecutor: Sendable {
                     folderIdentity: folderIdentity,
                     now: now,
                     verifiedKept: &verifiedKept,
+                    journal: &journal,
+                    beforeChange: beforeChange
+                )
+                return CleanupItemResult(change: change, outcome: outcome)
+            case .clearFailedDownloads:
+                guard let folder else {
+                    return CleanupItemResult(change: change, outcome: .skipped(.folderUnavailable))
+                }
+                let outcome = trashFailedDownload(
+                    change,
+                    folder: folder,
+                    context: context,
+                    folderIdentity: folderIdentity,
+                    now: now,
                     journal: &journal,
                     beforeChange: beforeChange
                 )
@@ -232,18 +246,26 @@ public struct CleanupExecutor: Sendable {
 
     /// The rules every action shares, on what the disk says about the item now rather than on the
     /// scan's record, so a plan built elsewhere cannot get round them: not hidden, past the grace
-    /// period by the Date Added read now, the size and modification date the scan saw, and not
-    /// locked. A file put here since the scan, under the same name and with an old modification
-    /// date, is as new as a freshly written one. Whether it is Kept is asked last of all, when the
-    /// journal is asked for the change's permit.
+    /// period by the Date Added read now, the size and last change the scan saw, and not locked. A
+    /// file put here since the scan, under the same name and with an old modification date, is as
+    /// new as a freshly written one. Whether it is Kept is asked last of all, when the journal is
+    /// asked for the change's permit.
     ///
-    /// - Parameter readDateAdded: Reads the item's Date Added from disk, only if it is needed.
+    /// - Parameters:
+    ///   - contents: For a folder, what is inside it, just read: its size and last change are then
+    ///     the contents' total and the later of the folder's date and the newest inside, as the scan
+    ///     recorded them (`FileRecord.lastChange`). Nil for a file, whose own size and date count.
+    ///   - downloads: Whether a download still in progress may take part. Only Clear Failed
+    ///     Downloads passes `.allowed`.
+    ///   - readDateAdded: Reads the item's Date Added from disk, only if it is needed.
     /// - Returns: Nil when the item may go on to its operation's own checks, otherwise why not.
     func sharedRefusal(
         _ status: FileStatus,
         itemURL: URL,
         change: ProposedChange,
         now: Date,
+        contents: PackageContents? = nil,
+        downloads: CandidateEligibility.DownloadsInProgress = .refused,
         readDateAdded: () throws(FileStatus.Failure) -> Date?
     ) -> CleanupItemOutcome? {
         if status.isHidden {
@@ -255,12 +277,15 @@ public struct CleanupExecutor: Sendable {
         } catch {
             return .skipped(CleanupSkipReason(statusFailure: error))
         }
+        let sizeInBytes = contents?.totalSizeInBytes ?? status.sizeInBytes
+        let lastChange = contents?.lastChange(ofFolderModifiedAt: status.modificationDate) ?? status.modificationDate
         switch eligibility.refusal(
             name: itemURL.lastPathComponent,
             isDownloading: FileRecord.isInProgressDownload(itemURL),
             dateAdded: dateAdded,
-            dateModified: status.modificationDate,
-            now: now
+            dateModified: lastChange,
+            now: now,
+            downloads: downloads
         ) {
         case nil:
             break
@@ -272,9 +297,9 @@ public struct CleanupExecutor: Sendable {
             // The rules on what the disk says know no Kept list; the journal checks it (`intend`).
             return .skipped(.markedKept)
         }
-        guard status.sizeInBytes == change.sizeInBytes,
+        guard sizeInBytes == change.sizeInBytes,
               let scannedDate = change.dateModified,
-              abs(status.modificationDate.timeIntervalSince(scannedDate)) <= Self.modificationDateTolerance else {
+              abs(lastChange.timeIntervalSince(scannedDate)) <= Self.modificationDateTolerance else {
             return .skipped(.changedSinceScan)
         }
         if status.isUserImmutable || status.isSystemImmutable {
@@ -284,17 +309,33 @@ public struct CleanupExecutor: Sendable {
     }
 
     /// The last look, after the reads and right before the change: `current` must still be the
-    /// very file checked as `checked`, not something put in its place meanwhile, and its flags must
-    /// still allow the change. Nil when it may go ahead.
-    static func lastLookRefusal(_ current: FileStatus?, checked: FileStatus) -> CleanupItemOutcome? {
+    /// very item checked as `checked`, not something put in its place meanwhile, and its flags must
+    /// still allow the change. For a folder, `folderContents` holds what was read inside it and
+    /// reads it again, and the two must be equal. Nil when it may go ahead.
+    static func lastLookRefusal(
+        _ current: FileStatus?,
+        checked: FileStatus,
+        folderContents: (checked: PackageContents, reread: () -> Result<PackageContents, PackageContents.Failure>)? = nil
+    ) -> CleanupItemOutcome? {
         guard let current,
               current.identity == checked.identity,
-              current.isRegularFile,
+              isExpectedKind(current, isFolder: folderContents != nil),
               current.sizeInBytes == checked.sizeInBytes,
               current.modificationDate == checked.modificationDate else {
             return .skipped(.changedSinceScan)
         }
+        if let folderContents {
+            guard case .success(let now) = folderContents.reread(), now == folderContents.checked else {
+                return .skipped(.changedSinceScan)
+            }
+        }
         return flagOutcome(current)
+    }
+
+    /// True when `status` describes the kind of item a change acts on: a folder (never a link to
+    /// one) for a folder change, otherwise a regular file.
+    static func isExpectedKind(_ status: FileStatus, isFolder: Bool) -> Bool {
+        isFolder ? status.isDirectory && !status.isSymbolicLink : status.isRegularFile
     }
 
     /// Flags the file system can change at any moment, checked on the status read right before

@@ -149,7 +149,8 @@ extension ActivityLog {
     /// The identity of the item at `record`'s place now, or the scan's when nothing can be read
     /// there. `volumes` remembers each folder's volume, read once.
     private static func identityNow(of record: FileRecord, volumes: inout [String: VolumeIdentity?]) -> PersistentFileIdentity? {
-        guard let status = try? FileStatus.of(path: record.keptItemPath) else {
+        // Without a folder URL's trailing `/`, which would make `lstat` follow a link at the name.
+        guard let status = try? FileStatus.of(path: record.url.storedPath) else {
             return record.persistentIdentity
         }
         let folderPath = record.url.deletingLastPathComponent().path(percentEncoded: false)

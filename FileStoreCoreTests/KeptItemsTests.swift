@@ -113,9 +113,9 @@ struct KeptItemsTests {
         let app = record("Tool.app", identity: identity(3), kind: .package, contentType: .applicationBundle)
         let list = kept(old, folder, app)
 
-        #expect(FileMarker.marks(for: old, now: Self.now, settings: settings, keptItems: list) == [.kept, .neverOpened, .old])
-        #expect(FileMarker.marks(for: folder, now: Self.now, settings: settings, keptItems: list) == [.kept])
-        #expect(FileMarker.marks(for: app, now: Self.now, settings: settings, keptItems: list) == [.kept])
+        #expect(FileMarker.marks(for: old, now: Self.now, settings: settings, eligibility: CandidateEligibility(keptItems: list)) == [.kept, .neverOpened, .old])
+        #expect(FileMarker.marks(for: folder, now: Self.now, settings: settings, eligibility: CandidateEligibility(keptItems: list)) == [.kept])
+        #expect(FileMarker.marks(for: app, now: Self.now, settings: settings, eligibility: CandidateEligibility(keptItems: list)) == [.kept])
         #expect(FileMarker.marks(for: old, now: Self.now, settings: settings) == [.neverOpened, .old])
         #expect(FileMark.allCases.first == .kept)
     }

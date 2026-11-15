@@ -213,11 +213,13 @@ struct KeptStoreTests {
             let log = try await ActivityLog.open(location)
             try LogSamples.writeRun(to: log, startedAt: .now, count: 2)
             try await log.close()
-            // What the previous version left: no `keptItems`, and migrations up to `v2`.
+            // What the version before Kept left: no `keptItems`, no `changes.isFolder`, and
+            // migrations up to `v2`.
             do {
                 let raw = try RawDatabase(databaseURL)
                 try raw.execute("DROP TABLE keptItems")
-                try raw.execute("DELETE FROM grdb_migrations WHERE identifier = 'v3'")
+                try raw.execute("ALTER TABLE changes DROP COLUMN isFolder")
+                try raw.execute("DELETE FROM grdb_migrations WHERE identifier IN ('v3', 'v4')")
             }
 
             let upgraded = try await ActivityLog.open(location)
@@ -226,7 +228,7 @@ struct KeptStoreTests {
             try await upgraded.close()
 
             let raw = try RawDatabase(databaseURL)
-            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3")
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4")
             #expect(try raw.text("SELECT count(*) FROM changes") == "2")
         }
     }

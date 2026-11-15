@@ -17,6 +17,10 @@ internal import GRDB
 /// its number there, or by its path alone where the volume gives no lasting numbers (decision
 /// record 0009). It has no link to `runs`, so pruning never touches it.
 ///
+/// `v4` adds `changes.isFolder`: 1 when the item was a folder (a package included), which undo
+/// proves by its disk ID and contents rather than its size and date (decision record 0010). Every
+/// row written before it describes a regular file, since no action could change anything else.
+///
 /// Every time is a `Date.timeIntervalSinceReferenceDate`, the number a `Date` itself holds, so a
 /// modification date read back is bit for bit the one the scan saw. Paths are stored as text;
 /// file content never is.
@@ -109,6 +113,11 @@ enum ActivityLogSchema {
 
                 CREATE UNIQUE INDEX keptItems_identity ON keptItems (volumeUUID, fileNumber) WHERE volumeUUID IS NOT NULL;
                 CREATE UNIQUE INDEX keptItems_path ON keptItems (path) WHERE volumeUUID IS NULL;
+                """)
+        }
+        migrator.registerMigration("v4") { db in
+            try db.execute(sql: """
+                ALTER TABLE changes ADD COLUMN isFolder INTEGER NOT NULL DEFAULT 0 CHECK (isFolder IN (0, 1));
                 """)
         }
         return migrator

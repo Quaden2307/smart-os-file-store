@@ -3,13 +3,15 @@ import Foundation
 import Observation
 import os
 
-/// Window state for Find Duplicates. Lives on the main actor; hashing runs elsewhere.
+/// Window state for a cleanup action while it looks for things to change, up to the plan its
+/// preview shows: one flow for every action. Lives on the main actor; reading files runs elsewhere.
 @MainActor
 @Observable
-final class DuplicateSearchModel {
+final class CleanupSearchModel {
     enum Phase: Equatable {
         case idle
-        case running(DuplicateScanProgress)
+        /// Looking, for `action`. Only an action that reads file content reports progress.
+        case running(CleanupAction, DuplicateScanProgress)
     }
 
     /// A finished plan with an identity, so the sheet showing it keeps its content while it
@@ -31,9 +33,10 @@ final class DuplicateSearchModel {
         return false
     }
 
-    var progress: DuplicateScanProgress? {
-        if case .running(let progress) = phase {
-            return progress
+    /// The action looking now, and how far it has got.
+    var running: (action: CleanupAction, progress: DuplicateScanProgress)? {
+        if case .running(let action, let progress) = phase {
+            return (action, progress)
         }
         return nil
     }
@@ -43,7 +46,7 @@ final class DuplicateSearchModel {
     /// Increases per search, so a late report from an earlier search cannot touch the current one.
     private var generation = 0
 
-    private let logger = Logger(subsystem: "com.quaden2307.SmartOSFileStore", category: "Duplicates")
+    private let logger = Logger(subsystem: "com.quaden2307.SmartOSFileStore", category: "Cleanup")
 
     // Isolated, so it may touch main-actor state: the window is gone, stop reading files for a
     // preview nobody will see.
@@ -51,17 +54,24 @@ final class DuplicateSearchModel {
         searchTask?.cancel()
     }
 
-    /// Starts a search over `records`, cancelling any that is still running. `eligibility` decides
-    /// which records may take part at all; the Kept list is read from `log` first, so the search
-    /// always plans with the list as it is now. If it cannot be read, nothing is planned and the
-    /// failure goes to `activity`.
-    func start(records: [FileRecord], folderURL: URL, eligibility: CandidateEligibility, log: ActivityLog, activity: ActivityLogModel) {
+    /// Starts `action`'s search over `records`, cancelling any that is still running. `eligibility`
+    /// decides which records may take part at all; the Kept list is read from `log` first, so the
+    /// search always plans with the list as it is now. If it cannot be read, nothing is planned and
+    /// the failure goes to `activity`.
+    func start(
+        _ action: CleanupAction,
+        records: [FileRecord],
+        folderURL: URL,
+        eligibility: CandidateEligibility,
+        log: ActivityLog,
+        activity: ActivityLogModel
+    ) {
         searchTask?.cancel()
         generation += 1
         let generation = generation
         presentedPlan = nil
-        phase = .running(DuplicateScanProgress(filesHashed: 0, filesToHash: 0, bytesHashed: 0, bytesToHash: 0))
-        logger.info("Finding duplicates among \(records.count) records")
+        phase = .running(action, DuplicateScanProgress(filesHashed: 0, filesToHash: 0, bytesHashed: 0, bytesToHash: 0))
+        logger.info("Planning \(action.definition.identifier, privacy: .public) over \(records.count) records")
         let opening = activity.openings
 
         // Weak throughout: the task must not keep the model alive, and `deinit` cancels the task.
@@ -71,7 +81,7 @@ final class DuplicateSearchModel {
                 let keptItems = try await log.keptItems(forFolder: folderURL)
                 do throws(CleanupPlanningError) {
                     let plan = try await CleanupPlanners.plan(
-                        .findDuplicates,
+                        action,
                         records: records,
                         in: folderURL,
                         eligibility: eligibility,
@@ -92,12 +102,12 @@ final class DuplicateSearchModel {
                 if activity.openings == opening {
                     activity.logFailed(error)
                 }
-                self?.finish(.failure(.cancelled), generation: generation)
+                self?.finish(.failure(.cancelled), action: action, generation: generation)
                 return
             }
             // A cancelled or superseded search must not overwrite the state of the current one.
             guard !Task.isCancelled else { return }
-            self?.finish(outcome, generation: generation)
+            self?.finish(outcome, action: action, generation: generation)
         }
     }
 
@@ -105,7 +115,7 @@ final class DuplicateSearchModel {
         searchTask?.cancel()
         searchTask = nil
         phase = .idle
-        logger.info("Duplicate search cancelled")
+        logger.info("Cleanup search cancelled")
     }
 
     func dismissPlan() {
@@ -126,11 +136,11 @@ final class DuplicateSearchModel {
     #endif
 
     private func report(_ progress: DuplicateScanProgress, generation: Int) {
-        guard generation == self.generation, isRunning else { return }
-        phase = .running(progress)
+        guard generation == self.generation, let running else { return }
+        phase = .running(running.action, progress)
     }
 
-    private func finish(_ outcome: Result<CleanupPlan?, CleanupPlanningError>, generation: Int) {
+    private func finish(_ outcome: Result<CleanupPlan?, CleanupPlanningError>, action: CleanupAction, generation: Int) {
         guard generation == self.generation else { return }
         phase = .idle
         searchTask = nil
@@ -138,10 +148,10 @@ final class DuplicateSearchModel {
         case .success(let plan?):
             presentedPlan = PresentedPlan(plan: plan)
             logger.info(
-                "Found \(plan.duplicateGroups.count) duplicate groups, \(plan.changes.count) files to trash, \(plan.skippedItems.count) skipped"
+                "Planned \(action.definition.identifier, privacy: .public): \(plan.duplicateGroups.count) duplicate groups, \(plan.changes.count) changes, \(plan.skippedItems.count) skipped"
             )
         case .success(nil):
-            logger.error("Find Duplicates has no planner")
+            logger.error("\(action.definition.identifier, privacy: .public) has no planner")
         case .failure(.cancelled):
             break
         }

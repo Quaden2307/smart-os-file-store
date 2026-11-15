@@ -45,7 +45,7 @@ struct CleanupSummaryView: View {
                 List {
                     Section("Not Moved") {
                         ForEach(result.leftAlone) { item in
-                            NotMovedRow(item: item)
+                            NotMovedRow(item: item, action: result.action)
                         }
                     }
                 }
@@ -58,6 +58,7 @@ struct CleanupSummaryView: View {
 /// A file that stayed where it was, and why.
 private struct NotMovedRow: View {
     let item: CleanupItemResult
+    let action: CleanupAction
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -66,7 +67,7 @@ private struct NotMovedRow: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer()
-            Text(item.outcome.localizedDescription)
+            Text(item.outcome.localizedDescription(for: action))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.trailing)
         }
@@ -98,7 +99,7 @@ private struct LogFailureNotice: View {
                     Text("The activity log stopped working, so the cleanup stopped.")
                         .fontWeight(.semibold)
                     if let unrecorded {
-                        Text("\(unrecorded.change.record.displayName) was the last file reached, and the log could not record how it ended: \(unrecorded.outcome.localizedDescription)")
+                        Text("\(unrecorded.change.record.displayName) was the last file reached, and the log could not record how it ended: \(unrecorded.outcome.localizedDescription(for: result.action))")
                     }
                     // No count here, so no verb has to agree with one; the list below names the files.
                     Text("Nothing after it was touched.")

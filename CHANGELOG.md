@@ -15,9 +15,17 @@ All notable changes to Smart OS File Store are recorded here. The format follows
 
 ### Added
 
+- **Clear Failed Downloads.** It proposes partial downloads that stopped more than an hour ago and never finished, for the Trash:
+  - Chrome's and others' `.crdownload` files, Firefox's and others' `.part` files, and Safari's `.download` packages;
+  - the reason says when each one stopped, and names a finished file beside it, such as `movie.mp4` beside `movie.mp4.crdownload`;
+  - a package counts as changed when anything inside it changes, and the space it frees is the size of what is inside;
+  - right before the Trash each item is checked again, and one that changed at all is left alone, since the download may have resumed;
+  - hidden items, links and Kept items are never proposed, and undo puts a package back with everything in it.
+- A **Clean Up** menu in the toolbar and in the menu bar lists every cleanup action: Find Duplicates (⇧⌘D, unchanged) and Clear Failed Downloads (⇧⌘F). Every action runs through the same steps: progress and Cancel, the preview, the confirmation, the summary with Undo.
+- A **Failed download** mark and filter in the file list, for the partial downloads Clear Failed Downloads would propose.
 - A Last Opened column: the date macOS records when a file is opened, read from the file itself, so it shows at once in any folder. Files never opened show "Never" and sort as the oldest. Folders, apps, links and Finder aliases, which macOS does not date when they are opened, show a dash unless a date is recorded, and so does any item whose date could not be read.
-- Marks, shown as small labelled badges after the name: **Never opened** (no last-opened date, added more than 30 days ago), **Unused** (last opened more than 30 days ago) and **Old** (added more than 90 days ago, opened or not). Folders, apps, links, aliases, hidden items and downloads in progress get none. The thresholds are kept in the app's defaults (`CleanupUnusedAfterDays`, `CleanupOldAfterDays`); there is no settings window yet.
-- A filter above the table, also in the View menu: All, Never opened, Unused, Old. The status line then shows how many items match, of how many, and their total size.
+- Marks, shown as small labelled badges after the name: **Never opened** (no last-opened date, added more than 30 days ago), **Unused** (last opened more than 30 days ago) and **Old** (added more than 90 days ago, opened or not). Folders, apps, links, aliases, hidden items and downloads in progress get no age marks. The thresholds are kept in the app's defaults (`CleanupUnusedAfterDays`, `CleanupOldAfterDays`); there is no settings window yet.
+- A filter above the table, also in the View menu: All, Kept, Failed download, Never opened, Unused, Old. The status line then shows how many items match, of how many, and their total size.
 - Where a file was downloaded from, as macOS recorded it: the site and the downloading app in a tooltip on the row, and Copy Download Source in the context menu and the Edit menu, which copies the file's address.
 - The benchmark also times the scan with and without reading these attributes, the marks, and sorting. The table sorts 10,000 rows in about 22 ms instead of 150 ms (Release, M1).
 - A debug-only launch argument, `-GracePeriodSeconds <n>`, so hand testing can use files made moments ago. Release builds ignore it.

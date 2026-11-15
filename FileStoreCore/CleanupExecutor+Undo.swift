@@ -4,7 +4,8 @@ import Foundation
 ///
 /// Every step is checked again right before anything moves, by the rules the planner used
 /// (`UndoEvidence`: the recorded size, modification date and disk ID), and its content hash is read
-/// when one was recorded. The file goes back under its original name with the exclusive rename,
+/// when one was recorded. For a folder, the disk ID is checked on the folder and the size and last
+/// change on what is inside it (`PackageContents`). The file goes back under its original name with the exclusive rename,
 /// which refuses a taken name in the same step, so nothing is ever overwritten. Nothing is looked
 /// for by name: a file that is not at the place the log recorded is not undone.
 ///
@@ -116,6 +117,16 @@ extension CleanupExecutor {
                 try handle.status(of: name)
             }
         }
+
+        /// What is inside the folder there, as it is now. A link is never followed.
+        func contents() -> Result<PackageContents, PackageContents.Failure> {
+            switch self {
+            case .trash(let path):
+                PackageContents.read(atPath: path)
+            case .folder(let handle, let name, _):
+                PackageContents.read(named: name, in: handle)
+            }
+        }
     }
 
     /// One step, from the cheapest check to the dearest. The first failing check decides.
@@ -187,7 +198,15 @@ extension CleanupExecutor {
         if let flagged = Self.flagOutcome(status) {
             return Self.undoOutcome(flagged)
         }
-        if let refusal = await contentRefusal(step, at: source.path) {
+        // For a folder, what is inside it, read now and again at the last look.
+        var folderContents: Result<PackageContents, PackageContents.Failure>?
+        if step.evidence.isFolder {
+            let contents = source.contents()
+            if let refusal = Self.folderContentRefusal(step, folderStatus: status, contents: contents) {
+                return .notUndone(refusal)
+            }
+            folderContents = contents
+        } else if let refusal = await contentRefusal(step, at: source.path) {
             return .notUndone(refusal)
         }
 
@@ -220,9 +239,13 @@ extension CleanupExecutor {
             return .notUndone(.activityLogUnavailable)
         }
 
-        // Last look, after the reads and right before the move: the very file checked above.
-        if let refusal = Self.undoLastLookRefusal(try? source.status(), checked: status) {
+        // Last look, after the reads and right before the move: the very item checked above.
+        if let refusal = Self.undoLastLookRefusal(try? source.status(), checked: status, isFolder: step.evidence.isFolder) {
             return refusal
+        }
+        // A folder's contents can change without its own date: they must still be the ones checked.
+        if let folderContents, source.contents() != folderContents {
+            return .notUndone(.changed)
         }
         if Task.isCancelled {
             return .notUndone(.cancelled)
@@ -274,13 +297,45 @@ extension CleanupExecutor {
         }
     }
 
-    /// `current` must still be the very file checked as `checked`, unchanged, and with flags that
-    /// allow the move. Nil when the move may go ahead.
-    private static func undoLastLookRefusal(_ current: FileStatus?, checked: FileStatus) -> UndoItemOutcome? {
+    /// The contents check for a folder: what is inside it now must add up to the size and last
+    /// change the log recorded, which the folder's own `lstat` cannot show. Nil when it passes.
+    /// When macOS keeps the Trash's content from the app, the recorded disk ID, already matched,
+    /// stands in for the contents, as it does for a hash.
+    private static func folderContentRefusal(
+        _ step: UndoStep,
+        folderStatus: FileStatus,
+        contents: Result<PackageContents, PackageContents.Failure>
+    ) -> UndoRefusal? {
+        switch contents {
+        case .success(let contents):
+            guard let recorded = step.evidence.dateModified,
+                  contents.totalSizeInBytes == step.evidence.sizeInBytes,
+                  abs(contents.lastChange(ofFolderModifiedAt: folderStatus.modificationDate).timeIntervalSince(recorded))
+                      <= modificationDateTolerance else {
+                return .changed
+            }
+            return nil
+        case .failure(.accessDenied):
+            guard step.operation == .putBackFromTrash else {
+                return .accessDenied
+            }
+            return step.evidence.fileNumber == nil ? .cannotBeChecked : nil
+        case .failure(.notDownloaded):
+            return .notDownloaded
+        case .failure(.tooManyItems):
+            return .changed
+        case .failure(.unreadable):
+            return .cannotBeChecked
+        }
+    }
+
+    /// `current` must still be the very item checked as `checked`, unchanged, and with flags that
+    /// allow the move: a regular file, or for a folder change, a folder. Nil when the move may go ahead.
+    private static func undoLastLookRefusal(_ current: FileStatus?, checked: FileStatus, isFolder: Bool) -> UndoItemOutcome? {
         guard let current else {
             return .notUndone(.missing)
         }
-        guard current.identity == checked.identity, current.isRegularFile else {
+        guard current.identity == checked.identity, isExpectedKind(current, isFolder: isFolder) else {
             return .notUndone(.replaced)
         }
         guard current.sizeInBytes == checked.sizeInBytes, current.modificationDate == checked.modificationDate else {

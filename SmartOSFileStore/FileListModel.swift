@@ -148,11 +148,12 @@ final class FileListModel {
         // Read again on every scan, so a threshold changed with `defaults write` applies on ⌘R.
         let settings = CleanupSettings.load(from: UserDefaults.standard)
         let keptItems = keptItems
+        let eligibility = eligibility.keeping(keptItems)
         scanTask = Task {
             let outcome: Result<ScanOutcome, FolderScanError>
             do throws(FolderScanError) {
                 let result = try await scanner.scan(location)
-                let marksByID = await Self.marks(for: result.records, now: result.scannedAt, settings: settings, keptItems: keptItems)
+                let marksByID = await Self.marks(for: result.records, now: result.scannedAt, settings: settings, eligibility: eligibility)
                 outcome = .success(ScanOutcome(result: result, settings: settings, keptItems: keptItems, marksByID: marksByID))
             } catch {
                 outcome = .failure(error)
@@ -262,9 +263,9 @@ final class FileListModel {
         guard let markInputs else { return }
         marksTask?.cancel()
         let records = records
-        let keptItems = keptItems
+        let eligibility = eligibility.keeping(keptItems)
         marksTask = Task {
-            let marksByID = await Self.marks(for: records, now: markInputs.now, settings: markInputs.settings, keptItems: keptItems)
+            let marksByID = await Self.marks(for: records, now: markInputs.now, settings: markInputs.settings, eligibility: eligibility)
             guard !Task.isCancelled else { return }
             self.marksByID = marksByID
             refilter()
@@ -347,6 +348,8 @@ final class FileListModel {
     }
 
     /// Each record's marks, worked out off the main actor so a large folder never holds up the window.
+    /// `eligibility` carries the grace period and the Kept list, which the Failed download mark
+    /// needs as Clear Failed Downloads does.
     /// Built with a loop rather than `Dictionary(uniqueKeysWithValues:)`, which traps on a repeated
     /// key; a listing never repeats a URL, but a crash is not the way to find out.
     @concurrent
@@ -354,11 +357,11 @@ final class FileListModel {
         for records: [FileRecord],
         now: Date,
         settings: CleanupSettings,
-        keptItems: KeptItems
+        eligibility: CandidateEligibility
     ) async -> [FileRecord.ID: [FileMark]] {
         var marksByID: [FileRecord.ID: [FileMark]] = [:]
         for record in records {
-            let marks = FileMarker.marks(for: record, now: now, settings: settings, keptItems: keptItems)
+            let marks = FileMarker.marks(for: record, now: now, settings: settings, eligibility: eligibility)
             if !marks.isEmpty {
                 marksByID[record.id] = marks
             }

@@ -157,8 +157,8 @@ extension ActivityLog: CleanupRecording {
             INSERT INTO changes (
                 runID, sequence, operation, originalPath, resultingPath, sizeInBytes, dateModified, contentHash,
                 reasonCode, reasonDetail, outcome, outcomeCode, outcomeDetail, errorDomain, errorCode, errorText,
-                createdFolders, attemptedAt, fileNumber
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                createdFolders, attemptedAt, fileNumber, isFolder
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """)
         try statement.execute(arguments: [
             runID, sequence, ActivityChange.Operation(change.operation).logCode, change.originalPath,
@@ -167,7 +167,7 @@ extension ActivityLog: CleanupRecording {
             reason.code, reason.detail, outcome.outcome, outcome.code, outcome.detail,
             outcome.errorDomain, outcome.errorNumber, outcome.errorText,
             try encoded(createdFolders), attemptedAt.timeIntervalSinceReferenceDate,
-            fileNumber.map(ActivityLog.storedFileNumber),
+            fileNumber.map(ActivityLog.storedFileNumber), change.isFolder,
         ])
     }
 

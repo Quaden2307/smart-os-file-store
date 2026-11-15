@@ -442,6 +442,7 @@ struct RenameExecutorTests {
         let operations: [ProposedChange.Operation] = [.moveToTrash, .rename(to: "x"), .move(to: folder, name: "x")]
         let allowed: [CleanupAction: [Bool]] = [
             .findDuplicates: [true, false, false],
+            .clearFailedDownloads: [true, false, false],
             .fixMessyNames: [false, true, false],
             .archiveOldDownloads: [false, false, true],
         ]

@@ -39,6 +39,22 @@ final class DirectoryHandle {
         return DirectoryHandle(descriptor: descriptor)
     }
 
+    /// Opens the folder at `path` without following a symbolic link at the path itself: for an item
+    /// named by its path alone, such as one in the Trash, whose folder cannot be opened.
+    static func openWithoutFollowing(path: String) throws(OpenFailure) -> DirectoryHandle {
+        let descriptor = Darwin.open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard descriptor >= 0 else {
+            let code = errno
+            if code == ENOTDIR || code == ELOOP {
+                if let status = try? FileStatus.of(path: path), status.isSymbolicLink {
+                    throw .symbolicLink
+                }
+            }
+            throw failure(code)
+        }
+        return DirectoryHandle(descriptor: descriptor)
+    }
+
     /// Opens the folder called `name` directly inside this one, never through a symbolic link.
     func openFolder(named name: String) throws(OpenFailure) -> DirectoryHandle {
         let child = openat(descriptor, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
@@ -73,6 +89,44 @@ final class DirectoryHandle {
             throw FileStatus.failure(errno)
         }
         return FileStatus(status)
+    }
+
+    /// The names of the items directly inside this folder, `.` and `..` left out, in the order the
+    /// volume lists them, and no more than `limit` of them: a caller that refuses a big folder
+    /// asks for one more than it allows, and the listing stops there. The folder is listed through
+    /// a descriptor of its own, opened afresh for each listing, so a second listing starts from the
+    /// beginning again. Reads only.
+    func entryNames(limit: Int) throws(FileStatus.Failure) -> [String] {
+        let listing = openat(descriptor, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        guard listing >= 0 else {
+            throw FileStatus.failure(errno)
+        }
+        guard let stream = fdopendir(listing) else {
+            let code = errno
+            close(listing)
+            throw FileStatus.failure(code)
+        }
+        // Closes `listing` too.
+        defer { closedir(stream) }
+        var names: [String] = []
+        while names.count < limit {
+            errno = 0
+            guard let entry = readdir(stream) else {
+                // The end of the listing leaves `errno` as it was; a failure sets it.
+                if errno != 0 {
+                    throw FileStatus.failure(errno)
+                }
+                return names
+            }
+            let length = Int(entry.pointee.d_namlen)
+            let name = withUnsafeBytes(of: entry.pointee.d_name) { bytes in
+                String(decoding: bytes.prefix(length), as: UTF8.self)
+            }
+            if name != ".", name != ".." {
+                names.append(name)
+            }
+        }
+        return names
     }
 
     /// The longest name the folder's volume allows, in UTF-16 code units.

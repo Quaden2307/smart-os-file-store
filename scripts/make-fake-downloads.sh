@@ -164,6 +164,11 @@ mkfile -n 200m "big-video.mov"   # large enough that hashing it takes a moment
 settled "LICENSE" ".hidden-file" "résumé – final ✓.pdf" "Subfolder" "Subfolder/report.pdf" \
   "report-link.pdf" "locked.txt" "big-video.mov"
 
+# The finished download beside the stale movie.mp4.crdownload, made last so every other date stays
+# where it was. Its size is unique, so Find Duplicates never reads it.
+printf 'the whole film, downloaded at last, every frame' > "movie.mp4"
+settled "movie.mp4"
+
 # Optional bulk files, for checking the table with thousands of rows
 count="${EXTRA_FILES:-0}"
 if [ "$count" -gt 0 ]; then

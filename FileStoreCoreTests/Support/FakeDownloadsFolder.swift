@@ -43,6 +43,8 @@ struct FakeDownloadsFolder {
 
         // Failed downloads
         static let chromeDownload = "movie.mp4.crdownload"
+        /// The finished download beside `chromeDownload`, which its reason names.
+        static let finishedDownload = "movie.mp4"
         static let partialDownload = "partial.part"
         /// A Safari download package: a folder holding the partial file and an `Info.plist`.
         static let safariDownload = "presentation.key.download"
@@ -135,9 +137,11 @@ struct FakeDownloadsFolder {
         Names.emptyFolder, Names.dsStoreFolder, Names.largeFile,
         Names.archiveFolder,
         Names.noExtension, Names.unicodePDF, Names.subfolder, Names.symlink, Names.lockedFile, Names.bigVideo,
+        Names.finishedDownload,
     ]
 
     static let reportContents = "quarterly report body"
+    static let finishedDownloadContents = "the whole film, downloaded at last, every frame"
     static let photoContents = "holiday photo bytes"
     static let receiptContents = "receipt for order 1042"
     static let bigVideoSize = 1 << 20
@@ -377,6 +381,10 @@ struct FakeDownloadsFolder {
         try write("locked", to: Names.lockedFile)
         try Data(count: Self.bigVideoSize).write(to: url(for: Names.bigVideo))
         settled.append(url(for: Names.bigVideo))
+
+        // The finished download, made last so every other date stays where it was. Its size is
+        // unique, so Find Duplicates never reads it.
+        try write(Self.finishedDownloadContents, to: Names.finishedDownload)
 
         try fileManager.removeItem(at: staging)
 

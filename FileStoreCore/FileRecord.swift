@@ -61,6 +61,11 @@ public struct FileRecord: Sendable, Identifiable, Hashable {
     /// Nil when the volume gives its items no lasting identity, or it could not be read.
     public let persistentIdentity: PersistentFileIdentity?
 
+    /// What is inside the item, for a folder whose name ends in `.download` (Safari's partial
+    /// download), or why it could not be read in full. Nil for everything else: the scan opens no
+    /// other folder or package.
+    public let packageContents: Result<PackageContents, PackageContents.Failure>?
+
     public init(
         url: URL,
         displayName: String,
@@ -74,7 +79,8 @@ public struct FileRecord: Sendable, Identifiable, Hashable {
         lastOpened: Date? = nil,
         downloadSource: DownloadSource? = nil,
         canReadLastOpened: Bool = true,
-        persistentIdentity: PersistentFileIdentity? = nil
+        persistentIdentity: PersistentFileIdentity? = nil,
+        packageContents: Result<PackageContents, PackageContents.Failure>? = nil
     ) {
         self.url = url
         self.displayName = displayName
@@ -89,6 +95,35 @@ public struct FileRecord: Sendable, Identifiable, Hashable {
         self.downloadSource = downloadSource
         self.canReadLastOpened = canReadLastOpened
         self.persistentIdentity = persistentIdentity
+        self.packageContents = packageContents
+    }
+
+    /// The contents the scan read in full. Nil when it read none, or not all of them.
+    public var readContents: PackageContents? {
+        guard case .success(let contents) = packageContents else {
+            return nil
+        }
+        return contents
+    }
+
+    /// The item's size for a cleanup: a file's size, or for a folder whose contents were read, the
+    /// total of its files. Nil otherwise.
+    public var contentSizeInBytes: Int64? {
+        sizeInBytes ?? readContents?.totalSizeInBytes
+    }
+
+    /// When anything about the item last changed: the modification date, or for a folder whose
+    /// contents were read, the later of its own date and the newest of anything inside it. Adding
+    /// or removing an item changes the folder's own date; writing to one inside changes only that
+    /// one's.
+    public var lastChange: Date? {
+        guard let contents = readContents else {
+            return dateModified
+        }
+        guard let dateModified else {
+            return contents.newestModificationDate
+        }
+        return contents.lastChange(ofFolderModifiedAt: dateModified)
     }
 
     /// True when a missing last-opened date means the item was never opened: it is a kind macOS
@@ -110,7 +145,9 @@ public struct FileRecord: Sendable, Identifiable, Hashable {
     }
 
     /// Extensions browsers give to files that are still being downloaded. Compared case-insensitively.
-    public static let inProgressDownloadExtensions: Set<String> = ["crdownload", "download", "part"]
+    /// Clear Failed Downloads' partial downloads, so the two rules always name the same items.
+    public static let inProgressDownloadExtensions: Set<String> =
+        FailedDownloadPlanner.partialFileExtensions.union([FailedDownloadPlanner.partialFolderExtension])
 
     /// True when `url` names a download that is still in progress.
     public static func isInProgressDownload(_ url: URL) -> Bool {
@@ -126,11 +163,17 @@ public struct FileRecord: Sendable, Identifiable, Hashable {
 
 extension FileRecord {
     /// Builds a record from resource values the scanner already fetched for `url`, the metadata it
-    /// read for it, and its identity.
+    /// read for it, its identity, and for a `.download` folder, what is inside it.
     ///
     /// Resource values describe a symbolic link itself, not its target, so a link is never
     /// mistaken for a folder. A package is also a directory, so it is checked before `folder`.
-    init(url: URL, values: URLResourceValues, metadata: FileMetadata, identity: PersistentFileIdentity?) {
+    init(
+        url: URL,
+        values: URLResourceValues,
+        metadata: FileMetadata,
+        identity: PersistentFileIdentity?,
+        packageContents: Result<PackageContents, PackageContents.Failure>?
+    ) {
         let kind: Kind
         if values.isSymbolicLink == true {
             kind = .symlink
@@ -163,7 +206,8 @@ extension FileRecord {
             lastOpened: metadata.lastOpened,
             downloadSource: metadata.downloadSource,
             canReadLastOpened: metadata.canReadLastOpened,
-            persistentIdentity: identity
+            persistentIdentity: identity,
+            packageContents: packageContents
         )
     }
 }

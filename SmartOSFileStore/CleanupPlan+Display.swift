@@ -1,61 +1,14 @@
 import FileStoreCore
 import Foundation
 
-extension CleanupAction {
-    /// The preview's title.
-    var title: String {
-        switch self {
-        case .findDuplicates:
-            String(localized: "Duplicates")
-        case .fixMessyNames:
-            String(localized: "Messy Names")
-        case .archiveOldDownloads:
-            String(localized: "Old Downloads")
-        }
-    }
-
-    /// The action as a command, as the toolbar names it: what an undo is named after
-    /// ("Undo Find Duplicates").
-    var commandTitle: String {
-        switch self {
-        case .findDuplicates:
-            String(localized: "Find Duplicates")
-        case .fixMessyNames:
-            String(localized: "Fix Messy Names")
-        case .archiveOldDownloads:
-            String(localized: "Archive Old Downloads")
-        }
-    }
-
-    /// What the preview says when the action found nothing to change.
-    var emptyTitle: String {
-        switch self {
-        case .findDuplicates:
-            String(localized: "No Duplicates Found")
-        case .fixMessyNames:
-            String(localized: "No Messy Names Found")
-        case .archiveOldDownloads:
-            String(localized: "No Old Downloads Found")
-        }
-    }
-
-    var emptyDescription: String {
-        switch self {
-        case .findDuplicates:
-            String(localized: "No two of the files checked have the same content. Files added or changed in the last hour are checked once they are an hour old.")
-        case .fixMessyNames:
-            String(localized: "Every file checked already has a clean name. Files added or changed in the last hour are checked once they are an hour old.")
-        case .archiveOldDownloads:
-            String(localized: "None of the files checked is old enough to archive.")
-        }
-    }
-}
-
 extension CleanupPlan {
-    /// True when every change belongs to a duplicate group, so the preview can show the groups
-    /// with their kept copies. Any other plan is shown one change per row, so that no change is
+    /// True when there are duplicate groups and every change belongs to one, so the preview can show
+    /// the groups with their kept copies. Any other plan is shown one change per row, so that no change is
     /// ever ticked without being on screen.
     var isGroupedByDuplicates: Bool {
+        guard !duplicateGroups.isEmpty else {
+            return false
+        }
         let groupedURLs = Set(duplicateGroups.flatMap { $0.duplicates.map(\.url) })
         return changes.allSatisfy { groupedURLs.contains($0.id) }
     }
@@ -114,64 +67,87 @@ extension ProposedChange {
 }
 
 extension ProposedChange.Reason {
+    /// The reason in the user's words when the change was made, for Activity: what the preview said,
+    /// in the past tense where the preview spoke of the folder as it was.
+    var historyDescription: String {
+        switch self {
+        case .failedDownload(let stoppedOn, let finishedFileName?):
+            let date = stoppedOn.formatted(.dateTime.day().month(.abbreviated).year())
+            return String(localized: "Download stopped on \(date) and never finished. \(finishedFileName) was next to it.")
+        case .sameContent, .messyName, .oldDownload, .failedDownload:
+            return localizedDescription
+        }
+    }
+
     /// The reason in the user's words, for the preview.
     var localizedDescription: String {
         switch self {
         case .sameContent(let fileName):
-            String(localized: "Same content as \(fileName)")
+            return String(localized: "Same content as \(fileName)")
         case .messyName:
-            String(localized: "Messy name")
+            return String(localized: "Messy name")
         case .oldDownload:
-            String(localized: "Old download")
+            return String(localized: "Old download")
+        case .failedDownload(let stoppedOn, let finishedFileName):
+            let date = stoppedOn.formatted(.dateTime.day().month(.abbreviated).year())
+            guard let finishedFileName else {
+                return String(localized: "Download stopped on \(date) and never finished")
+            }
+            return String(localized: "Download stopped on \(date) and never finished. \(finishedFileName) is next to it.")
         }
     }
 }
 
 extension CleanupSkipReason {
-    /// Why a file was not checked or not moved, in the user's words: what happened and what to do.
-    /// The system's own wording never appears here; it goes to the log.
-    var localizedDescription: String {
+    /// Why a file was not checked or not moved by `action`, in the user's words: what happened and
+    /// what to do. `action` is nil when a log written by a later version names one this version
+    /// does not know. The system's own wording never appears here; it goes to the log.
+    func localizedDescription(for action: CleanupAction?) -> String {
+        // "Run Find Duplicates again." for the action that made the plan.
+        let runAgain = action.map { String(localized: "Run \($0.commandTitle) again.") } ?? String(localized: "Run the cleanup again.")
         switch self {
+        case .changedSinceScan where action == .clearFailedDownloads:
+            return String(localized: "It changed since the folder was scanned, so the download may have resumed. It was left alone.")
         case .changedSinceScan:
-            String(localized: "Changed since the folder was scanned. Run Find Duplicates again.")
+            return String(localized: "Changed since the folder was scanned. \(runAgain)")
         case .notFound:
-            String(localized: "No longer in the folder.")
+            return String(localized: "No longer in the folder.")
         case .accessDenied:
-            String(localized: "Not allowed to read it. Check its permissions in Finder (Get Info).")
+            return String(localized: "Not allowed to read it. Check its permissions in Finder (Get Info).")
         case .notDownloaded:
-            String(localized: "Not downloaded to this Mac yet. Download it first if you want it checked.")
+            return String(localized: "Not downloaded to this Mac yet. Download it first if you want it checked.")
         case .notARegularFile:
-            String(localized: "Something else now has this name, so it was left alone.")
+            return String(localized: "Something else now has this name, so it was left alone.")
         case .unreadable:
-            String(localized: "Could not be read. Check that its disk is connected and try again.")
+            return String(localized: "Could not be read. Check that its disk is connected and try again.")
         case .keptFile:
-            String(localized: "This is the copy that is kept.")
+            return String(localized: "This is the copy that is kept.")
         case .notInPlan:
-            String(localized: "Not proposed by this scan. Run Find Duplicates again.")
+            return String(localized: "Not proposed by this scan. \(runAgain)")
         case .markedKept:
-            String(localized: "You marked it Kept, so it was left alone.")
+            return String(localized: "You marked it Kept, so it was left alone.")
         case .outsideFolder:
-            String(localized: "No longer directly inside the folder.")
+            return String(localized: "No longer directly inside the folder.")
         case .folderUnavailable:
-            String(localized: "The folder could not be reached. Check that its disk is connected, then try again.")
+            return String(localized: "The folder could not be reached. Check that its disk is connected, then try again.")
         case .keptFileMissing(let name):
-            String(localized: "The kept copy, \(name), is no longer in the folder, so this group was left alone. Run Find Duplicates again.")
+            return String(localized: "The kept copy, \(name), is no longer in the folder, so this group was left alone. \(runAgain)")
         case .keptFileNotVerified(let name):
-            String(localized: "The kept copy, \(name), could not be checked, so this group was left alone. Run Find Duplicates again.")
+            return String(localized: "The kept copy, \(name), could not be checked, so this group was left alone. \(runAgain)")
         case .cancelled:
-            String(localized: "Stopped before this file was reached.")
+            return String(localized: "Stopped before this file was reached.")
         case .destinationExists(let name):
-            String(localized: "Something called \(name) is already there, so nothing was replaced.")
+            return String(localized: "Something called \(name) is already there, so nothing was replaced.")
         case .invalidName:
-            String(localized: "The new name can’t be used for a file here, so it was left alone.")
+            return String(localized: "The new name can’t be used for a file here, so it was left alone.")
         case .destinationOutsideFolder:
-            String(localized: "The destination isn’t inside the folder, or is reached through a link, so it was left alone.")
+            return String(localized: "The destination isn’t inside the folder, or is reached through a link, so it was left alone.")
         case .destinationNotAFolder:
-            String(localized: "Something other than a folder is where the destination folder should be, so it was left alone.")
+            return String(localized: "Something other than a folder is where the destination folder should be, so it was left alone.")
         case .destinationHidden:
-            String(localized: "The destination folder is hidden, so the file was left where it is.")
+            return String(localized: "The destination folder is hidden, so the file was left where it is.")
         case .activityLogUnavailable:
-            String(localized: "Left alone because the activity log stopped working.")
+            return String(localized: "Left alone because the activity log stopped working.")
         }
     }
 }
@@ -199,8 +175,8 @@ extension CleanupExecutionError {
 }
 
 extension CleanupItemOutcome {
-    /// What happened to the file, in the user's words, for the summary.
-    var localizedDescription: String {
+    /// What happened to the file in a run of `action`, in the user's words, for the summary.
+    func localizedDescription(for action: CleanupAction?) -> String {
         switch self {
         case .trashed:
             String(localized: "Moved to the Trash")
@@ -209,7 +185,7 @@ extension CleanupItemOutcome {
         case .moved(_, let newURL):
             String(localized: "Moved to \(newURL.deletingLastPathComponent().lastPathComponent)")
         case .skipped(let reason):
-            reason.localizedDescription
+            reason.localizedDescription(for: action)
         case .failed(let error):
             error.localizedMessage
         }

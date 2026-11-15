@@ -4,9 +4,11 @@ import Foundation
 /// that the item it finds is that very file. The rules live here, once, for the planner, the
 /// executor and the reconciler (decision record 0008).
 public struct UndoEvidence: Sendable, Hashable {
+    /// For a file, its size. For a folder, the total of the files inside it.
     public let sizeInBytes: Int64
 
-    /// The modification date the change saw, exactly as stored. Nil makes the file uncheckable.
+    /// The modification date the change saw, exactly as stored: for a folder, its last change
+    /// (`FileRecord.lastChange`). Nil makes the item uncheckable.
     public let dateModified: Date?
 
     /// The file's number on its disk (inode) when the change was made. A rename or a move to the
@@ -16,18 +18,30 @@ public struct UndoEvidence: Sendable, Hashable {
     /// The content the executor confirmed, when the action compared content.
     public let contentHash: ContentHash?
 
-    public init(sizeInBytes: Int64, dateModified: Date?, fileNumber: UInt64?, contentHash: ContentHash?) {
+    /// True when the item was a folder (a package included). Its size and date describe what is
+    /// inside it, which only the executor reads (`PackageContents`); a look at the folder itself
+    /// checks its disk ID.
+    public let isFolder: Bool
+
+    public init(sizeInBytes: Int64, dateModified: Date?, fileNumber: UInt64?, contentHash: ContentHash?, isFolder: Bool = false) {
         self.sizeInBytes = sizeInBytes
         self.dateModified = dateModified
         self.fileNumber = fileNumber
         self.contentHash = contentHash
+        self.isFolder = isFolder
     }
 
-    /// The checks a look at the item can answer, without reading it: a regular file, with the
-    /// recorded size and modification date, and the recorded disk ID when there is one. Nil when
-    /// they pass. An item with another size or date reads as changed before another disk ID reads
-    /// as replaced: an app that saves by writing a new file changes both.
+    /// The checks a look at the item can answer, without reading it. Nil when they pass.
+    ///
+    /// - A file: a regular file, with the recorded size and modification date, and the recorded
+    ///   disk ID when there is one. An item with another size or date reads as changed before
+    ///   another disk ID reads as replaced: an app that saves by writing a new file changes both.
+    /// - A folder: a folder, with the recorded disk ID, which it must have; without one it cannot be
+    ///   told from another folder of the same name. Its contents are the executor's to compare.
     public func refusal(for facts: UndoItemFacts) -> UndoRefusal? {
+        if isFolder {
+            return folderRefusal(for: facts)
+        }
         guard facts.isRegularFile else {
             return .replaced
         }
@@ -46,20 +60,43 @@ public struct UndoEvidence: Sendable, Hashable {
         }
         return nil
     }
+
+    private func folderRefusal(for facts: UndoItemFacts) -> UndoRefusal? {
+        guard facts.isDirectory else {
+            return .replaced
+        }
+        if facts.isDataless {
+            return .notDownloaded
+        }
+        guard let fileNumber, dateModified != nil else {
+            return .cannotBeChecked
+        }
+        return facts.fileNumber == fileNumber ? nil : .replaced
+    }
 }
 
 /// What one look (`lstat`) at an item says, as undo compares it with `UndoEvidence`.
 public struct UndoItemFacts: Sendable, Hashable {
     /// False for a folder, a link or anything else that is not a plain file.
     public let isRegularFile: Bool
+    /// True for a folder (a package included), never for a link to one.
+    public let isDirectory: Bool
     public let sizeInBytes: Int64
     public let dateModified: Date
     public let fileNumber: UInt64
     /// A cloud placeholder whose bytes are not on this Mac.
     public let isDataless: Bool
 
-    public init(isRegularFile: Bool, sizeInBytes: Int64, dateModified: Date, fileNumber: UInt64, isDataless: Bool) {
+    public init(
+        isRegularFile: Bool,
+        sizeInBytes: Int64,
+        dateModified: Date,
+        fileNumber: UInt64,
+        isDataless: Bool,
+        isDirectory: Bool = false
+    ) {
         self.isRegularFile = isRegularFile
+        self.isDirectory = isDirectory
         self.sizeInBytes = sizeInBytes
         self.dateModified = dateModified
         self.fileNumber = fileNumber
@@ -72,7 +109,8 @@ public struct UndoItemFacts: Sendable, Hashable {
             sizeInBytes: status.sizeInBytes,
             dateModified: status.modificationDate,
             fileNumber: UInt64(status.identity.inode),
-            isDataless: status.isDataless
+            isDataless: status.isDataless,
+            isDirectory: status.isDirectory && !status.isSymbolicLink
         )
     }
 }

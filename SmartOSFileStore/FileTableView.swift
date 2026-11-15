@@ -120,7 +120,7 @@ struct FileTableView: View {
                 ContentUnavailableView(
                     "No Matching Files",
                     systemImage: "line.3.horizontal.decrease.circle",
-                    description: Text("No files are marked \(mark.title).")
+                    description: Text(mark.emptyFilterDescription)
                 )
             }
         }

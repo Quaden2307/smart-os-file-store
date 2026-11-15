@@ -7,7 +7,7 @@ import SwiftUI
 struct ContentView: View {
     @Environment(ActivityLogModel.self) private var activity
     @State private var model = FileListModel()
-    @State private var duplicates = DuplicateSearchModel()
+    @State private var search = CleanupSearchModel()
     @State private var selection: Set<FileRecord.ID> = []
     @State private var section: SidebarSection = .downloads
     @State private var activityList = ActivityListModel()
@@ -66,6 +66,12 @@ struct ContentView: View {
     /// What the menu bar's commands act on. While a preview sheet is up, they must not act on the
     /// window behind it; otherwise each acts on the place on screen.
     private func publishingCommandTargets(_ view: some View) -> some View {
+        publishingCleanupTargets(publishingFileTargets(view))
+    }
+
+    /// The commands that act on files or places: one helper apart from the cleanup ones, so each
+    /// chain stays small enough for the type checker.
+    private func publishingFileTargets(_ view: some View) -> some View {
         view
             .focusedSceneValue(\.selectedFileURLs, actsOnWindow ? selectedURLs : nil)
             .focusedSceneValue(
@@ -76,8 +82,14 @@ struct ContentView: View {
             .focusedSceneValue(\.placeSwitcher, actsOnWindow ? PlaceSwitcher(show: show) : nil)
             .focusedSceneValue(\.undoCommands, actsOnWindow ? undoCommands : nil)
             .focusedSceneValue(\.keepCommands, actsOnWindow && section == .downloads ? keepCommands : nil)
+    }
+
+    private func publishingCleanupTargets(_ view: some View) -> some View {
+        view
+            // From either place, as the toolbar's menu: a cleanup always acts on the listed files.
+            .focusedSceneValue(\.cleanUpCommands, actsOnWindow ? cleanUpCommands : nil)
             #if DEBUG
-            .focusedSceneValue(\.duplicateSearch, duplicates)
+            .focusedSceneValue(\.cleanupSearch, search)
             #endif
     }
 
@@ -91,8 +103,8 @@ struct ContentView: View {
             .onChange(of: model.isLoading) { _, isLoading in
                 // A refresh replaces the rows a running search was given, so its plan would describe
                 // files the table no longer shows. Stop it; the user can run it again on the new list.
-                if isLoading, duplicates.isRunning {
-                    duplicates.cancel()
+                if isLoading, search.isRunning {
+                    search.cancel()
                 }
             }
             .onChange(of: model.scanGeneration) {
@@ -125,7 +137,7 @@ struct ContentView: View {
             }
     }
 
-    /// The chosen place, with what every place shares below it: the duplicate search's progress,
+    /// The chosen place, with what every place shares below it: a cleanup search's progress,
     /// the activity log's notices and the status line.
     private var detail: some View {
         VStack(spacing: 0) {
@@ -151,9 +163,9 @@ struct ContentView: View {
                 UndoSheet(model: undo)
                     .id(presented.id)
             }
-            if let progress = duplicates.progress {
+            if let running = search.running {
                 Divider()
-                DuplicateProgressView(progress: progress, cancel: duplicates.cancel)
+                CleanupProgressView(action: running.action, progress: running.progress, cancel: search.cancel)
             }
             ActivityLogNotices(activity: activity)
             Divider()
@@ -164,18 +176,27 @@ struct ContentView: View {
         .frame(minWidth: 1_080, minHeight: 400)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    findDuplicates()
+                // Every action, as in the menu bar's Clean Up menu, which holds their shortcuts.
+                Menu {
+                    ForEach(CleanupAction.menuActions, id: \.self) { action in
+                        let display = action.display
+                        Button {
+                            startCleanup(action)
+                        } label: {
+                            Label(display.commandTitle, systemImage: display.symbol)
+                        }
+                        .help(display.explanation)
+                        .accessibilityHint(display.explanation)
+                    }
                 } label: {
-                    Label("Find Duplicates", systemImage: "doc.on.doc")
+                    Label("Clean Up", systemImage: "wand.and.stars")
                 }
-                .keyboardShortcut("d", modifiers: [.command, .shift])
                 .help(
                     activity.failure == nil
-                        ? Text("Find files with identical content (⇧⌘D)")
+                        ? Text("Clean up this folder")
                         : Text("Nothing can be cleaned up until the activity log works")
                 )
-                .disabled(!canFindDuplicates)
+                .disabled(!canStartCleanup)
             }
             ToolbarItem(placement: .primaryAction) {
                 // Refreshes the place on screen.
@@ -194,7 +215,7 @@ struct ContentView: View {
     /// True while menu commands may act on the window: no preview, undo or confirmation sheet is up
     /// in front of it.
     private var actsOnWindow: Bool {
-        duplicates.presentedPlan == nil && undo.presented == nil && !isConfirmingStopKeepingAll
+        search.presentedPlan == nil && undo.presented == nil && !isConfirmingStopKeepingAll
     }
 
     // MARK: - Kept
@@ -203,7 +224,7 @@ struct ContentView: View {
     /// search is running (it read the list when it started, so a file Kept now could still appear in
     /// its preview) and no earlier change is still being written.
     private var canChangeKept: Bool {
-        model.canChangeKept && !duplicates.isRunning && !model.isChangingKept
+        model.canChangeKept && !search.isRunning && !model.isChangingKept
     }
 
     /// File > Keep This File or Stop Keeping for the selection, and Stop Keeping All.
@@ -227,7 +248,7 @@ struct ContentView: View {
     /// True while an undo may start: the log works, the folder is known, and nothing else that
     /// reads or moves files is under way or on screen.
     private var canStartUndo: Bool {
-        activity.log != nil && model.location != nil && !duplicates.isRunning && duplicates.presentedPlan == nil && !undo.isBusy
+        activity.log != nil && model.location != nil && !search.isRunning && search.presentedPlan == nil && !undo.isBusy
     }
 
     private func startUndo(_ target: UndoTarget) {
@@ -310,23 +331,28 @@ struct ContentView: View {
         }
     }
 
-    /// Duplicates are found among every listed file, whatever the filter shows (the preview names
-    /// each file it proposes), so the list must be settled first, and a new search must never
-    /// replace a preview the user is still looking at. Without a working activity log nothing may
+    /// A cleanup looks at every listed file, whatever the filter shows (the preview names each file
+    /// it proposes), so the list must be settled first, and a new search must never replace a
+    /// preview the user is still looking at. Without a working activity log nothing may
     /// be cleaned up, so nothing is searched for either.
-    private var canFindDuplicates: Bool {
-        model.isSettled && !duplicates.isRunning && duplicates.presentedPlan == nil && activity.log != nil && !undo.isBusy
+    private var canStartCleanup: Bool {
+        model.isSettled && !search.isRunning && search.presentedPlan == nil && activity.log != nil && !undo.isBusy
             && !model.isChangingKept && !isConfirmingStopKeepingAll
+    }
+
+    /// The Clean Up menu: every action, under the same rule as the toolbar's menu.
+    private var cleanUpCommands: CleanUpCommandTarget {
+        CleanUpCommandTarget(canStart: canStartCleanup, start: startCleanup)
     }
 
     /// `.sheet(item:)` keeps showing the plan while the sheet animates away; setting it to nil
     /// is how the sheet reports that it was dismissed.
-    private var presentedPlan: Binding<DuplicateSearchModel.PresentedPlan?> {
+    private var presentedPlan: Binding<CleanupSearchModel.PresentedPlan?> {
         Binding(
-            get: { duplicates.presentedPlan },
+            get: { search.presentedPlan },
             set: { presented in
                 if presented == nil {
-                    duplicates.dismissPlan()
+                    search.dismissPlan()
                 }
             }
         )
@@ -336,9 +362,9 @@ struct ContentView: View {
         selection = selection.intersection(Set(model.visibleRecords.map(\.id)))
     }
 
-    private func findDuplicates() {
-        guard canFindDuplicates, let location = model.location, let log = activity.log else { return }
-        duplicates.start(records: model.records, folderURL: location.folderURL, eligibility: model.eligibility, log: log, activity: activity)
+    private func startCleanup(_ action: CleanupAction) {
+        guard canStartCleanup, let location = model.location, let log = activity.log else { return }
+        search.start(action, records: model.records, folderURL: location.folderURL, eligibility: model.eligibility, log: log, activity: activity)
     }
 
     @ViewBuilder

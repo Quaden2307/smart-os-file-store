@@ -1,3 +1,4 @@
+import Darwin
 import FileStoreCore
 import Foundation
 
@@ -17,6 +18,39 @@ enum TrashedFiles {
             guard let expected = expectedContents(original) else { continue }
             remove(trashURL, original: original, expected: expected)
         }
+    }
+
+    /// Removes every folder `result` reports as trashed, when `expectedFiles` knows exactly the files
+    /// it holds (by name, with their bytes) and finds them all there unchanged and nothing else:
+    /// only plain files, no folder or link inside, so nothing but the test's own bytes goes.
+    static func removeFolders(_ result: CleanupResult, expectedFiles: (URL) -> [String: Data]?) {
+        for item in result.items where item.change.isFolder {
+            guard case .trashed(let trashURL?) = item.outcome else { continue }
+            let original = item.change.record.url
+            guard let expected = expectedFiles(original),
+                  let trashDirectory = try? FileManager.default.url(
+                      for: .trashDirectory,
+                      in: .userDomainMask,
+                      appropriateFor: original,
+                      create: false
+                  ),
+                  canonicalPath(trashURL).hasPrefix(canonicalPath(trashDirectory) + "/"),
+                  let names = try? FileManager.default.contentsOfDirectory(atPath: trashURL.path(percentEncoded: false)),
+                  Set(names) == Set(expected.keys),
+                  expected.allSatisfy({ name, data in
+                      let url = trashURL.appending(path: name)
+                      return isPlainFile(url) && (try? Data(contentsOf: url)) == data
+                  }) else {
+                continue
+            }
+            try? FileManager.default.removeItem(at: trashURL)
+        }
+    }
+
+    /// True for a regular file, not a link to one.
+    private static func isPlainFile(_ url: URL) -> Bool {
+        var status = stat()
+        return lstat(url.path(percentEncoded: false), &status) == 0 && status.st_mode & S_IFMT == S_IFREG
     }
 
     private static func remove(_ trashURL: URL, original: URL, expected: Data) {

@@ -34,7 +34,7 @@ struct ActivityLogSchemaTests {
             #expect(try raw.text("SELECT count(*) FROM keptItems") == "0")
             #expect(try raw.text("SELECT count(*) FROM totals") == "1")
             #expect(try raw.text("SELECT count(*) FROM maintenance") == "1")
-            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3")
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4")
         }
     }
 
@@ -53,6 +53,36 @@ struct ActivityLogSchemaTests {
             #expect(runs.first?.doneCount == 3)
             #expect(try await second.changes(inRun: runID).count == 3)
             #expect(try await second.totals() == ActivityTotals(bytesMovedToTrash: 1_500, filesCleaned: 3))
+        }
+    }
+
+    @Test func aLogFromBeforeFoldersGainsTheColumnAndReadsItsRowsAsFiles() async throws {
+        try await withLogSandbox { sandbox in
+            let location = try sandbox.realLocation()
+            let databaseURL = try #require(location.databaseURL)
+            let log = try await ActivityLog.open(location, now: now)
+            let runID = try LogSamples.writeRun(to: log, startedAt: now, count: 2)
+            try await log.close()
+            // What the previous version left: no `changes.isFolder`, and migrations up to `v3`.
+            do {
+                let raw = try RawDatabase(databaseURL)
+                try raw.execute("ALTER TABLE changes DROP COLUMN isFolder")
+                try raw.execute("DELETE FROM grdb_migrations WHERE identifier = 'v4'")
+            }
+
+            let upgraded = try await ActivityLog.open(location, now: now)
+            let changes = try await upgraded.changes(inRun: runID)
+            #expect(changes.count == 2)
+            #expect(changes.allSatisfy { !$0.isFolder && !$0.undoEvidence.isFolder })
+            try await upgraded.close()
+
+            let raw = try RawDatabase(databaseURL)
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4")
+            #expect(try raw.text("SELECT count(*) FROM changes WHERE isFolder = 0") == "2")
+            // Only 0 and 1 are a value it may hold.
+            #expect(throws: (any Error).self) {
+                try raw.execute("UPDATE changes SET isFolder = 2")
+            }
         }
     }
 
@@ -114,7 +144,7 @@ struct ActivityLogSchemaTests {
             }
 
             let raw = try RawDatabase(databaseURL)
-            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v999")
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v999")
             #expect(try raw.text("SELECT count(*) FROM runs") == "1")
         }
     }

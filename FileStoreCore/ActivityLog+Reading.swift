@@ -149,6 +149,7 @@ struct ChangeRow: Decodable, FetchableRecord {
     let undoneAt: Double?
     let fileNumber: Int64?
     let undoesChangeID: Int64?
+    let isFolder: Bool
 
     var value: ActivityChange {
         let outcomeCode = ActivityLogOutcomeCode(
@@ -169,13 +170,17 @@ struct ChangeRow: Decodable, FetchableRecord {
             sizeInBytes: sizeInBytes,
             dateModified: dateModified.map { Date(timeIntervalSinceReferenceDate: $0) },
             contentHash: contentHash.map { ContentHash(bytes: Array($0)) },
-            reason: ProposedChange.Reason(logCode: ActivityLogCode(code: reasonCode, detail: reasonDetail)),
+            reason: ProposedChange.Reason(
+                logCode: ActivityLogCode(code: reasonCode, detail: reasonDetail),
+                dateModified: dateModified.map { Date(timeIntervalSinceReferenceDate: $0) }
+            ),
             outcome: outcomeCode.value,
             createdFolders: Self.folders(from: createdFolders),
             attemptedAt: Date(timeIntervalSinceReferenceDate: attemptedAt),
             undoneAt: undoneAt.map { Date(timeIntervalSinceReferenceDate: $0) },
             fileNumber: fileNumber.map(ActivityLog.fileNumber(stored:)),
-            undoesChangeID: undoesChangeID
+            undoesChangeID: undoesChangeID,
+            isFolder: isFolder
         )
     }
 

@@ -85,4 +85,4 @@ Plus:
 
 Out of scope until the owner asks: watching Downloads automatically, user-defined rules, schedules, folders beyond Downloads, subfolders, the full storage view, search, tags, sharing, AI features, custom theme.
 
-Noted for later by the owner (2026-11-14): each entry in Activity should open to further details about what was done, perhaps with an Apple Intelligence summary (on device). Not part of any segment yet; ask before starting it.
+Features the owner has noted for later are in `docs/backlog.md`: opening an Activity entry for its details (2026-11-14), and undoing more than the last cleanup with repeated ⌘Z (2026-11-15). None is part of any segment yet; ask before starting one. When the owner notes a new idea for later, add it there.

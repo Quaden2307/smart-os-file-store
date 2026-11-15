@@ -145,7 +145,7 @@ extension ActivityChange {
                 String(localized: "Moved")
             }
         case .skipped(let reason):
-            reason.localizedDescription
+            reason.localizedDescription(for: run.action)
         case .failed(let error):
             run.isUndo
                 ? UndoItemOutcome.failed(error).localizedDescription(for: undoRowOperation)

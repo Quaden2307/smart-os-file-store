@@ -6,9 +6,9 @@ import Testing
 /// item as a change or as an unchecked file. A new planner is covered by being listed there.
 @Suite("Every planner respects Kept")
 struct PlannersRespectKeptTests {
-    /// The actions with a planner today. A new one must be added here too, so that this test is
-    /// seen to cover it, and it must find something to propose in the fake folder.
-    static let plannedActions: [CleanupAction] = [.findDuplicates]
+    /// The actions with a planner today, in declaration order. A new one must be added here too, so
+    /// that this test is seen to cover it, and it must find something to propose in the fake folder.
+    static let plannedActions: [CleanupAction] = [.findDuplicates, .clearFailedDownloads]
 
     private func plan(_ action: CleanupAction, _ records: [FileRecord], in folder: URL, keeping keptItems: KeptItems) async throws -> CleanupPlan? {
         try await CleanupPlanners.plan(action, records: records, in: folder, eligibility: CandidateEligibility(), keptItems: keptItems)
@@ -27,6 +27,8 @@ struct PlannersRespectKeptTests {
             planned.append(action)
         }
         #expect(planned == Self.plannedActions)
+        // The app offers exactly the actions with a planner.
+        #expect(CleanupAction.allCases.filter(CleanupPlanners.hasPlanner) == Self.plannedActions)
     }
 
     @Test(arguments: PlannersRespectKeptTests.plannedActions)

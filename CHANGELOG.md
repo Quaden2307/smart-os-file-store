@@ -32,9 +32,12 @@ All notable changes to Smart OS File Store are recorded here. The format follows
 - The status line shows everything moved to the Trash so far, a total that pruning never lowers.
 - GRDB 7.12.0 (SQLite), the app's first and only dependency, linked to the engine alone and pinned to the commit of that release.
 - While a debug override chooses the scan folder, the log is a separate database under the temporary directory, so hand testing never touches the real one.
+- Undo, for one change or a whole cleanup: Undo buttons on each cleanup and each file in Activity (greyed out with the reason when a change can't be undone, such as "The Trash was emptied" or "A file with the original name now exists"), an Undo button in the cleanup summary, and Edit > Undo (⌘Z), named after the newest cleanup ("Undo Find Duplicates"). Edit > Undo Selected and the context menu undo what is selected in Activity. Undoing more than one file asks first, with the count. A summary then lists what was put back and what was not, and the file list refreshes.
+- Each undo is listed in Activity as its own entry, the undone changes show when they were put back, and the "moved to the Trash" total goes down by what was put back.
 
 ### Safety
 
+- Undo puts a file back only when it can prove it is the same file: at the place the log recorded, with the recorded size, modification date and disk ID, and the recorded content when it can be read. It never looks for a file by name and never replaces anything: a taken original name leaves the file where it is. A change can be undone once. An undo interrupted by a crash is settled at the next launch from what is on disk.
 - A rename or a move never replaces anything: it is one exclusive step, so if anything already has the name, including in another letter case or Unicode form on a default APFS volume, nothing changes and the file is reported as left alone. No other app can slip an item in between a check and the rename.
 - Renames and moves look up every name through a handle on the scanned folder, never through a path, follow no symbolic link, and stay on the folder's disk. A move's destination must lie inside the folder, and a link or a hidden folder on the way is refused, wherever it points.
 - A new name must be one valid name that fits the disk. It may not be hidden, the archive's name or that of a download still in progress. Only regular files are renamed or moved, and each is checked again right before it changes, with the same rules as the Trash.

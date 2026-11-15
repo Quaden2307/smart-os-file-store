@@ -14,6 +14,19 @@ extension CleanupAction {
         }
     }
 
+    /// The action as a command, as the toolbar names it: what an undo is named after
+    /// ("Undo Find Duplicates").
+    var commandTitle: String {
+        switch self {
+        case .findDuplicates:
+            String(localized: "Find Duplicates")
+        case .fixMessyNames:
+            String(localized: "Fix Messy Names")
+        case .archiveOldDownloads:
+            String(localized: "Archive Old Downloads")
+        }
+    }
+
     /// What the preview says when the action found nothing to change.
     var emptyTitle: String {
         switch self {

@@ -12,11 +12,36 @@ public struct ActivityLogStorageSettings: Sendable, Hashable {
 
 /// What the app reads from the log. Each call runs off the main actor.
 extension ActivityLog {
+    /// A run's columns, with how many of its changes have been undone since.
+    private static let runColumns = """
+        runs.*, (SELECT count(*) FROM changes WHERE changes.runID = runs.id AND changes.undoneAt IS NOT NULL) AS undoneCount
+        """
+
     /// Every run the log holds, newest first.
     @concurrent
     public func runs() async throws(ActivityLogError) -> [ActivityRun] {
         try read { db in
-            try RunRow.fetchAll(db, sql: "SELECT * FROM runs ORDER BY startedAt DESC, id DESC").map(\.value)
+            try RunRow.fetchAll(db, sql: "SELECT \(Self.runColumns) FROM runs ORDER BY startedAt DESC, id DESC").map(\.value)
+        }
+    }
+
+    /// One run, or nil when the log holds none with that identifier.
+    @concurrent
+    public func run(id runID: ActivityRun.ID) async throws(ActivityLogError) -> ActivityRun? {
+        try read { db in
+            try RunRow.fetchOne(db, sql: "SELECT \(Self.runColumns) FROM runs WHERE id = ?", arguments: [runID])?.value
+        }
+    }
+
+    /// The newest cleanup run, undo runs left out: what Edit > Undo undoes. Nil when there is none.
+    @concurrent
+    public func latestCleanupRun() async throws(ActivityLogError) -> ActivityRun? {
+        try read { db in
+            try RunRow.fetchOne(
+                db,
+                sql: "SELECT \(Self.runColumns) FROM runs WHERE action != ? ORDER BY startedAt DESC, id DESC LIMIT 1",
+                arguments: [ActivityRun.undoActionCode]
+            )?.value
         }
     }
 
@@ -29,6 +54,14 @@ extension ActivityLog {
                 sql: "SELECT * FROM changes WHERE runID = ? ORDER BY sequence, id",
                 arguments: [runID]
             ).map(\.value)
+        }
+    }
+
+    /// One item, or nil when the log holds none with that identifier.
+    @concurrent
+    public func change(id changeID: ActivityChange.ID) async throws(ActivityLogError) -> ActivityChange? {
+        try read { db in
+            try ChangeRow.fetchOne(db, sql: "SELECT * FROM changes WHERE id = ?", arguments: [changeID])?.value
         }
     }
 
@@ -57,7 +90,7 @@ extension ActivityLog {
 // The rows as the tables hold them. Decoding goes through `Decodable`, which throws on a value of
 // the wrong kind where a column subscript would stop the app.
 
-private struct RunRow: Decodable, FetchableRecord {
+struct RunRow: Decodable, FetchableRecord {
     let id: Int64
     let action: String
     let folderPath: String
@@ -69,6 +102,9 @@ private struct RunRow: Decodable, FetchableRecord {
     let skippedCount: Int
     let failedCount: Int
     let bytesMovedToTrash: Int64
+    let undoneAction: String?
+    let bytesTakenFromTrash: Int64
+    let undoneCount: Int
 
     var value: ActivityRun {
         ActivityRun(
@@ -82,12 +118,15 @@ private struct RunRow: Decodable, FetchableRecord {
             doneCount: doneCount,
             skippedCount: skippedCount,
             failedCount: failedCount,
-            bytesMovedToTrash: bytesMovedToTrash
+            bytesMovedToTrash: bytesMovedToTrash,
+            undoneActionCode: undoneAction,
+            bytesTakenFromTrash: bytesTakenFromTrash,
+            undoneCount: undoneCount
         )
     }
 }
 
-private struct ChangeRow: Decodable, FetchableRecord {
+struct ChangeRow: Decodable, FetchableRecord {
     let id: Int64
     let runID: Int64
     let sequence: Int
@@ -108,6 +147,8 @@ private struct ChangeRow: Decodable, FetchableRecord {
     let createdFolders: String?
     let attemptedAt: Double
     let undoneAt: Double?
+    let fileNumber: Int64?
+    let undoesChangeID: Int64?
 
     var value: ActivityChange {
         let outcomeCode = ActivityLogOutcomeCode(
@@ -132,7 +173,9 @@ private struct ChangeRow: Decodable, FetchableRecord {
             outcome: outcomeCode.value,
             createdFolders: Self.folders(from: createdFolders),
             attemptedAt: Date(timeIntervalSinceReferenceDate: attemptedAt),
-            undoneAt: undoneAt.map { Date(timeIntervalSinceReferenceDate: $0) }
+            undoneAt: undoneAt.map { Date(timeIntervalSinceReferenceDate: $0) },
+            fileNumber: fileNumber.map(ActivityLog.fileNumber(stored:)),
+            undoesChangeID: undoesChangeID
         )
     }
 

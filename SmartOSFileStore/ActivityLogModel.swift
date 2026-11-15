@@ -25,6 +25,9 @@ final class ActivityLogModel {
     /// Everything moved to the Trash and cleaned since the log began.
     private(set) var totals: ActivityTotals = .zero
 
+    /// The newest cleanup run, which Edit > Undo undoes. Read with the totals.
+    private(set) var latestCleanupRun: ActivityRun?
+
     /// Increases whenever the log's content may have changed, so views that show it load it again.
     private(set) var revision = 0
 
@@ -113,6 +116,16 @@ final class ActivityLogModel {
         reloadTotals()
     }
 
+    /// Called when an undo has ended, from the task that ran it, whether or not its sheet is still there.
+    func undoFinished(_ result: UndoResult) {
+        revision += 1
+        if let failure = result.logFailure {
+            fail(failure.error)
+            return
+        }
+        reloadTotals()
+    }
+
     /// Called when reading the open log failed elsewhere, such as in the Activity place. A log that
     /// cannot be read cannot be trusted to record a cleanup either.
     func readFailed(_ error: ActivityLogError) {
@@ -136,6 +149,14 @@ final class ActivityLogModel {
                     setAsideURL = setAside
                 }
                 let opened = try await ActivityLog.open(location)
+                // An undo a crash interrupted is settled first, before pruning could remove the run
+                // it was undoing. A row that cannot be settled stays started, in a run marked
+                // interrupted, for the next launch; the log is still usable.
+                do throws(ActivityLogError) {
+                    _ = try await UndoReconciler().reconcile(opened)
+                } catch {
+                    logger.error("Interrupted undos could not be settled: \(String(describing: error), privacy: .public)")
+                }
                 // Old runs go at most once a day. A failure here leaves the log larger, not unusable.
                 do throws(ActivityLogError) {
                     _ = try await opened.pruneIfDue()
@@ -143,6 +164,7 @@ final class ActivityLogModel {
                     logger.error("The activity log could not be pruned: \(String(describing: error), privacy: .public)")
                 }
                 totals = try await opened.totals()
+                latestCleanupRun = try await opened.latestCleanupRun()
                 openings += 1
                 state = .ready(opened)
             } catch {
@@ -159,6 +181,7 @@ final class ActivityLogModel {
         Task {
             do throws(ActivityLogError) {
                 totals = try await log.totals()
+                latestCleanupRun = try await log.latestCleanupRun()
             } catch {
                 fail(error)
             }

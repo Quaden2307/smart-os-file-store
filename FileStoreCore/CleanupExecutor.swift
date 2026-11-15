@@ -133,7 +133,8 @@ public struct CleanupExecutor: Sendable {
             folderURL: plan.folderURL,
             items: items,
             wasCancelled: wasCancelled,
-            logFailure: journal.failure
+            logFailure: journal.failure,
+            runID: journal.runID
         )
         if let failure = journal.failure {
             Self.logger.error(
@@ -291,7 +292,7 @@ public struct CleanupExecutor: Sendable {
 
     /// Flags the file system can change at any moment, checked on the status read right before
     /// the change: a placeholder, a hidden file or a locked file is never changed.
-    private static func flagOutcome(_ status: FileStatus) -> CleanupItemOutcome? {
+    static func flagOutcome(_ status: FileStatus) -> CleanupItemOutcome? {
         if status.isDataless {
             return .skipped(.notDownloaded)
         }

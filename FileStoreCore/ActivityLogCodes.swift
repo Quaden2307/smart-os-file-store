@@ -88,6 +88,8 @@ extension ActivityChange.Operation {
             "rename"
         case .move:
             "move"
+        case .putBackFromTrash:
+            "putBack"
         }
     }
 
@@ -99,6 +101,8 @@ extension ActivityChange.Operation {
             self = .rename
         case "move":
             self = .move
+        case "putBack":
+            self = .putBackFromTrash
         default:
             return nil
         }
@@ -222,6 +226,96 @@ extension CleanupSkipReason {
     }
 }
 
+extension UndoRefusal {
+    var logCode: ActivityLogCode {
+        switch self {
+        case .alreadyUndone:
+            ActivityLogCode(code: "alreadyUndone")
+        case .nothingChanged:
+            ActivityLogCode(code: "nothingChanged")
+        case .interrupted:
+            ActivityLogCode(code: "interrupted")
+        case .isAnUndo:
+            ActivityLogCode(code: "isAnUndo")
+        case .unknownToThisVersion:
+            ActivityLogCode(code: "unknownToThisVersion")
+        case .otherFolder:
+            ActivityLogCode(code: "otherFolder")
+        case .folderUnavailable:
+            ActivityLogCode(code: "folderUnavailable")
+        case .trashLocationUnknown:
+            ActivityLogCode(code: "trashLocationUnknown")
+        case .notWhereRecorded:
+            ActivityLogCode(code: "notWhereRecorded")
+        case .missing:
+            ActivityLogCode(code: "missing")
+        case .replaced:
+            ActivityLogCode(code: "replaced")
+        case .changed:
+            ActivityLogCode(code: "changed")
+        case .cannotBeChecked:
+            ActivityLogCode(code: "cannotBeChecked")
+        case .originalNameTaken(let name):
+            ActivityLogCode(code: "originalNameTaken", detail: name)
+        case .notDownloaded:
+            ActivityLogCode(code: "notDownloaded")
+        case .hidden:
+            ActivityLogCode(code: "hidden")
+        case .accessDenied:
+            ActivityLogCode(code: "accessDenied")
+        case .cancelled:
+            ActivityLogCode(code: "cancelled")
+        case .activityLogUnavailable:
+            ActivityLogCode(code: "activityLogUnavailable")
+        }
+    }
+
+    init?(logCode: ActivityLogCode) {
+        switch logCode.code {
+        case "alreadyUndone":
+            self = .alreadyUndone
+        case "nothingChanged":
+            self = .nothingChanged
+        case "interrupted":
+            self = .interrupted
+        case "isAnUndo":
+            self = .isAnUndo
+        case "unknownToThisVersion":
+            self = .unknownToThisVersion
+        case "otherFolder":
+            self = .otherFolder
+        case "folderUnavailable":
+            self = .folderUnavailable
+        case "trashLocationUnknown":
+            self = .trashLocationUnknown
+        case "notWhereRecorded":
+            self = .notWhereRecorded
+        case "missing":
+            self = .missing
+        case "replaced":
+            self = .replaced
+        case "changed":
+            self = .changed
+        case "cannotBeChecked":
+            self = .cannotBeChecked
+        case "originalNameTaken":
+            self = .originalNameTaken(name: logCode.detail ?? "")
+        case "notDownloaded":
+            self = .notDownloaded
+        case "hidden":
+            self = .hidden
+        case "accessDenied":
+            self = .accessDenied
+        case "cancelled":
+            self = .cancelled
+        case "activityLogUnavailable":
+            self = .activityLogUnavailable
+        default:
+            return nil
+        }
+    }
+}
+
 /// A failure as the log stores it: a code, and for the system's own errors what identifies them.
 struct ActivityLogErrorCode: Hashable {
     let code: String
@@ -272,7 +366,8 @@ extension CleanupExecutionError {
 struct ActivityLogOutcomeCode: Hashable {
     static let started = "started"
 
-    /// `started`, `trashed`, `renamed`, `moved`, `skipped` or `failed`.
+    /// `started`, `trashed`, `renamed`, `moved`, `skipped` or `failed`; for an undo row, `started`,
+    /// `undone`, `notUndone` or `failed`.
     let outcome: String
     /// The skip reason's or the failure's code.
     var code: String?
@@ -308,6 +403,20 @@ extension ActivityLogOutcomeCode {
         }
     }
 
+    /// The columns for what undo did to one change. Where the file went back to is the undo row's
+    /// own `resultingPath`, written with its intent, so it is not repeated here.
+    init(_ outcome: UndoItemOutcome) {
+        switch outcome {
+        case .undone:
+            self.init(outcome: "undone")
+        case .notUndone(let refusal):
+            let refusalCode = refusal.logCode
+            self.init(outcome: "notUndone", code: refusalCode.code, detail: refusalCode.detail)
+        case .failed(let error):
+            self.init(CleanupItemOutcome.failed(error))
+        }
+    }
+
     /// The outcome these columns describe, or `.unrecognized` when a code is not one this version knows.
     var value: ActivityChange.Outcome {
         switch outcome {
@@ -319,6 +428,13 @@ extension ActivityLogOutcomeCode {
             return .renamed
         case "moved":
             return .moved
+        case "undone":
+            return .undone
+        case "notUndone":
+            guard let code, let refusal = UndoRefusal(logCode: ActivityLogCode(code: code, detail: detail)) else {
+                return .unrecognized(code: code ?? outcome)
+            }
+            return .notUndone(refusal)
         case "skipped":
             guard let code, let reason = CleanupSkipReason(logCode: ActivityLogCode(code: code, detail: detail)) else {
                 return .unrecognized(code: code ?? outcome)

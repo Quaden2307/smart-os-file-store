@@ -30,6 +30,7 @@ extension ActivityLog: CleanupRecording {
                 contentHash: intent.contentHash,
                 outcome: ActivityLogOutcomeCode(outcome: ActivityLogOutcomeCode.started),
                 createdFolders: intent.foldersToMake,
+                fileNumber: intent.fileNumber,
                 attemptedAt: intent.attemptedAt
             )
             return db.lastInsertedRowID
@@ -144,6 +145,7 @@ extension ActivityLog: CleanupRecording {
         contentHash: ContentHash?,
         outcome: ActivityLogOutcomeCode,
         createdFolders: [URL],
+        fileNumber: UInt64? = nil,
         attemptedAt: Date
     ) throws {
         let reason = change.reason.logCode
@@ -151,8 +153,8 @@ extension ActivityLog: CleanupRecording {
             INSERT INTO changes (
                 runID, sequence, operation, originalPath, resultingPath, sizeInBytes, dateModified, contentHash,
                 reasonCode, reasonDetail, outcome, outcomeCode, outcomeDetail, errorDomain, errorCode, errorText,
-                createdFolders, attemptedAt
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                createdFolders, attemptedAt, fileNumber
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """)
         try statement.execute(arguments: [
             runID, sequence, ActivityChange.Operation(change.operation).logCode, change.originalPath,
@@ -161,11 +163,12 @@ extension ActivityLog: CleanupRecording {
             reason.code, reason.detail, outcome.outcome, outcome.code, outcome.detail,
             outcome.errorDomain, outcome.errorNumber, outcome.errorText,
             try encoded(createdFolders), attemptedAt.timeIntervalSinceReferenceDate,
+            fileNumber.map(ActivityLog.storedFileNumber),
         ])
     }
 
     /// The folders made for a move, as a JSON array of paths. Nil when there are none.
-    private static func encoded(_ folders: [URL]) throws -> String? {
+    static func encoded(_ folders: [URL]) throws -> String? {
         guard !folders.isEmpty else {
             return nil
         }

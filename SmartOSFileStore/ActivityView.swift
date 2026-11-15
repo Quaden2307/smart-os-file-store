@@ -3,7 +3,8 @@ import SwiftUI
 
 /// The main window's Activity place: every confirmed cleanup, newest first. A run opens to show its
 /// items, each with what was to be done, the file's name, why, what happened and when. Reveal in
-/// Finder works for an item whose file is still where the log says it went.
+/// Finder works for an item whose file is still where the log says it went. A run or an item can be
+/// undone by its Undo button, the context menu, Edit > Undo Selected, or VoiceOver's Undo action.
 ///
 /// The main window keeps this place alive while Downloads is shown, so what is open, selected and
 /// scrolled to stays as it was.
@@ -18,21 +19,36 @@ struct ActivityView: View {
     /// The window's keyboard focus, which the View menu moves here when it switches to Activity.
     var focus: FocusState<SidebarSection?>.Binding
 
+    /// The folder the app looks after, which undo puts files back into. Nil while it is not known.
+    let folderURL: URL?
+
+    /// False while the window is busy (a search, a preview or another undo): Undo then does nothing.
+    let canUndo: Bool
+
+    let undo: @MainActor (UndoTarget) -> Void
+
     var body: some View {
         content
             .onAppear {
-                model.reload(activity: activity)
+                reload()
             }
             .onChange(of: isShown) { _, isShown in
                 // Read again each time the place is shown, so the files' places are current.
                 if isShown {
-                    model.reload(activity: activity)
+                    reload()
                 }
             }
             .onChange(of: activity.revision) {
-                // A run ended, or the log was opened or replaced.
-                model.reload(activity: activity)
+                // A run ended, an undo ended, or the log was opened or replaced.
+                reload()
             }
+            .onChange(of: folderURL) {
+                reload()
+            }
+    }
+
+    private func reload() {
+        model.reload(activity: activity, folderURL: folderURL)
     }
 
     @ViewBuilder
@@ -65,16 +81,25 @@ struct ActivityView: View {
         List(selection: $selection) {
             ForEach(model.runs) { run in
                 let isExpanded = model.isExpanded(run.id)
-                ActivityRunRow(run: run, isExpanded: isExpanded) {
-                    setExpanded(run.id, !isExpanded)
-                }
+                ActivityRunRow(
+                    run: run,
+                    isExpanded: isExpanded,
+                    undoAvailability: availability(model.undoAvailability(for: run)),
+                    toggle: { setExpanded(run.id, !isExpanded) },
+                    undo: { undo(.run(run.id)) }
+                )
                 .tag(ActivityRowID.run(run.id))
                 if isExpanded {
                     if let changes = model.changes[run.id] {
                         ForEach(changes) { change in
-                            ActivityChangeRow(change: change, run: run)
-                                .padding(.leading, ActivityRunRow.itemIndent)
-                                .tag(ActivityRowID.change(change.id))
+                            ActivityChangeRow(
+                                change: change,
+                                run: run,
+                                undoAvailability: availability(model.undoAvailability(for: change, in: run)),
+                                undo: { undo(.change(change.id)) }
+                            )
+                            .padding(.leading, ActivityRunRow.itemIndent)
+                            .tag(ActivityRowID.change(change.id))
                         }
                     } else {
                         ProgressView()
@@ -91,6 +116,13 @@ struct ActivityView: View {
                 RevealInFinder.reveal(urls)
             }
             .disabled(urls.isEmpty)
+            let target = canUndo ? model.undoTarget(for: rows) : nil
+            Button("Undo") {
+                if let target {
+                    undo(target)
+                }
+            }
+            .disabled(target == nil)
         } primaryAction: { rows in
             // Double-click or Return on a cleanup opens or closes it.
             for case .run(let runID) in rows {
@@ -118,7 +150,12 @@ struct ActivityView: View {
                 selection.insert(.run(runID))
             }
         }
-        model.setExpanded(runID, isExpanded, activity: activity)
+        model.setExpanded(runID, isExpanded, activity: activity, folderURL: folderURL)
+    }
+
+    /// A row's Undo state, greyed out while the window is busy.
+    private func availability(_ availability: UndoAvailability) -> UndoAvailability {
+        canUndo || availability != .available ? availability : .checking
     }
 
     /// Opens or closes the runs the selection touches.

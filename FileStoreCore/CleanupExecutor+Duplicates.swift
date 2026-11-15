@@ -116,9 +116,9 @@ extension CleanupExecutor {
         }
 
         // The activity log first: a row that says this change was started, with the content just
-        // confirmed. It is written before the last look, so the write does not sit in the gap
+        // confirmed and the file's disk ID, which undo checks. It is written before the last look, so the write does not sit in the gap
         // between that look and the move. Without the row there is no permit, and no move.
-        guard let permit = journal.intend(change, contentHash: group.contentHash) else {
+        guard let permit = journal.intend(change, contentHash: group.contentHash, fileNumber: UInt64(status.identity.inode)) else {
             return .skipped(.activityLogUnavailable)
         }
 

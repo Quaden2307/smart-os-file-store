@@ -2,14 +2,17 @@ import FileStoreCore
 import SwiftUI
 
 /// One cleanup in the Activity place: an arrow that shows or hides its files, its action, when it
-/// ran, and what it did in numbers.
+/// ran, what it did in numbers, and an Undo button. An undo is listed the same way, named after the
+/// run it undid, with no button.
 struct ActivityRunRow: View {
     /// How far a cleanup's files are set in under it.
     static let itemIndent: CGFloat = 22
 
     let run: ActivityRun
     let isExpanded: Bool
+    let undoAvailability: UndoAvailability
     let toggle: @MainActor () -> Void
+    let undo: @MainActor () -> Void
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -33,29 +36,55 @@ struct ActivityRunRow: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                }
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("^[\(run.doneCount) file](inflect: true) cleaned up")
-                    if run.leftAloneCount > 0 {
-                        separator
-                        Text("^[\(run.leftAloneCount) file](inflect: true) left alone")
-                    }
-                    if run.bytesMovedToTrash > 0 {
-                        separator
-                        Text("\(run.bytesMovedToTrash.formattedFileSize) moved to the Trash")
+                    if let undoLabel = run.undoLabel {
+                        Text(undoLabel)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
+                counts
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
             }
             Spacer(minLength: 12)
+            UndoButton(availability: undoAvailability, help: Text("Put this cleanup’s files back where they were"), undo: undo)
             DateCell(date: run.startedAt)
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
         .accessibilityAction(named: isExpanded ? Text("Hide Files") : Text("Show Files"), toggle)
+        .modifier(UndoAccessibilityAction(availability: undoAvailability, undo: undo))
+    }
+
+    @ViewBuilder
+    private var counts: some View {
+        if run.isUndo {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("^[\(run.doneCount) file](inflect: true) put back")
+                if run.leftAloneCount > 0 {
+                    separator
+                    Text("^[\(run.leftAloneCount) file](inflect: true) not put back")
+                }
+                if run.bytesTakenFromTrash > 0 {
+                    separator
+                    Text("\(run.bytesTakenFromTrash.formattedFileSize) taken out of the Trash")
+                }
+            }
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("^[\(run.doneCount) file](inflect: true) cleaned up")
+                if run.leftAloneCount > 0 {
+                    separator
+                    Text("^[\(run.leftAloneCount) file](inflect: true) left alone")
+                }
+                if run.bytesMovedToTrash > 0 {
+                    separator
+                    Text("\(run.bytesMovedToTrash.formattedFileSize) moved to the Trash")
+                }
+            }
+        }
     }
 
     private var separator: some View {
@@ -64,10 +93,13 @@ struct ActivityRunRow: View {
     }
 }
 
-/// One item of a cleanup: the file's name, what was to be done and why, what happened, and when.
+/// One item of a cleanup: the file's name, what was to be done and why, what happened, and when,
+/// with an Undo button while the change can be undone, or when it was put back.
 struct ActivityChangeRow: View {
     let change: ActivityChange
     let run: ActivityRun
+    let undoAvailability: UndoAvailability
+    let undo: @MainActor () -> Void
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -76,11 +108,11 @@ struct ActivityChangeRow: View {
                 .frame(width: 18)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(change.displayName)
+                Text(change.displayName(in: run))
                     .lineLimit(1)
                     .truncationMode(.middle)
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(change.operationTitle)
+                    Text(change.operationTitle(in: run))
                     if let reason = change.reason {
                         Text(verbatim: "·")
                             .accessibilityHidden(true)
@@ -96,15 +128,76 @@ struct ActivityChangeRow: View {
             VStack(alignment: .trailing, spacing: 2) {
                 Text(change.outcomeDescription(in: run))
                     .multilineTextAlignment(.trailing)
+                if let undoneAt = change.undoneAt {
+                    Text("Put back at \(undoneAt, format: .dateTime.hour().minute())")
+                        .foregroundStyle(.secondary)
+                }
                 Text(change.attemptedAt, format: .dateTime.hour().minute().second())
                     .font(.caption)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
             .font(.callout)
+            UndoButton(availability: undoAvailability, help: Text("Put this file back where it was"), undo: undo)
         }
         .padding(.vertical, 1)
         .help(change.originalPath)
         .accessibilityElement(children: .combine)
+        .modifier(UndoAccessibilityAction(availability: undoAvailability, undo: undo))
+    }
+}
+
+/// A row's Undo button: there while there is something to undo, greyed out with the reason
+/// written under it when it can't be undone now.
+private struct UndoButton: View {
+    let availability: UndoAvailability
+    let help: Text
+    let undo: @MainActor () -> Void
+
+    /// Wide enough for a short reason, so the rows' dates stay lined up.
+    private static let width: CGFloat = 170
+
+    var body: some View {
+        switch availability {
+        case .none:
+            EmptyView()
+        case .checking:
+            Button("Undo") {}
+                .controlSize(.small)
+                .disabled(true)
+                .frame(width: Self.width, alignment: .trailing)
+        case .available:
+            Button("Undo", action: undo)
+                .controlSize(.small)
+                .help(help)
+                .frame(width: Self.width, alignment: .trailing)
+        case .unavailable(let reason):
+            VStack(alignment: .trailing, spacing: 2) {
+                Button("Undo") {}
+                    .controlSize(.small)
+                    .disabled(true)
+                Text(reason)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(width: Self.width, alignment: .trailing)
+            .help(Text(reason))
+        }
+    }
+}
+
+/// VoiceOver's Undo action on a row, while its Undo button works.
+private struct UndoAccessibilityAction: ViewModifier {
+    let availability: UndoAvailability
+    let undo: @MainActor () -> Void
+
+    func body(content: Content) -> some View {
+        if availability.isAvailable {
+            content.accessibilityAction(named: Text("Undo"), undo)
+        } else {
+            content
+        }
     }
 }

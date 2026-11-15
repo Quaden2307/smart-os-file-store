@@ -12,6 +12,10 @@ struct ContentView: View {
     @State private var section: SidebarSection = .downloads
     @State private var activityList = ActivityListModel()
     @State private var activitySelection: Set<ActivityRowID> = []
+    @State private var undo = UndoModel()
+
+    /// A run the cleanup summary asked to undo, started once its sheet has gone.
+    @State private var runToUndoAfterSheet: ActivityRun.ID?
 
     /// Which place's list has keyboard focus, when the View menu moves it there.
     @FocusState private var focusedPlace: SidebarSection?
@@ -30,11 +34,19 @@ struct ContentView: View {
         } detail: {
             detail
         }
-        .sheet(item: presentedPlan) { presented in
-            PresentedPlanSheet(plan: presented.plan, eligibility: model.eligibility, activity: activity) {
-                // Files moved, so the rows on screen are stale.
-                model.refresh()
-            }
+        .sheet(item: presentedPlan, onDismiss: undoRunAfterSheet) { presented in
+            PresentedPlanSheet(
+                plan: presented.plan,
+                eligibility: model.eligibility,
+                activity: activity,
+                onExecuted: {
+                    // Files moved, so the rows on screen are stale.
+                    model.refresh()
+                },
+                onUndo: { runID in
+                    runToUndoAfterSheet = runID
+                }
+            )
             // A later plan must start with its own ticks and its own log, never an earlier sheet's.
             .id(presented.id)
         }
@@ -51,6 +63,7 @@ struct ContentView: View {
             )
             .focusedSceneValue(\.fileListFilter, actsOnWindow && section == .downloads ? $model.filter : nil)
             .focusedSceneValue(\.placeSwitcher, actsOnWindow ? PlaceSwitcher(show: show) : nil)
+            .focusedSceneValue(\.undoCommands, actsOnWindow ? undoCommands : nil)
             #if DEBUG
             .focusedSceneValue(\.duplicateSearch, duplicates)
             #endif
@@ -107,11 +120,18 @@ struct ContentView: View {
                     model: activityList,
                     selection: $activitySelection,
                     isShown: section == .activity,
-                    focus: $focusedPlace
+                    focus: $focusedPlace,
+                    folderURL: model.location?.folderURL,
+                    canUndo: canStartUndo,
+                    undo: startUndo
                 )
                 .placeShown(section == .activity)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .sheet(item: presentedUndo) { presented in
+                UndoSheet(model: undo)
+                    .id(presented.id)
+            }
             if let progress = duplicates.progress {
                 Divider()
                 DuplicateProgressView(progress: progress, cancel: duplicates.cancel)
@@ -152,9 +172,66 @@ struct ContentView: View {
         }
     }
 
-    /// True while menu commands may act on the window: no preview sheet is up in front of it.
+    /// True while menu commands may act on the window: no preview or undo sheet is up in front of it.
     private var actsOnWindow: Bool {
-        duplicates.presentedPlan == nil
+        duplicates.presentedPlan == nil && undo.presented == nil
+    }
+
+    // MARK: - Undo
+
+    /// True while an undo may start: the log works, the folder is known, and nothing else that
+    /// reads or moves files is under way or on screen.
+    private var canStartUndo: Bool {
+        activity.log != nil && model.location != nil && !duplicates.isRunning && duplicates.presentedPlan == nil && !undo.isBusy
+    }
+
+    private func startUndo(_ target: UndoTarget) {
+        guard canStartUndo, let log = activity.log, let folderURL = model.location?.folderURL else { return }
+        undo.start(target, folderURL: folderURL, log: log, activity: activity) {
+            // Files moved back, so the rows on screen are stale.
+            model.refresh()
+        }
+    }
+
+    /// The cleanup summary's Undo, once its sheet has gone, so one sheet never covers another.
+    private func undoRunAfterSheet() {
+        guard let runID = runToUndoAfterSheet else { return }
+        runToUndoAfterSheet = nil
+        startUndo(.run(runID))
+    }
+
+    /// Edit > Undo: the newest cleanup run, while it has something left to undo. Edit > Undo
+    /// Selected: the run or item selected in Activity.
+    private var undoCommands: UndoCommandTarget {
+        let latest = activity.latestCleanupRun.flatMap { $0.hasChangesLeftToUndo ? $0 : nil }
+        let selectionTarget = section == .activity ? activityList.undoTarget(for: activitySelection) : nil
+        return UndoCommandTarget(
+            title: latest.map { UndoPlan.title(undoing: $0.action) } ?? String(localized: "Undo"),
+            canUndo: canStartUndo && latest != nil,
+            undo: {
+                if let latest {
+                    startUndo(.run(latest.id))
+                }
+            },
+            canUndoSelection: canStartUndo && selectionTarget != nil,
+            undoSelection: {
+                if let selectionTarget {
+                    startUndo(selectionTarget)
+                }
+            }
+        )
+    }
+
+    /// `.sheet(item:)` reports that the sheet was closed by setting this to nil.
+    private var presentedUndo: Binding<UndoModel.Presented?> {
+        Binding(
+            get: { undo.presented },
+            set: { presented in
+                if presented == nil {
+                    undo.dismiss()
+                }
+            }
+        )
     }
 
     /// Shows `place` from the View menu and gives its list keyboard focus, so the arrow keys work at
@@ -173,7 +250,7 @@ struct ContentView: View {
         case .downloads:
             model.refresh()
         case .activity:
-            activityList.reload(activity: activity)
+            activityList.reload(activity: activity, folderURL: model.location?.folderURL)
         }
     }
 
@@ -193,7 +270,7 @@ struct ContentView: View {
     /// replace a preview the user is still looking at. Without a working activity log nothing may
     /// be cleaned up, so nothing is searched for either.
     private var canFindDuplicates: Bool {
-        model.isSettled && !duplicates.isRunning && duplicates.presentedPlan == nil && activity.log != nil
+        model.isSettled && !duplicates.isRunning && duplicates.presentedPlan == nil && activity.log != nil && !undo.isBusy
     }
 
     /// `.sheet(item:)` keeps showing the plan while the sheet animates away; setting it to nil
@@ -251,20 +328,28 @@ private struct PresentedPlanSheet: View {
     let eligibility: CandidateEligibility
     let activity: ActivityLogModel
     let onExecuted: @MainActor () -> Void
+    let onUndo: @MainActor (ActivityRun.ID) -> Void
 
     @State private var log: ActivityLog?
 
-    init(plan: CleanupPlan, eligibility: CandidateEligibility, activity: ActivityLogModel, onExecuted: @escaping @MainActor () -> Void) {
+    init(
+        plan: CleanupPlan,
+        eligibility: CandidateEligibility,
+        activity: ActivityLogModel,
+        onExecuted: @escaping @MainActor () -> Void,
+        onUndo: @escaping @MainActor (ActivityRun.ID) -> Void
+    ) {
         self.plan = plan
         self.eligibility = eligibility
         self.activity = activity
         self.onExecuted = onExecuted
+        self.onUndo = onUndo
         _log = State(initialValue: activity.log)
     }
 
     var body: some View {
         if let log {
-            CleanupPreviewSheet(plan: plan, eligibility: eligibility, log: log, activity: activity) { _ in
+            CleanupPreviewSheet(plan: plan, eligibility: eligibility, log: log, activity: activity, onUndo: onUndo) { _ in
                 onExecuted()
             }
         } else {

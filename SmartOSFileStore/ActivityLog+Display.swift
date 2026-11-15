@@ -45,8 +45,23 @@ struct ActivityLogFailure: Equatable {
 
 extension ActivityRun {
     /// The run's heading: its action, or a general word for an action this version does not know.
+    /// An undo is named after the run it undid: "Undo Find Duplicates".
     var title: String {
-        action?.title ?? String(localized: "Cleanup")
+        if isUndo {
+            return UndoPlan.title(undoing: undoneAction)
+        }
+        return action?.title ?? String(localized: "Cleanup")
+    }
+
+    /// For a cleanup run some of whose changes were undone since: whether all or some were. Nil otherwise.
+    var undoLabel: String? {
+        guard !isUndo, undoneCount > 0 else { return nil }
+        return undoneCount >= doneCount ? String(localized: "Undone") : String(localized: "Partly Undone")
+    }
+
+    /// True while the run still has a change that was carried out and not undone: what Undo may try.
+    var hasChangesLeftToUndo: Bool {
+        !isUndo && doneCount > undoneCount
     }
 
     /// A word for a run that did not simply finish. Nil for one that did.
@@ -70,21 +85,41 @@ extension ActivityRun {
 extension ActivityChange {
     /// The file's name as it was before the change.
     var displayName: String {
-        URL(filePath: originalPath).lastPathComponent
+        Self.name(of: originalPath)
+    }
+
+    /// The name a row shows: the name before the change, or for a row of an undo, the name the file
+    /// was given back. Taken from the path as stored, so it keeps its Unicode form.
+    func displayName(in run: ActivityRun) -> String {
+        if run.isUndo, let resultingPath {
+            return Self.name(of: resultingPath)
+        }
+        return displayName
+    }
+
+    private static func name(of path: String) -> String {
+        path.split(separator: "/").last.map(String.init) ?? path
     }
 
     /// What was to be done, in two or three words.
-    var operationTitle: String {
+    func operationTitle(in run: ActivityRun) -> String {
         switch operation {
         case .moveToTrash:
             String(localized: "Move to Trash")
         case .rename:
-            String(localized: "Rename")
+            run.isUndo ? String(localized: "Rename Back") : String(localized: "Rename")
         case .move:
-            String(localized: "Move")
+            run.isUndo ? String(localized: "Move Back") : String(localized: "Move")
+        case .putBackFromTrash:
+            String(localized: "Put Back")
         case nil:
             String(localized: "Change")
         }
+    }
+
+    /// How undo would reverse this change, for wording that depends on it.
+    var undoOperation: UndoStep.Operation? {
+        operation.flatMap(UndoStep.Operation.init(reversing:))
     }
 
     /// What happened to the file, in the user's words. An item that was started and never completed
@@ -112,10 +147,21 @@ extension ActivityChange {
         case .skipped(let reason):
             reason.localizedDescription
         case .failed(let error):
-            error.localizedMessage
+            run.isUndo
+                ? UndoItemOutcome.failed(error).localizedDescription(for: undoRowOperation)
+                : error.localizedMessage
+        case .undone:
+            UndoItemOutcome.undone(to: URL(filePath: resultingPath ?? originalPath)).localizedDescription(for: undoRowOperation)
+        case .notUndone(let refusal):
+            refusal.localizedDescriptionInUndo(for: undoRowOperation)
         case .unrecognized:
             String(localized: "Recorded by a newer version of the app.")
         }
+    }
+
+    /// For an undo row: the reversal it recorded.
+    private var undoRowOperation: UndoStep.Operation? {
+        operation.flatMap(UndoStep.Operation.init(undoRowOperation:))
     }
 
     /// The symbol beside the item: what became of it, at a glance.
@@ -127,7 +173,9 @@ extension ActivityChange {
             "pencil"
         case .moved:
             "folder"
-        case .skipped:
+        case .undone:
+            "arrow.uturn.backward"
+        case .skipped, .notUndone:
             "minus.circle"
         case .failed:
             "exclamationmark.triangle"

@@ -25,7 +25,7 @@ A native macOS file browser that will replace Finder, starting with a self-clean
 - `FileStoreCore` holds all file logic: scanning, planning and executing. It must not import SwiftUI or AppKit. The app target only calls the engine and shows results. Later, on-device AI will call the same engine actions as tools, so each action is small, single-purpose and has typed inputs and outputs.
 - Every cleanup action follows scan, plan, preview, confirm, execute. Nothing on disk changes before the user confirms, and no code path skips the preview. Use the `add-cleanup-action` skill whenever adding or changing a cleanup action.
 - Plans are pure values. Planners are pure functions with no file writes.
-- The engine has three operations: move to Trash, rename, and move within the scanned folder. Removal always means `FileManager.trashItem`; never permanently delete a user file, anywhere, for any reason. Rename and move never overwrite an existing item.
+- The engine has three operations: move to Trash, rename, and move within the scanned folder, and, for undo only, a fourth: put back from the Trash. Removal always means `FileManager.trashItem`; never permanently delete a user file, anywhere, for any reason. Rename, move and put back never overwrite an existing item.
 - Recheck each file right before acting on it (still exists, same size and modification date). If it changed, skip it and report it.
 - Each item succeeds or fails on its own with a typed error and a message a user can understand. One failure never stops the rest.
 - Actions are idempotent: running one again right after it finishes produces an empty plan.

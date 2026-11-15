@@ -14,7 +14,9 @@ struct ChangePermit {
 /// It lives inside one `execute` call and is passed along `inout`, like the other state of a run.
 struct RunJournal {
     private let recorder: any CleanupRecording
-    private var runID: Int64?
+
+    /// The run's row, once it was opened in the log.
+    private(set) var runID: Int64?
 
     /// The item being processed: its place in the run and, once it has one, its `started` row.
     private var sequence = 0
@@ -47,10 +49,16 @@ struct RunJournal {
         pendingChangeID = nil
     }
 
-    /// Records that `change` is about to happen, with the folders a move is about to make.
+    /// Records that `change` is about to happen, with the folders a move is about to make and the
+    /// file's disk ID as just read.
     /// - Returns: The permit the change needs, or nil when the row could not be written: the file
     ///   must then be left exactly as it is.
-    mutating func intend(_ change: ProposedChange, contentHash: ContentHash?, foldersToMake: [URL] = []) -> ChangePermit? {
+    mutating func intend(
+        _ change: ProposedChange,
+        contentHash: ContentHash?,
+        foldersToMake: [URL] = [],
+        fileNumber: UInt64
+    ) -> ChangePermit? {
         guard !isStopped, let runID else {
             return nil
         }
@@ -62,6 +70,7 @@ struct RunJournal {
                     change: change,
                     contentHash: contentHash,
                     foldersToMake: foldersToMake,
+                    fileNumber: fileNumber,
                     attemptedAt: .now
                 )
             )
@@ -98,6 +107,88 @@ struct RunJournal {
             try recorder.finishRun(
                 CleanupRunFinish(runID: runID, finishedAt: .now, wasCancelled: wasCancelled, notReached: notReached)
             )
+        } catch {
+            failure = CleanupLogFailure(error: error, unrecordedChangeID: nil)
+        }
+    }
+
+    // MARK: - Undo
+
+    /// What the log said when undo asked to start reversing a change.
+    enum UndoIntent {
+        /// The row is in: the move may go ahead.
+        case permitted(ChangePermit)
+        /// The log says the change is undone already, or being undone: leave the file alone.
+        case alreadyUndone
+        /// The step is not the change as the log recorded it: leave the file alone.
+        case notAsRecorded
+        /// The log failed, or had already: leave the file alone, and stop.
+        case stopped
+    }
+
+    /// Opens an undo run. When this fails nothing on disk has been touched, and nothing will be.
+    mutating func beginUndo(_ plan: UndoPlan, confirmedCount: Int) {
+        do throws(ActivityLogError) {
+            runID = try recorder.beginUndoRun(
+                UndoRunStart(
+                    target: plan.target,
+                    folderURL: plan.folderURL,
+                    undoneActionCode: plan.undoneActionCode,
+                    confirmedCount: confirmedCount,
+                    startedAt: .now
+                )
+            )
+        } catch {
+            failure = CleanupLogFailure(error: error, unrecordedChangeID: nil)
+        }
+    }
+
+    /// Records that `step` is about to be reversed, with the disk ID of the file about to move.
+    mutating func intendUndo(_ step: UndoStep, fileNumber: UInt64) -> UndoIntent {
+        guard !isStopped, let runID else {
+            return .stopped
+        }
+        do throws(ActivityLogError) {
+            switch try recorder.recordUndoIntent(
+                UndoChangeIntent(runID: runID, sequence: sequence, step: step, fileNumber: fileNumber, attemptedAt: .now)
+            ) {
+            case .recorded(let rowID):
+                pendingChangeID = rowID
+                return .permitted(ChangePermit())
+            case .alreadyUndone:
+                return .alreadyUndone
+            case .notAsRecorded:
+                return .notAsRecorded
+            }
+        } catch {
+            failure = CleanupLogFailure(error: error, unrecordedChangeID: nil)
+            return .stopped
+        }
+    }
+
+    /// Records what happened to the current step. As for a cleanup, a failure after the step's
+    /// `started` row went in leaves that row as it is, and the reconciler settles it at the next launch.
+    mutating func completeUndo(_ item: UndoItemResult) {
+        guard !isStopped, let runID else {
+            return
+        }
+        do throws(ActivityLogError) {
+            try recorder.recordUndoResult(
+                UndoChangeResult(runID: runID, rowID: pendingChangeID, sequence: sequence, item: item, attemptedAt: .now)
+            )
+        } catch {
+            failure = CleanupLogFailure(error: error, unrecordedChangeID: nil)
+        }
+        pendingChangeID = nil
+    }
+
+    /// Closes the undo run, with the changes it did not try.
+    mutating func finishUndo(wasCancelled: Bool, notTried: [UndoRunFinish.NotTried]) {
+        guard !isStopped, let runID else {
+            return
+        }
+        do throws(ActivityLogError) {
+            try recorder.finishUndoRun(UndoRunFinish(runID: runID, finishedAt: .now, wasCancelled: wasCancelled, notTried: notTried))
         } catch {
             failure = CleanupLogFailure(error: error, unrecordedChangeID: nil)
         }

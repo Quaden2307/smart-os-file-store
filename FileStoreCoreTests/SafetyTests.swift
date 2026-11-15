@@ -70,12 +70,14 @@ struct SafetyTests {
     /// A whole `openat` call, its arguments included.
     private static let openatCall = #"\bopenat\s*\((?:[^()]|\([^()]*\))*\)"#
 
-    /// The files that may ask `DiskChange` for a change: the executor's two halves, for a user's
-    /// files, and the activity log's storage, for its own folder and database.
+    /// The files that may ask `DiskChange` for a change: the executor's three parts, for a user's
+    /// files (the Trash, renames and moves, and undo), and the activity log's storage, for its own
+    /// folder and database.
     private static let diskChangeCallers = [
         "FileStoreCore/ActivityLogStorage.swift",
         "FileStoreCore/CleanupExecutor+Duplicates.swift",
         "FileStoreCore/CleanupExecutor+Relocation.swift",
+        "FileStoreCore/CleanupExecutor+Undo.swift",
     ]
 
     /// Constructs that crash or bypass the type checker. Forbidden anywhere near user files.
@@ -161,6 +163,8 @@ struct SafetyTests {
         #expect(renameCalls.count == 1)
         for call in renameCalls {
             #expect(call.output[0].substring?.contains("RENAME_EXCL") == true, "\(call.output[0].substring ?? "")")
+            // And never through a link, whether the source is a name in a folder or a path in the Trash.
+            #expect(call.output[0].substring?.contains("RENAME_NOFOLLOW_ANY") == true, "\(call.output[0].substring ?? "")")
         }
         // The one file ever made is made exclusively, for its owner only, and through no link: the
         // call can neither empty nor replace a file that is already there.

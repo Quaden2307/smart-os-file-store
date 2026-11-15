@@ -45,7 +45,25 @@ public struct ActivityRun: Sendable, Hashable, Identifiable {
     /// Bytes of the files this run moved to the Trash. The space is free once the Trash is emptied.
     public let bytesMovedToTrash: Int64
 
+    /// For an undo run: the action of the run it undid, as stored. Nil for a cleanup run.
+    public let undoneActionCode: String?
+
+    /// For an undo run: bytes of the files it took back out of the Trash.
+    public let bytesTakenFromTrash: Int64
+
+    /// For a cleanup run: how many of its changes have been undone since.
+    public let undoneCount: Int
+
+    /// The action code an undo run is stored with. No cleanup action has it.
+    public static let undoActionCode = "undo"
+
     public var action: CleanupAction? { CleanupAction(logCode: actionCode) }
+
+    /// True for a run that undid changes rather than cleaning up.
+    public var isUndo: Bool { actionCode == Self.undoActionCode }
+
+    /// For an undo run: the action of the run it undid, when this version knows it.
+    public var undoneAction: CleanupAction? { undoneActionCode.flatMap(CleanupAction.init(logCode:)) }
 
     public init(
         id: Int64,
@@ -58,7 +76,10 @@ public struct ActivityRun: Sendable, Hashable, Identifiable {
         doneCount: Int,
         skippedCount: Int,
         failedCount: Int,
-        bytesMovedToTrash: Int64
+        bytesMovedToTrash: Int64,
+        undoneActionCode: String? = nil,
+        bytesTakenFromTrash: Int64 = 0,
+        undoneCount: Int = 0
     ) {
         self.id = id
         self.actionCode = actionCode
@@ -71,17 +92,23 @@ public struct ActivityRun: Sendable, Hashable, Identifiable {
         self.skippedCount = skippedCount
         self.failedCount = failedCount
         self.bytesMovedToTrash = bytesMovedToTrash
+        self.undoneActionCode = undoneActionCode
+        self.bytesTakenFromTrash = bytesTakenFromTrash
+        self.undoneCount = undoneCount
     }
 }
 
 /// One item of a run, as the activity log holds it: what was to be done, to which file, and what
 /// happened. Enough to undo the change later; never the file's content.
 public struct ActivityChange: Sendable, Hashable, Identifiable {
-    /// What was to be done to the file. The names an operation carries are in the paths.
+    /// What was to be done to the file. The names an operation carries are in the paths. An undo
+    /// row names the operation that reverses the change: a rename or a move back, or a put back.
     public enum Operation: Sendable, Hashable {
         case moveToTrash
         case rename
         case move
+        /// Undo only: from the Trash back to the scanned folder.
+        case putBackFromTrash
     }
 
     public enum Outcome: Sendable, Hashable {
@@ -101,6 +128,12 @@ public struct ActivityChange: Sendable, Hashable, Identifiable {
         case skipped(CleanupSkipReason)
 
         case failed(CleanupExecutionError)
+
+        /// Undo only: the change was reversed; `resultingPath` is where the file is back.
+        case undone
+
+        /// Undo only: the change was not reversed, and why.
+        case notUndone(UndoRefusal)
 
         /// A code this version of the app does not know, as stored.
         case unrecognized(code: String)
@@ -144,8 +177,16 @@ public struct ActivityChange: Sendable, Hashable, Identifiable {
     /// When the item was attempted.
     public let attemptedAt: Date
 
-    /// When the change was undone. Always nil until undo exists.
+    /// When the change was undone. A change is undone at most once.
     public let undoneAt: Date?
+
+    /// The file's number on its disk (inode) when the change was made, which undo checks. Nil for
+    /// changes recorded before it was.
+    public let fileNumber: UInt64?
+
+    /// For an undo row: the change it reverses. Nil once that change's run was pruned, and for
+    /// every cleanup row.
+    public let undoesChangeID: Int64?
 
     public init(
         id: Int64,
@@ -161,7 +202,9 @@ public struct ActivityChange: Sendable, Hashable, Identifiable {
         outcome: Outcome,
         createdFolders: [String],
         attemptedAt: Date,
-        undoneAt: Date?
+        undoneAt: Date?,
+        fileNumber: UInt64? = nil,
+        undoesChangeID: Int64? = nil
     ) {
         self.id = id
         self.runID = runID
@@ -177,23 +220,29 @@ public struct ActivityChange: Sendable, Hashable, Identifiable {
         self.createdFolders = createdFolders
         self.attemptedAt = attemptedAt
         self.undoneAt = undoneAt
+        self.fileNumber = fileNumber
+        self.undoesChangeID = undoesChangeID
     }
 
-    /// True when the change was carried out: trashed, renamed or moved.
+    /// True when the change was carried out: trashed, renamed, moved, or for an undo row, undone.
     public var isDone: Bool {
         switch outcome {
-        case .trashed, .renamed, .moved:
+        case .trashed, .renamed, .moved, .undone:
             true
-        case .started, .skipped, .failed, .unrecognized:
+        case .started, .skipped, .failed, .notUndone, .unrecognized:
             false
         }
     }
 
-    /// Where the file should be now, going by the log alone: its new place once the change was
-    /// carried out, otherwise where it was. Nil for a file in the Trash whose place the system did
-    /// not report. Whether anything is still there is for the caller to check.
+    /// Where the file should be now, going by the log alone: where it was, once the change has been
+    /// undone; its new place once the change was carried out; otherwise where it was. Nil for a file
+    /// in the Trash whose place the system did not report. Whether anything is still there is for
+    /// the caller to check.
     public var expectedPath: String? {
-        isDone ? resultingPath : originalPath
+        if undoneAt != nil {
+            return originalPath
+        }
+        return isDone ? resultingPath : originalPath
     }
 }
 
@@ -221,7 +270,7 @@ public enum ActivityChangePresence: Sendable, Hashable {
     /// Nothing is there any more, or the log does not know the place.
     case missing
 
-    /// The place may not be looked at. The Trash is like that for an app without full disk access.
+    /// The place may not be looked at.
     case unknown
 }
 

@@ -23,13 +23,18 @@ struct CleanupPreviewSheet: View {
     /// list's rows (nothing visible) instead of ticking every duplicate.
     @State private var selectAllMonitor: SelectAllKeyMonitor?
 
+    /// The summary's Undo: asks the main window to undo the run just shown, once this sheet is closed.
+    private let onUndo: (@MainActor (ActivityRun.ID) -> Void)?
+
     init(
         plan: CleanupPlan,
         eligibility: CandidateEligibility,
         log: ActivityLog,
         activity: ActivityLogModel,
+        onUndo: (@MainActor (ActivityRun.ID) -> Void)? = nil,
         onExecuted: @escaping @MainActor (CleanupResult) -> Void
     ) {
+        self.onUndo = onUndo
         _model = State(
             initialValue: CleanupPreviewModel(plan: plan, eligibility: eligibility, log: log, activity: activity, onExecuted: onExecuted)
         )
@@ -269,6 +274,13 @@ struct CleanupPreviewSheet: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                if let onUndo, let runID = result.runID, result.hasDoneItems, result.logFailure == nil {
+                    Button("Undo") {
+                        onUndo(runID)
+                        close()
+                    }
+                    .help("Put the files back where they were")
+                }
                 doneButton
             }
         }

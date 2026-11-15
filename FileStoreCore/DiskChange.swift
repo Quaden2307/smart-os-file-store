@@ -1,10 +1,11 @@
 import Darwin
 import Foundation
 
-/// The one place in the engine that changes anything on disk. For a user's files there are three
+/// The one place in the engine that changes anything on disk. For a user's files there are four
 /// ways, and each needs a `ChangePermit`, the proof that the activity log already says the change is
 /// about to happen: move an item to the Trash, give it a new name or folder without ever replacing
-/// what is there, and make a folder for a move. For the activity log's own storage there are three
+/// what is there, make a folder for a move, and, for undo only, put an item back from the Trash
+/// without ever replacing what is there. For the activity log's own storage there are three
 /// more, each needing a `StoragePermit`, which only the log's storage can make: make its folder,
 /// make its empty database file, and give one of its files a new name. Nothing is ever deleted and
 /// nothing is ever replaced; a source-scanning test keeps every file-changing call in this file.
@@ -40,6 +41,17 @@ enum DiskChange {
         permit: ChangePermit
     ) -> Int32? {
         exclusiveRename(name, in: source, to: newName, in: destination)
+    }
+
+    /// Moves the item at `trashPath`, directly inside the Trash, back into `folder` under `name`:
+    /// undo of a move to the Trash. The same exclusive rename, so when anything already has the name
+    /// it fails with `EEXIST` and changes nothing. Without Full Disk Access the Trash folder itself
+    /// cannot be opened, only the items in it, so the item is named by its path, on which no
+    /// symbolic link is followed; the destination is one name inside the scanned folder's handle.
+    ///
+    /// - Returns: Nil once moved back, otherwise the `errno` value.
+    static func putBackFromTrash(_ trashPath: String, to name: String, in folder: DirectoryHandle, permit: ChangePermit) -> Int32? {
+        exclusiveRename(from: AT_FDCWD, trashPath, to: folder.descriptor, name, resolvingBeneath: false)
     }
 
     /// Makes a folder called `name` directly inside `parent`, with the permissions the user's
@@ -85,12 +97,25 @@ enum DiskChange {
     // MARK: - The calls
 
     private static func exclusiveRename(_ name: String, in source: DirectoryHandle, to newName: String, in destination: DirectoryHandle) -> Int32? {
+        exclusiveRename(from: source.descriptor, name, to: destination.descriptor, newName, resolvingBeneath: true)
+    }
+
+    /// The one rename call. Always exclusive and never through a link. `resolvingBeneath` keeps each
+    /// name inside its folder's handle; a source named by an absolute path has no handle to stay in.
+    private static func exclusiveRename(
+        from sourceDescriptor: Int32,
+        _ source: String,
+        to destinationDescriptor: Int32,
+        _ destination: String,
+        resolvingBeneath: Bool
+    ) -> Int32? {
+        let beneath: Int32 = resolvingBeneath ? RENAME_RESOLVE_BENEATH : 0
         let result = renameatx_np(
-            source.descriptor,
-            name,
-            destination.descriptor,
-            newName,
-            UInt32(RENAME_EXCL | RENAME_NOFOLLOW_ANY | RENAME_RESOLVE_BENEATH)
+            sourceDescriptor,
+            source,
+            destinationDescriptor,
+            destination,
+            UInt32(RENAME_EXCL | RENAME_NOFOLLOW_ANY | beneath)
         )
         return result == 0 ? nil : errno
     }

@@ -11,6 +11,10 @@ final class SpyRecorder: CleanupRecording {
         case recordIntent
         case recordResult
         case finishRun
+        case beginUndoRun
+        case recordUndoIntent
+        case recordUndoResult
+        case finishUndoRun
     }
 
     enum Call: Sendable, Hashable {
@@ -18,6 +22,10 @@ final class SpyRecorder: CleanupRecording {
         case recordIntent(CleanupChangeIntent)
         case recordResult(CleanupChangeResult)
         case finishRun(CleanupRunFinish)
+        case beginUndoRun(UndoRunStart)
+        case recordUndoIntent(UndoChangeIntent)
+        case recordUndoResult(UndoChangeResult)
+        case finishUndoRun(UndoRunFinish)
 
         var kind: Kind {
             switch self {
@@ -25,15 +33,22 @@ final class SpyRecorder: CleanupRecording {
             case .recordIntent: .recordIntent
             case .recordResult: .recordResult
             case .finishRun: .finishRun
+            case .beginUndoRun: .beginUndoRun
+            case .recordUndoIntent: .recordUndoIntent
+            case .recordUndoResult: .recordUndoResult
+            case .finishUndoRun: .finishUndoRun
             }
         }
 
-        /// The name of the file the call is about, for calls about one file.
+        /// The name of the file the call is about, for calls about one file. For undo, the name the
+        /// file goes back to.
         var fileName: String? {
             switch self {
             case .recordIntent(let intent): intent.change.record.displayName
             case .recordResult(let result): result.item.change.record.displayName
-            case .beginRun, .finishRun: nil
+            case .recordUndoIntent(let intent): intent.step.originalName
+            case .recordUndoResult(let result): result.item.originalName
+            case .beginRun, .finishRun, .beginUndoRun, .finishUndoRun: nil
             }
         }
     }
@@ -76,6 +91,10 @@ final class SpyRecorder: CleanupRecording {
             case .recordIntent: "recordIntent"
             case .recordResult: "recordResult"
             case .finishRun: "finishRun"
+            case .beginUndoRun: "beginUndoRun"
+            case .recordUndoIntent: "recordUndoIntent"
+            case .recordUndoResult: "recordUndoResult"
+            case .finishUndoRun: "finishUndoRun"
             }
             return call.fileName.map { "\(name) \($0)" } ?? name
         }
@@ -132,6 +151,37 @@ final class SpyRecorder: CleanupRecording {
         try admit(.finishRun)
         try log?.finishRun(finish)
         _ = remember(.finishRun(finish))
+    }
+
+    func beginUndoRun(_ start: UndoRunStart) throws(ActivityLogError) -> Int64 {
+        try admit(.beginUndoRun)
+        let id = try log?.beginUndoRun(start)
+        return remember(.beginUndoRun(start), keepingID: id)
+    }
+
+    /// Without a real log, every change counts as recorded and not undone yet.
+    func recordUndoIntent(_ intent: UndoChangeIntent) throws(ActivityLogError) -> UndoIntentDecision {
+        try admit(.recordUndoIntent)
+        guard let log else {
+            return .recorded(rowID: remember(.recordUndoIntent(intent)))
+        }
+        let decision = try log.recordUndoIntent(intent)
+        if case .recorded(let rowID) = decision {
+            return .recorded(rowID: remember(.recordUndoIntent(intent), keepingID: rowID))
+        }
+        return decision
+    }
+
+    func recordUndoResult(_ result: UndoChangeResult) throws(ActivityLogError) {
+        try admit(.recordUndoResult)
+        try log?.recordUndoResult(result)
+        _ = remember(.recordUndoResult(result))
+    }
+
+    func finishUndoRun(_ finish: UndoRunFinish) throws(ActivityLogError) {
+        try admit(.finishUndoRun)
+        try log?.finishUndoRun(finish)
+        _ = remember(.finishUndoRun(finish))
     }
 
     /// Remembers the call and returns the real log's identifier when there is one, else its own.

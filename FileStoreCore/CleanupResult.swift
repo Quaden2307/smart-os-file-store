@@ -108,18 +108,29 @@ public struct CleanupResult: Sendable, Hashable {
     /// are reported as skipped and were not touched.
     public let logFailure: CleanupLogFailure?
 
+    /// The run's row in the activity log, so the run can be undone from its summary. Nil when the
+    /// run could not be opened in the log.
+    public let runID: ActivityRun.ID?
+
     public init(
         action: CleanupAction,
         folderURL: URL,
         items: [CleanupItemResult],
         wasCancelled: Bool,
-        logFailure: CleanupLogFailure? = nil
+        logFailure: CleanupLogFailure? = nil,
+        runID: ActivityRun.ID? = nil
     ) {
         self.action = action
         self.folderURL = folderURL
         self.items = items
         self.wasCancelled = wasCancelled
         self.logFailure = logFailure
+        self.runID = runID
+    }
+
+    /// True when at least one confirmed change was carried out, so there is something to undo.
+    public var hasDoneItems: Bool {
+        items.contains(where: \.isDone)
     }
 
     public var trashed: [CleanupItemResult] {

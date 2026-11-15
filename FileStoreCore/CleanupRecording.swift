@@ -26,6 +26,26 @@ public protocol CleanupRecording: Sendable {
 
     /// Closes a run, and records every item a cancelled run never reached as skipped.
     func finishRun(_ finish: CleanupRunFinish) throws(ActivityLogError)
+
+    // An undo is a run of its own, written the same way: a started row before each move, the result
+    // right after it.
+
+    /// Opens an undo run. Nothing on disk has changed yet.
+    func beginUndoRun(_ start: UndoRunStart) throws(ActivityLogError) -> Int64
+
+    /// Records that a change is about to be reversed, as a row in the `started` state, but only
+    /// while the step describes the change exactly as the log recorded it (its paths and evidence),
+    /// and the change is done, not undone, and not being undone by another row.
+    /// - Returns: The row's identifier, or why the log refused: the file must then be left as it is.
+    func recordUndoIntent(_ intent: UndoChangeIntent) throws(ActivityLogError) -> UndoIntentDecision
+
+    /// Records what happened to one change, in one step with the run's counts. When it was undone,
+    /// the same step marks the change it reverses as undone and lowers the running totals by what
+    /// that change added to them.
+    func recordUndoResult(_ result: UndoChangeResult) throws(ActivityLogError)
+
+    /// Closes an undo run, and records every change it did not try as not undone.
+    func finishUndoRun(_ finish: UndoRunFinish) throws(ActivityLogError)
 }
 
 public struct CleanupRunStart: Sendable, Hashable {
@@ -53,6 +73,9 @@ public struct CleanupChangeIntent: Sendable, Hashable {
     /// For a move, the folders it is about to make, outermost first. Recorded with the intent, so
     /// that if the run stops after making them the log still names them.
     public let foldersToMake: [URL]
+    /// The file's number on its disk (inode), as the executor read it right before the change.
+    /// Undo checks it to know the file it finds later is this one.
+    public let fileNumber: UInt64?
     public let attemptedAt: Date
 
     public init(
@@ -61,6 +84,7 @@ public struct CleanupChangeIntent: Sendable, Hashable {
         change: ProposedChange,
         contentHash: ContentHash?,
         foldersToMake: [URL] = [],
+        fileNumber: UInt64? = nil,
         attemptedAt: Date
     ) {
         self.runID = runID
@@ -68,6 +92,7 @@ public struct CleanupChangeIntent: Sendable, Hashable {
         self.change = change
         self.contentHash = contentHash
         self.foldersToMake = foldersToMake
+        self.fileNumber = fileNumber
         self.attemptedAt = attemptedAt
     }
 }

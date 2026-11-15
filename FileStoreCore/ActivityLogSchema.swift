@@ -9,6 +9,10 @@ internal import GRDB
 /// - `totals`: one row of running counters, which pruning never touches.
 /// - `maintenance`: one row of housekeeping times.
 ///
+/// `v2` adds what undo needs: each change's disk ID (`fileNumber`), and for an undo run, the action
+/// it undid and the bytes it took back out of the Trash; an undo row names the change it reverses
+/// (`undoesChangeID`). An undo run is a `runs` row with the action `undo`.
+///
 /// Every time is a `Date.timeIntervalSinceReferenceDate`, the number a `Date` itself holds, so a
 /// modification date read back is bit for bit the one the scan saw. Paths are stored as text;
 /// file content never is.
@@ -73,6 +77,17 @@ enum ActivityLogSchema {
                 ) STRICT;
 
                 INSERT INTO maintenance (id) VALUES (1);
+                """)
+        }
+        migrator.registerMigration("v2") { db in
+            // Pruning removes old runs with their changes; an undo row that reverses one of them
+            // keeps its own history and forgets which change it was.
+            try db.execute(sql: """
+                ALTER TABLE changes ADD COLUMN fileNumber INTEGER;
+                ALTER TABLE changes ADD COLUMN undoesChangeID INTEGER REFERENCES changes (id) ON DELETE SET NULL;
+                CREATE INDEX changes_undoesChangeID ON changes (undoesChangeID);
+                ALTER TABLE runs ADD COLUMN undoneAction TEXT;
+                ALTER TABLE runs ADD COLUMN bytesTakenFromTrash INTEGER NOT NULL DEFAULT 0;
                 """)
         }
         return migrator

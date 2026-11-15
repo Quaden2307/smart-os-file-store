@@ -104,7 +104,7 @@ extension CleanupExecutor {
         }
 
         // The activity log first: a row that says this change was started, with the folders it is
-        // about to make, written before the last look so the write does not sit in the gap between
+        // about to make and the file's disk ID, which undo checks, written before the last look so the write does not sit in the gap between
         // that look and the change. Without the row there is no permit: no folder is made and
         // nothing is renamed.
         var foldersToMake: [URL] = []
@@ -113,7 +113,7 @@ extension CleanupExecutor {
             folderToMake.append(path: folderName, directoryHint: .isDirectory)
             foldersToMake.append(folderToMake)
         }
-        guard let permit = journal.intend(change, contentHash: nil, foldersToMake: foldersToMake) else {
+        guard let permit = journal.intend(change, contentHash: nil, foldersToMake: foldersToMake, fileNumber: UInt64(status.identity.inode)) else {
             return result(.skipped(.activityLogUnavailable))
         }
 
@@ -169,7 +169,7 @@ extension CleanupExecutor {
     }
 
     /// One step down the way to the destination folder.
-    private enum FolderStep {
+    enum FolderStep {
         case opened(DirectoryHandle)
         case missing
         case refused(CleanupItemOutcome)
@@ -177,7 +177,7 @@ extension CleanupExecutor {
 
     /// Opens the folder `name` inside `parent`: never through a link, never a hidden one, and only
     /// on the scanned folder's disk, since a disk mounted inside the folder is somewhere else.
-    private static func step(into name: String, from parent: DirectoryHandle, device: dev_t) -> FolderStep {
+    static func step(into name: String, from parent: DirectoryHandle, device: dev_t) -> FolderStep {
         let child: DirectoryHandle
         do throws(DirectoryHandle.OpenFailure) {
             child = try parent.openFolder(named: name)
@@ -213,7 +213,7 @@ extension CleanupExecutor {
 
     /// The outcome for a rename or a folder made that the system refused with `code`. `name` is
     /// the name that would have been taken.
-    private static func outcome(changeFailure code: Int32, name: String) -> CleanupItemOutcome {
+    static func outcome(changeFailure code: Int32, name: String) -> CleanupItemOutcome {
         switch code {
         case EEXIST:
             .skipped(.destinationExists(name: name))

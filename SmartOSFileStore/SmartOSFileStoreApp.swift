@@ -13,6 +13,7 @@ struct SmartOSFileStoreApp: App {
         // The six columns at their ideal widths, plus the sidebar.
         .defaultSize(width: 1_320, height: 640)
         .commands {
+            UndoCommands()
             RevealInFinderCommands()
             CopyDownloadSourceCommands()
             FilterCommands()

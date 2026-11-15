@@ -8,6 +8,19 @@ enum ActivityRowID: Hashable {
     case change(ActivityChange.ID)
 }
 
+/// Whether a row of the Activity place has an Undo button, and whether it works.
+enum UndoAvailability: Equatable {
+    /// No button: an undo's own rows, a change that changed nothing, a change already undone.
+    case none
+    /// Being checked; shown greyed out for that moment.
+    case checking
+    case available
+    /// Shown greyed out, with why.
+    case unavailable(reason: String)
+
+    var isAvailable: Bool { self == .available }
+}
+
 /// State of the Activity place: the runs, the items of each run that is open, and whether each of
 /// those items' files is still where the log expects it. Lives on the main actor, for as long as
 /// the main window; the log and the disk are read elsewhere.
@@ -34,6 +47,10 @@ final class ActivityListModel {
     /// Whether each loaded item's file is still at its expected place, as of the last read.
     private(set) var presence: [ActivityChange.ID: ActivityChangePresence] = [:]
 
+    /// Whether each loaded item can be undone now, as of the last read. Looks at the files with
+    /// `lstat` only; the undo itself checks everything again, content included.
+    private(set) var assessments: [ActivityChange.ID: UndoPlanner.Assessment] = [:]
+
     private(set) var expanded: Set<ActivityRun.ID> = []
 
     /// Every loaded item by its identifier, so a selection is looked up without a search.
@@ -46,7 +63,10 @@ final class ActivityListModel {
     private var generation = 0
 
     /// Reads the runs again, and the items of every open run with their files.
-    func reload(activity: ActivityLogModel) {
+    ///
+    /// - Parameter folderURL: The folder the app looks after, which undo puts files back into. Nil
+    ///   while it is not known; nothing can be undone then.
+    func reload(activity: ActivityLogModel, folderURL: URL?) {
         generation += 1
         if loadedOpening != activity.openings {
             // Another log: nothing read from the last one may stay.
@@ -54,6 +74,7 @@ final class ActivityListModel {
             runs = []
             expanded = []
             presence = [:]
+            assessments = [:]
             setChanges([:])
             hasLoaded = false
         }
@@ -70,7 +91,7 @@ final class ActivityListModel {
                 for run in runs where openAtStart.contains(run.id) {
                     changes[run.id] = try await log.changes(inRun: run.id)
                 }
-                let presence = await ActivityChange.presence(of: changes.values.flatMap { $0 })
+                let looked = await Self.look(at: changes, runs: runs, folderURL: folderURL)
                 guard generation == self.generation else { return }
                 let runIDs = Set(runs.map(\.id))
                 self.runs = runs
@@ -79,7 +100,10 @@ final class ActivityListModel {
                 // What was read now replaces what was read before; runs that were not read keep theirs.
                 let kept = self.changes.filter { runIDs.contains($0.key) }
                 setChanges(kept.merging(changes) { _, fresh in fresh })
-                self.presence.merge(presence) { _, new in new }
+                self.presence.merge(looked.presence) { _, new in new }
+                // Only open runs were looked at now; what was assessed before is out of date, so it
+                // goes, and a closed run goes by its counts until it is opened again.
+                self.assessments = looked.assessments
                 hasLoaded = true
             } catch {
                 guard generation == self.generation else { return }
@@ -94,7 +118,7 @@ final class ActivityListModel {
 
     /// Opens or closes a run. Opening reads its items and their files again, so where each file is
     /// now is what Reveal in Finder goes by; what was read before shows meanwhile. Closing keeps it.
-    func setExpanded(_ runID: ActivityRun.ID, _ isExpanded: Bool, activity: ActivityLogModel) {
+    func setExpanded(_ runID: ActivityRun.ID, _ isExpanded: Bool, activity: ActivityLogModel, folderURL: URL?) {
         guard isExpanded else {
             expanded.remove(runID)
             return
@@ -105,13 +129,15 @@ final class ActivityListModel {
         Task {
             do throws(ActivityLogError) {
                 let items = try await log.changes(inRun: runID)
-                let itemPresence = await ActivityChange.presence(of: items)
+                let runs = runs.filter { $0.id == runID }
+                let looked = await Self.look(at: [runID: items], runs: runs, folderURL: folderURL)
                 // A full read started meanwhile reads this run too, from a newer state of the log.
                 guard generation == self.generation else { return }
                 var updated = changes
                 updated[runID] = items
                 setChanges(updated)
-                presence.merge(itemPresence) { _, new in new }
+                presence.merge(looked.presence) { _, new in new }
+                assessments.merge(looked.assessments) { _, new in new }
             } catch {
                 guard generation == self.generation else { return }
                 activity.readFailed(error)
@@ -130,7 +156,7 @@ final class ActivityListModel {
     }
 
     /// Where Finder can show the selected items: each one's expected place, when something is
-    /// there or when that cannot be told (the Trash may not be looked into; Finder can still show it).
+    /// there or when that cannot be told (Finder may still be able to show it).
     func revealableURLs(for rows: Set<ActivityRowID>) -> [URL] {
         rows.compactMap { row -> URL? in
             guard case .change(let id) = row, let change = changesByID[id], let path = change.expectedPath else {
@@ -144,6 +170,126 @@ final class ActivityListModel {
             }
         }
         .sorted { $0.path(percentEncoded: false) < $1.path(percentEncoded: false) }
+    }
+
+    // MARK: - Undo
+
+    /// Whether `run`'s Undo button works. Known from its counts alone until its items are loaded;
+    /// then by what each item's check found.
+    func undoAvailability(for run: ActivityRun) -> UndoAvailability {
+        guard !run.isUndo else {
+            return .none
+        }
+        guard run.doneCount > 0 else {
+            return .unavailable(reason: String(localized: "Nothing was changed"))
+        }
+        guard run.hasChangesLeftToUndo else {
+            return .unavailable(reason: String(localized: "Already undone"))
+        }
+        // Only an open run's items were looked at with the latest read.
+        guard expanded.contains(run.id), let items = changes[run.id] else {
+            return .available
+        }
+        let assessed = items.compactMap { assessments[$0.id] }
+        if assessed.contains(where: { $0.refusal == nil }) {
+            return .available
+        }
+        // Not yet checked since they were read: the run's counts say there is something left.
+        if assessed.count < items.count {
+            return .checking
+        }
+        return .unavailable(reason: String(localized: "None of its files can be put back"))
+    }
+
+    /// Whether `change`'s Undo button works. No button for what there is nothing to undo about.
+    func undoAvailability(for change: ActivityChange, in run: ActivityRun) -> UndoAvailability {
+        guard !run.isUndo, change.undoneAt == nil else {
+            return .none
+        }
+        switch change.outcome {
+        case .skipped, .failed, .undone, .notUndone, .unrecognized:
+            return .none
+        case .started, .trashed, .renamed, .moved:
+            break
+        }
+        switch assessments[change.id] {
+        case .undoable:
+            return .available
+        case .notUndoable(let refusal):
+            return .unavailable(reason: refusal.localizedDescription(for: change.undoOperation))
+        case nil:
+            return .checking
+        }
+    }
+
+    /// What to undo for the selection: one run or one item whose Undo button works. Nil otherwise.
+    func undoTarget(for rows: Set<ActivityRowID>) -> UndoTarget? {
+        guard rows.count == 1, let row = rows.first else {
+            return nil
+        }
+        switch row {
+        case .run(let runID):
+            guard let run = runs.first(where: { $0.id == runID }), undoAvailability(for: run).isAvailable else {
+                return nil
+            }
+            return .run(runID)
+        case .change(let changeID):
+            guard let change = changesByID[changeID],
+                  let run = runs.first(where: { $0.id == change.runID }),
+                  undoAvailability(for: change, in: run).isAvailable else {
+                return nil
+            }
+            return .change(changeID)
+        }
+    }
+
+    /// What one look at the disk says about loaded changes: whether each file is at its expected
+    /// place, and whether each change can be undone.
+    private struct Look: Sendable {
+        var presence: [ActivityChange.ID: ActivityChangePresence] = [:]
+        var assessments: [ActivityChange.ID: UndoPlanner.Assessment] = [:]
+    }
+
+    /// Looks at each change's places once, off the main actor, for both answers. Without a folder
+    /// nothing can be undone, and presence is read on its own.
+    @concurrent
+    private static func look(at changes: [ActivityRun.ID: [ActivityChange]], runs: [ActivityRun], folderURL: URL?) async -> Look {
+        let all = changes.values.flatMap { $0 }
+        guard let folderURL else {
+            return Look(presence: await ActivityChange.presence(of: all))
+        }
+        // The Trash is looked up once, not once per change.
+        let planner = UndoPlanner(trash: TrashLocator.system.resolved(for: folderURL))
+        let observations = await planner.observe(all, folderURL: folderURL)
+        var look = Look()
+        for run in runs {
+            for change in changes[run.id] ?? [] {
+                let observation = observations[change.id]
+                look.assessments[change.id] = planner.assess(change, in: run, observation: observation, folderURL: folderURL)
+                look.presence[change.id] = presence(of: change, in: observation)
+            }
+        }
+        return look
+    }
+
+    /// Whether the change's file is at its expected place, from the look `observe` took at both places.
+    nonisolated private static func presence(of change: ActivityChange, in observation: UndoObservation?) -> ActivityChangePresence {
+        let place: UndoObservation.Place? = switch change.expectedPath {
+        case nil:
+            .nothing
+        case change.resultingPath:
+            observation?.currentPlace
+        default:
+            observation?.originalPlace
+        }
+        switch place {
+        case .item:
+            return .present
+        case .nothing:
+            return .missing
+        case .unreadable, nil:
+            return .unknown
+        }
     }
 
     private func setChanges(_ changes: [ActivityRun.ID: [ActivityChange]]) {

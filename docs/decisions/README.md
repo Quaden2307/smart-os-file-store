@@ -36,3 +36,4 @@ One short record per segment for each decision a reader of the code would otherw
 - [0005. One executor for the Trash, rename and move](0005-one-executor-for-trash-rename-and-move.md)
 - [0006. The activity log: schema and crash safety](0006-activity-log-schema-and-crash-safety.md)
 - [0007. Activity in the main window's sidebar](0007-activity-in-the-main-window.md)
+- [0008. Undo, and how it proves it has the same file](0008-how-undo-proves-identity.md)

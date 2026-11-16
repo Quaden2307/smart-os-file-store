@@ -22,7 +22,11 @@ Because a package's record now carries its contents, the grace period for every 
 
 ### Remove Empty Folders
 
-Added by this segment's second commit; see below once it lands.
+**What is empty.** A plain folder holding nothing, or nothing but folders that are empty by the same rule and files macOS makes by itself, listed by exact name: `.DS_Store` and `.localized` (`PackageContents.systemFileNames`). Anything else at any depth, a link or a hidden file included, makes it not empty. `Thumbs.db`, `desktop.ini`, `Icon\r` and `._` files are not on the list: a user can make or need them, and a folder they keep stays, which is the safe side.
+
+**Bounded, and unknown is not empty.** The scan reads each plain top-level folder (never the archive, a package, a link or a `.download`) with the same reader and `Limits.standard`, 1,000 items and 16 levels, and stops at the first item that is not a folder or a system file, so a full folder costs one or two `lstat` calls. Each level's items are looked at before any folder in it is opened, so a folder holding a file beside an unreadable subfolder is simply not empty. The reader never crosses into another volume mounted inside a folder, for any reading. It keeps the contents only when the folder is empty, or the failure when it cannot be told; a folder past the limits fails with `tooManyItems` and is not empty. A folder that cannot be read is listed under Not checked; one past the limits is not, as with downloads.
+
+**Plan and run.** `EmptyFolderPlanner`, pure over records, proposes `.moveToTrash` with the reason `emptyFolder`, ticked, in name order. The shared rules keep out the archive, hidden folders, the grace period (counted from the newest change inside, `lastChange`) and Kept. `trashEmptyFolder` finds the folder through the handle without following links, refuses a placeholder, reads it again and refuses it unless still empty (`changedSinceScan`), applies the shared refusal on that reading, asks the journal, then reads it again at the last look and requires the same contents. Undo reads the folder in the Trash the same way as any folder.
 
 ## Alternatives
 
@@ -30,4 +34,6 @@ Added by this segment's second commit; see below once it lands.
 - **`URLResourceKey.totalFileAllocatedSizeKey`.** Equivalent for files, but packages are summed by the `lstat` walk anyway; one source for both keeps them consistent.
 - **Reading packages in the planner.** Rejected: planners stay pure over records, and the scan already reads `.download` packages the same way.
 - **Unlimited package walk, or 100,000 items.** Rejected: every scan, for every action, would pay for an Xcode-sized bundle. The 25,000 bound is a recorded shortcut.
+- **Empty folders: the user's own judgement of junk files.** Not done: only what macOS makes by itself is ignored, by exact name.
+- **Empty folders: no early stop.** Rejected: every scan would read up to 1,000 items of every folder, when one is enough to know it is not empty.
 - **Only the three offered thresholds.** Not done: the day thresholds accept any value set by hand, and tests need a small one.

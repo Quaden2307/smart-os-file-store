@@ -11,7 +11,9 @@ import os
 /// space on disk from the same call. For a folder whose name ends in `.download` (Safari's partial
 /// download) it reads what is inside (`PackageContents`), so Clear Failed Downloads can tell when it
 /// last changed; for any other package, within `PackageContents.Limits.package`, so Review Large
-/// Downloads knows the space it takes. It opens no other folder.
+/// Downloads knows the space it takes; and for a plain folder, only as far as it takes to tell whether
+/// it is empty, for Remove Empty Folders, keeping what it read only when it is (or could not be told).
+/// The archive is never read.
 public struct FolderScanner: Sendable {
     /// The resource values fetched for every item in one call, so each record costs no extra
     /// file-system round trip.
@@ -111,10 +113,20 @@ public struct FolderScanner: Sendable {
                     } else {
                         limits = nil
                     }
+                    let name = url.lastPathComponent
                     if let limits {
                         let handle = folderHandle ?? Self.openHandle(on: folderURL)
                         folderHandle = handle
-                        packageContents = handle.flatMap { PackageContents.read(named: url.lastPathComponent, in: $0, limits: limits) }
+                        packageContents = handle.flatMap { PackageContents.read(named: name, in: $0, limits: limits) }
+                    } else if !CandidateEligibility.isExcludedName(name) {
+                        let handle = folderHandle ?? Self.openHandle(on: folderURL)
+                        folderHandle = handle
+                        switch handle {
+                        case .success(let folder):
+                            packageContents = PackageContents.readIfEmpty(named: name, in: folder)
+                        case .failure(let failure):
+                            packageContents = .failure(failure)
+                        }
                     }
                 }
                 records.append(

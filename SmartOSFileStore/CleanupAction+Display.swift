@@ -176,6 +176,21 @@ extension CleanupAction {
                     localized: "No file checked takes up as much space on disk as the size set in Settings (⌘,). Folders are not listed. Files added or changed in the last hour are checked once they are an hour old."
                 )
             )
+        case .removeEmptyFolders:
+            CleanupActionDisplay(
+                title: String(localized: "Empty Folders"),
+                commandTitle: String(localized: "Remove Empty Folders"),
+                explanation: String(localized: "Move folders with nothing in them to the Trash. A folder holding only empty folders or Finder’s .DS_Store counts as empty."),
+                symbol: "folder.badge.minus",
+                shortcutKey: "e",
+                progressLabel: String(localized: "Looking for empty folders"),
+                cancelHelp: String(localized: "Stop looking for empty folders (Esc)"),
+                progressStyle: .spinner,
+                emptyTitle: String(localized: "No Empty Folders Found"),
+                emptyDescription: String(
+                    localized: "Every folder checked holds at least one file. Folders added or changed in the last hour are checked once they are an hour old."
+                )
+            )
         }
     }
 

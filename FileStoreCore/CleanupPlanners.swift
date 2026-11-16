@@ -31,7 +31,7 @@ public enum CleanupPlanners {
     ///     Fix Messy Names reads only files that might be duplicates of each other, and Review
     ///     Near-Duplicates only files with the same cleaned name, and Archive Old Downloads only files
     ///     with the name of one in the archive; none of them reports any. Review Large Downloads reads
-    ///     nothing: the scan read what it needs.
+    ///     nothing, nor does Remove Empty Folders: the scan read what they need.
     /// - Returns: The plan, or nil while the action has no planner yet.
     /// - Throws: `.cancelled` when the task is cancelled.
     @concurrent
@@ -83,6 +83,8 @@ public enum CleanupPlanners {
             return try await ArchivePlanner(eligibility: eligibility, settings: settings).plan(records: records, in: folderURL, now: now)
         case .largeDownloads:
             return LargeFilePlanner(eligibility: eligibility, settings: settings).plan(records: records, in: folderURL, now: now)
+        case .emptyFolders:
+            return EmptyFolderPlanner(eligibility: eligibility).plan(records: records, in: folderURL, now: now)
         }
     }
 
@@ -102,6 +104,7 @@ public enum CleanupPlanners {
         case nearDuplicates
         case archive
         case largeDownloads
+        case emptyFolders
     }
 
     /// Each action's planner, in one list that both `plan` and `hasPlanner` read. Nil while the
@@ -124,6 +127,8 @@ public enum CleanupPlanners {
             .archive
         case .reviewLargeDownloads:
             .largeDownloads
+        case .removeEmptyFolders:
+            .emptyFolders
         }
     }
 }

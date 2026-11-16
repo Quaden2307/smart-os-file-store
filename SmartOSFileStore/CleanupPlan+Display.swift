@@ -94,7 +94,7 @@ extension ProposedChange.Reason {
             return fix.historyDescription
         case .alreadyArchived(let copyName):
             return String(localized: "An identical copy, \(copyName), was already in Old downloads")
-        case .sameContent, .notOpenedSince, .neverOpened, .failedDownload, .unpackedZip, .nearDuplicate, .largeDownload:
+        case .sameContent, .notOpenedSince, .neverOpened, .failedDownload, .unpackedZip, .nearDuplicate, .largeDownload, .emptyFolder:
             return localizedDescription
         }
     }
@@ -134,6 +134,8 @@ extension ProposedChange.Reason {
             }
             // macOS records no open date for some kinds, such as apps: then nothing is said about it.
             return opensRecorded ? String(localized: "\(size), never opened") : size
+        case .emptyFolder:
+            return String(localized: "Empty folder")
         }
     }
 }

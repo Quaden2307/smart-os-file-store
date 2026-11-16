@@ -7,7 +7,7 @@ import Testing
 struct CleanupActionDefinitionTests {
     @Test func identifiersAreExactlyTheOnesTheLogHasAlwaysStored() {
         let identifiers = CleanupAction.allCases.map(\.definition.identifier)
-        #expect(identifiers == ["findDuplicates", "clearFailedDownloads", "removeUnpackedZips", "removeUsedInstallers", "fixMessyNames", "reviewNearDuplicates", "archiveOldDownloads", "reviewLargeDownloads"])
+        #expect(identifiers == ["findDuplicates", "clearFailedDownloads", "removeUnpackedZips", "removeUsedInstallers", "fixMessyNames", "reviewNearDuplicates", "archiveOldDownloads", "reviewLargeDownloads", "removeEmptyFolders"])
         #expect(Set(identifiers).count == identifiers.count)
     }
 
@@ -20,5 +20,6 @@ struct CleanupActionDefinitionTests {
         #expect(CleanupAction.reviewNearDuplicates.definition.operation == .moveToTrash)
         #expect(CleanupAction.archiveOldDownloads.definition.operation == .archive)
         #expect(CleanupAction.reviewLargeDownloads.definition.operation == .moveToTrash)
+        #expect(CleanupAction.removeEmptyFolders.definition.operation == .moveToTrash)
     }
 }

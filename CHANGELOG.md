@@ -68,6 +68,10 @@ All notable changes to Smart OS File Store are recorded here. The format follows
   - the footer says how much of the space taken by the folder's files the list accounts for;
   - folders, links, hidden items, downloads in progress, Kept items and anything added or changed in the last hour are never listed;
   - Settings has "List downloads as large from" 500 MB, 1 GB or 5 GB.
+- **Remove Empty Folders** (⇧⌘E). It proposes for the Trash, ticked, the folders at the top of the folder that hold nothing, or nothing but Finder's `.DS_Store` and `.localized` files and folders that are empty themselves ("Empty folder"):
+  - a folder holding any other item at any depth, a link included, is not empty, and neither is one too deep (16 levels) or too full (1,000 items) to check, or one the app cannot read, which is listed under Not checked;
+  - Old downloads, apps and other packages, links, hidden folders, Kept folders and folders added or changed in the last hour are never proposed;
+  - right before the Trash each folder is read again, and one that is no longer empty is left alone; Undo puts the folders back.
 - A **Clean Up** menu in the toolbar and in the menu bar lists every cleanup action: Find Duplicates (⇧⌘D, unchanged), Clear Failed Downloads (⇧⌘F), Remove Unpacked Zips (⇧⌘U), Remove Used Installers (⇧⌘I) and Fix Messy Names (⇧⌘M). Every action runs through the same steps: progress and Cancel, the preview, the confirmation, the summary with Undo.
 - A **Failed download** mark and filter in the file list, for the partial downloads Clear Failed Downloads would propose.
 - A Last Opened column: the date macOS records when a file is opened, read from the file itself, so it shows at once in any folder. Files never opened show "Never" and sort as the oldest. Folders, apps, links and Finder aliases, which macOS does not date when they are opened, show a dash unless a date is recorded, and so does any item whose date could not be read.

@@ -125,6 +125,8 @@ extension ProposedChange.Reason {
                 code: "largeDownload",
                 detail: "\(sizeOnDisk);" + (lastOpened.map { String($0.timeIntervalSince1970) } ?? (opensRecorded ? "never" : "unknown"))
             )
+        case .emptyFolder:
+            ActivityLogCode(code: "emptyFolder")
         }
     }
 
@@ -164,6 +166,8 @@ extension ProposedChange.Reason {
             self = .usedInstaller(evidence)
         case "nearDuplicate":
             self = .nearDuplicate(sameNameAs: logCode.detail ?? "")
+        case "emptyFolder":
+            self = .emptyFolder
         case "largeDownload":
             // Every row this version writes has both parts; one without reads as unknown.
             let parts = (logCode.detail ?? "").split(separator: ";", omittingEmptySubsequences: false)

@@ -8,7 +8,7 @@ import Testing
 struct PlannersRespectKeptTests {
     /// The actions with a planner today, in declaration order. A new one must be added here too, so
     /// that this test is seen to cover it, and it must find something to propose in the fake folder.
-    static let plannedActions: [CleanupAction] = [.findDuplicates, .clearFailedDownloads, .removeUnpackedZips, .removeUsedInstallers, .fixMessyNames, .reviewNearDuplicates, .archiveOldDownloads, .reviewLargeDownloads]
+    static let plannedActions: [CleanupAction] = [.findDuplicates, .clearFailedDownloads, .removeUnpackedZips, .removeUsedInstallers, .fixMessyNames, .reviewNearDuplicates, .archiveOldDownloads, .reviewLargeDownloads, .removeEmptyFolders]
 
     /// The settings the planners run with: the defaults, but a large download from 1 MB, so that
     /// the fixture's `big-video.mov` (1 MiB on disk) is one. The defaults list nothing there.

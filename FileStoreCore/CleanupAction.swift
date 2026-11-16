@@ -37,6 +37,10 @@ public enum CleanupAction: String, Sendable, Codable, CaseIterable, Hashable {
     /// first, for review: nothing is ticked (`LargeFilePlanner`). The user may tick any for the Trash.
     case reviewLargeDownloads
 
+    /// Proposes for the Trash, ticked, the top-level folders holding nothing but empty folders and
+    /// the files macOS makes by itself (`EmptyFolderPlanner`).
+    case removeEmptyFolders
+
     /// True when a plan of this action may propose `operation`: the kind its definition states. The
     /// executor refuses every other operation, so a plan built elsewhere cannot make Find Duplicates
     /// rename a file, say.

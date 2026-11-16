@@ -450,6 +450,7 @@ struct RenameExecutorTests {
             .reviewNearDuplicates: [true, false, false],
             .archiveOldDownloads: [true, false, true],
             .reviewLargeDownloads: [true, false, false],
+            .removeEmptyFolders: [true, false, false],
         ]
         #expect(Set(allowed.keys) == Set(CleanupAction.allCases))
         for (action, expected) in allowed {

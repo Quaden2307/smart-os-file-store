@@ -3,7 +3,8 @@ import Foundation
 /// What is inside a folder, read from the disk: how many items, the total size of its files, the
 /// space they take on disk, and the newest modification date of anything in it. The engine reads
 /// inside a Safari download (`.download`), to tell whether anything about it changed, and a package
-/// (such as an `.app`), to total what it takes on disk for Review Large Downloads: the scan, the
+/// (such as an `.app`), to total what it takes on disk for Review Large Downloads, and a plain folder,
+/// to tell whether it is empty for Remove Empty Folders: the scan, the
 /// executor right before the Trash, and undo before it puts one back all read it this one way, so
 /// all three see the same values.
 ///
@@ -60,22 +61,43 @@ public struct PackageContents: Sendable, Hashable {
     /// The newest modification date of anything inside. Nil when the folder is empty.
     public let newestModificationDate: Date?
 
-    /// Equal when the count, size and newest date are: what tells whether anything about a folder
+    /// Items inside, at every depth, that are neither folders nor files macOS makes by itself
+    /// (`systemFileNames`): links, regular files and anything else count.
+    public let userItemCount: Int
+
+    /// True when nothing is inside but folders and files macOS makes by itself: what Remove Empty
+    /// Folders calls empty.
+    public var isEmptyFolder: Bool { userItemCount == 0 }
+
+    /// The files macOS makes in a folder by itself, listed by exact name, which do not stop a folder
+    /// counting as empty: Finder's view settings and the marker of a folder with a localized name.
+    public static let systemFileNames: Set<String> = [".DS_Store", ".localized"]
+
+    /// Equal when the counts, size and newest date are: what tells whether anything about a folder
     /// changed. The space on disk is left out, since compression, or iCloud evicting a file, changes
     /// it without anything the user would call a change.
     public static func == (lhs: PackageContents, rhs: PackageContents) -> Bool {
-        lhs.itemCount == rhs.itemCount && lhs.totalSizeInBytes == rhs.totalSizeInBytes
-            && lhs.newestModificationDate == rhs.newestModificationDate
+        lhs.itemCount == rhs.itemCount && lhs.userItemCount == rhs.userItemCount
+            && lhs.totalSizeInBytes == rhs.totalSizeInBytes && lhs.newestModificationDate == rhs.newestModificationDate
     }
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(itemCount)
+        hasher.combine(userItemCount)
         hasher.combine(totalSizeInBytes)
         hasher.combine(newestModificationDate)
     }
 
-    public init(itemCount: Int, totalSizeInBytes: Int64, newestModificationDate: Date?, allocatedSizeInBytes: Int64 = 0) {
+    /// `userItemCount` defaults to `itemCount`: every item counts as one the user made.
+    public init(
+        itemCount: Int,
+        totalSizeInBytes: Int64,
+        newestModificationDate: Date?,
+        allocatedSizeInBytes: Int64 = 0,
+        userItemCount: Int? = nil
+    ) {
         self.itemCount = itemCount
+        self.userItemCount = userItemCount ?? itemCount
         self.totalSizeInBytes = totalSizeInBytes
         self.allocatedSizeInBytes = allocatedSizeInBytes
         self.newestModificationDate = newestModificationDate
@@ -92,6 +114,22 @@ public struct PackageContents: Sendable, Hashable {
 
     /// Reads the folder called `name` directly inside `parent`. A link at the name is not followed.
     static func read(named name: String, in parent: DirectoryHandle, limits: Limits = .standard) -> Result<PackageContents, Failure> {
+        read(named: name, in: parent, limits: limits, stopsAtUserItem: false)
+    }
+
+    /// Reads the plain folder called `name` directly inside `parent` to tell whether it is empty
+    /// (`isEmptyFolder`), within `Limits.standard`, and stops at the first item that is not: nil
+    /// then. Otherwise the contents, read in full, or why they could not be, which counts as not
+    /// empty. A link at the name is not followed.
+    static func readIfEmpty(named name: String, in parent: DirectoryHandle) -> Result<PackageContents, Failure>? {
+        let contents = read(named: name, in: parent, limits: .standard, stopsAtUserItem: true)
+        if case .success(let read) = contents, !read.isEmptyFolder {
+            return nil
+        }
+        return contents
+    }
+
+    private static func read(named name: String, in parent: DirectoryHandle, limits: Limits, stopsAtUserItem: Bool) -> Result<PackageContents, Failure> {
         // A folder in iCloud only is not even opened.
         if (try? parent.status(of: name))?.isDataless == true {
             return .failure(.notDownloaded)
@@ -102,7 +140,7 @@ public struct PackageContents: Sendable, Hashable {
         } catch {
             return .failure(Failure(openFailure: error))
         }
-        return read(folder, limits: limits)
+        return read(folder, limits: limits, stopsAtUserItem: stopsAtUserItem)
     }
 
     /// Reads the folder at `path`, which is not followed if it is a link: for an item in the Trash,
@@ -120,8 +158,8 @@ public struct PackageContents: Sendable, Hashable {
         return read(folder, limits: limits)
     }
 
-    private static func read(_ folder: DirectoryHandle, limits: Limits) -> Result<PackageContents, Failure> {
-        var tally = Tally(limits: limits)
+    private static func read(_ folder: DirectoryHandle, limits: Limits, stopsAtUserItem: Bool = false) -> Result<PackageContents, Failure> {
+        var tally = Tally(limits: limits, stopsAtUserItem: stopsAtUserItem)
         do throws(Failure) {
             try tally.add(folder, depth: 1)
         } catch {
@@ -132,7 +170,8 @@ public struct PackageContents: Sendable, Hashable {
                 itemCount: tally.count,
                 totalSizeInBytes: tally.size,
                 newestModificationDate: tally.newest,
-                allocatedSizeInBytes: tally.allocated
+                allocatedSizeInBytes: tally.allocated,
+                userItemCount: tally.userItems
             )
         )
     }
@@ -140,7 +179,10 @@ public struct PackageContents: Sendable, Hashable {
     /// The running totals of one reading.
     private struct Tally {
         let limits: Limits
+        /// Stop at the first user item: the reading then only says the folder is not empty.
+        let stopsAtUserItem: Bool
         var count = 0
+        var userItems = 0
         var size: Int64 = 0
         var allocated: Int64 = 0
         var newest: Date?
@@ -170,6 +212,9 @@ public struct PackageContents: Sendable, Hashable {
             } catch {
                 throw Failure(statusFailure: error)
             }
+            // Every item at this level first, then the folders in it: a reading that stops at a user
+            // item finds one here before a folder below could fail it.
+            var subfolders: [(name: String, status: FileStatus)] = []
             for name in names {
                 count += 1
                 guard count <= limits.maximumItemCount else {
@@ -182,23 +227,39 @@ public struct PackageContents: Sendable, Hashable {
                     throw Failure(statusFailure: error)
                 }
                 newest = max(newest ?? item.modificationDate, item.modificationDate)
+                if !item.isDirectory, !PackageContents.systemFileNames.contains(name) {
+                    userItems += 1
+                    if stopsAtUserItem {
+                        return
+                    }
+                }
                 if item.isRegularFile {
                     size += item.sizeInBytes
                     allocated += item.allocatedSizeInBytes
                 } else if item.isDirectory {
-                    if item.isDataless {
-                        throw .notDownloaded
-                    }
-                    guard depth < limits.maximumDepth else {
-                        throw .tooManyItems
-                    }
-                    let child: DirectoryHandle
-                    do throws(DirectoryHandle.OpenFailure) {
-                        child = try folder.openFolder(named: name)
-                    } catch {
-                        throw Failure(openFailure: error)
-                    }
-                    try add(child, depth: depth + 1)
+                    subfolders.append((name, item))
+                }
+            }
+            for (name, item) in subfolders {
+                if item.isDataless {
+                    throw .notDownloaded
+                }
+                // A volume mounted inside is not part of this folder, and is never read.
+                guard item.identity.device == status.identity.device else {
+                    throw .unreadable(reason: "another volume is mounted inside")
+                }
+                guard depth < limits.maximumDepth else {
+                    throw .tooManyItems
+                }
+                let child: DirectoryHandle
+                do throws(DirectoryHandle.OpenFailure) {
+                    child = try folder.openFolder(named: name)
+                } catch {
+                    throw Failure(openFailure: error)
+                }
+                try add(child, depth: depth + 1)
+                if stopsAtUserItem, userItems > 0 {
+                    return
                 }
             }
         }

@@ -62,8 +62,9 @@ public struct FileRecord: Sendable, Identifiable, Hashable {
     public let persistentIdentity: PersistentFileIdentity?
 
     /// What is inside the item, for a folder whose name ends in `.download` (Safari's partial
-    /// download) or a package, or why it could not be read in full. Nil for everything else: the
-    /// scan opens no other folder.
+    /// download), a package, or a plain folder the scan found empty (`isEmptyFolder`), or why it
+    /// could not be read in full. Nil for files, links, the archive, and a plain folder holding
+    /// anything but folders and the files macOS makes by itself.
     public let packageContents: Result<PackageContents, PackageContents.Failure>?
 
     /// The space the item takes on disk, in bytes: a file's allocated blocks, or for a package whose

@@ -62,6 +62,9 @@ public struct ProposedChange: Sendable, Hashable, Identifiable {
         /// Shown for review only.
         case largeDownload(sizeOnDisk: Int64, lastOpened: Date?, opensRecorded: Bool)
 
+        /// The folder holds nothing but empty folders and the files macOS makes by itself.
+        case emptyFolder
+
         /// True for a change that only the user may tick, by hand, after looking: a near-duplicate
         /// or a large download. Nothing ticks it for them: not the preview, not Select All, and no
         /// automatic flow (Tidy Now included).
@@ -69,7 +72,7 @@ public struct ProposedChange: Sendable, Hashable, Identifiable {
             switch self {
             case .nearDuplicate, .largeDownload:
                 true
-            case .sameContent, .messyName, .notOpenedSince, .neverOpened, .alreadyArchived, .failedDownload, .unpackedZip, .usedInstaller:
+            case .sameContent, .messyName, .notOpenedSince, .neverOpened, .alreadyArchived, .failedDownload, .unpackedZip, .usedInstaller, .emptyFolder:
                 false
             }
         }

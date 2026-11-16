@@ -49,6 +49,8 @@ extension CleanupAction {
             CleanupActionDefinition(identifier: "archiveOldDownloads", operation: .archive)
         case .reviewLargeDownloads:
             CleanupActionDefinition(identifier: "reviewLargeDownloads", operation: .moveToTrash)
+        case .removeEmptyFolders:
+            CleanupActionDefinition(identifier: "removeEmptyFolders", operation: .moveToTrash)
         }
     }
 }

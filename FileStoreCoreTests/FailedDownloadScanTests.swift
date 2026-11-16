@@ -31,7 +31,7 @@ struct FailedDownloadScanTests {
         }
     }
 
-    @Test func theSafariPackageIsReadAndNothingElseIs() async throws {
+    @Test func theSafariPackageAndTheEmptyFoldersAreReadAndNothingElseIs() async throws {
         try await withFakeDownloadsFolder { fixture in
             typealias Names = FakeDownloadsFolder.Names
             let all = try await records(in: fixture.url)
@@ -42,9 +42,15 @@ struct FailedDownloadScanTests {
             #expect(contents.totalSizeInBytes == Int64("partial keynote".utf8.count + info.count))
             #expect(safari.contentSizeInBytes == contents.totalSizeInBytes)
             #expect(safari.lastChange != nil)
-            // Every other folder and package, and every file, is left unread.
+            // The empty folders are read, for Remove Empty Folders; every other folder (the scan stops
+            // at its first file) and every file is left unread. The fixture has no other package.
+            let empty: Set<String> = [Names.emptyFolder, Names.dsStoreFolder]
             for record in all where record.displayName != Names.safariDownload {
-                #expect(record.packageContents == nil, "\(record.displayName) was read into")
+                if empty.contains(record.displayName) {
+                    #expect(record.readContents?.isEmptyFolder == true, "\(record.displayName) was not read as empty")
+                } else {
+                    #expect(record.packageContents == nil, "\(record.displayName) was read into")
+                }
             }
         }
     }

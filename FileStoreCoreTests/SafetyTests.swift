@@ -81,6 +81,7 @@ struct SafetyTests {
         "FileStoreCore/ActivityLogStorage.swift",
         "FileStoreCore/CleanupExecutor+ArchivedCopies.swift",
         "FileStoreCore/CleanupExecutor+Duplicates.swift",
+        "FileStoreCore/CleanupExecutor+EmptyFolders.swift",
         "FileStoreCore/CleanupExecutor+FailedDownloads.swift",
         "FileStoreCore/CleanupExecutor+LargeDownloads.swift",
         "FileStoreCore/CleanupExecutor+NearDuplicates.swift",
@@ -317,7 +318,7 @@ struct SafetyTests {
                 )
                 proposed[action] = plan.changes.count
             }
-            #expect(proposed == [.findDuplicates: 6, .clearFailedDownloads: 3, .removeUnpackedZips: 2, .removeUsedInstallers: 2, .fixMessyNames: 9, .reviewNearDuplicates: 6, .archiveOldDownloads: 2, .reviewLargeDownloads: 1])
+            #expect(proposed == [.findDuplicates: 6, .clearFailedDownloads: 3, .removeUnpackedZips: 2, .removeUsedInstallers: 2, .fixMessyNames: 9, .reviewNearDuplicates: 6, .archiveOldDownloads: 2, .reviewLargeDownloads: 1, .removeEmptyFolders: 2])
 
             let after = try Self.snapshot(of: fixture.url)
             #expect(after == before)

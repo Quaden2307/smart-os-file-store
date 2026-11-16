@@ -10,8 +10,9 @@ import os
 /// (`CleanupExecutor+Duplicates`), the failed-download checks (`CleanupExecutor+FailedDownloads`),
 /// the unpacked-zip checks (`CleanupExecutor+UnpackedZips`) and the used-installer checks
 /// (`CleanupExecutor+UsedInstallers`), the near-duplicate checks (`CleanupExecutor+NearDuplicates`)
-/// the archived-copy checks (`CleanupExecutor+ArchivedCopies`) and the large-download checks
-/// (`CleanupExecutor+LargeDownloads`) for the Trash, the relocation checks
+/// the archived-copy checks (`CleanupExecutor+ArchivedCopies`), the large-download checks
+/// (`CleanupExecutor+LargeDownloads`) and the empty-folder checks (`CleanupExecutor+EmptyFolders`)
+/// for the Trash, the relocation checks
 /// for renames and moves (`CleanupExecutor+Relocation`). Items succeed, are skipped or fail one by
 /// one; the executor never throws.
 ///
@@ -281,6 +282,20 @@ public struct CleanupExecutor: Sendable {
                     return CleanupItemResult(change: change, outcome: .skipped(.folderUnavailable))
                 }
                 let outcome = trashLargeDownload(
+                    change,
+                    folder: folder,
+                    context: context,
+                    folderIdentity: folderIdentity,
+                    now: now,
+                    journal: &journal,
+                    beforeChange: beforeChange
+                )
+                return CleanupItemResult(change: change, outcome: outcome)
+            case .removeEmptyFolders:
+                guard let folder else {
+                    return CleanupItemResult(change: change, outcome: .skipped(.folderUnavailable))
+                }
+                let outcome = trashEmptyFolder(
                     change,
                     folder: folder,
                     context: context,

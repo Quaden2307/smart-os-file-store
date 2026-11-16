@@ -90,7 +90,7 @@ struct CleanupSummaryView: View {
 }
 
 /// A file that stayed where it was, and why.
-private struct NotMovedRow: View {
+struct NotMovedRow: View {
     let item: CleanupItemResult
     let action: CleanupAction
 

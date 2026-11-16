@@ -52,7 +52,12 @@ public protocol CleanupRecording: Sendable {
 }
 
 public struct CleanupRunStart: Sendable, Hashable {
-    public let action: CleanupAction
+    /// The action whose plan the run carries out. Nil for a Tidy Now run, which carries out the
+    /// plans of several actions as one run.
+    public let action: CleanupAction?
+    /// What the log stores as the run's action: the action's identifier, or
+    /// `ActivityRun.tidyNowActionCode`.
+    public let logCode: String
     public let folderURL: URL
     /// How many changes the user confirmed.
     public let confirmedCount: Int
@@ -60,6 +65,21 @@ public struct CleanupRunStart: Sendable, Hashable {
 
     public init(action: CleanupAction, folderURL: URL, confirmedCount: Int, startedAt: Date) {
         self.action = action
+        self.logCode = action.logCode
+        self.folderURL = folderURL
+        self.confirmedCount = confirmedCount
+        self.startedAt = startedAt
+    }
+
+    /// A Tidy Now run: the confirmed changes of every action's plan, recorded as one run so that one
+    /// undo reverses all of it.
+    public static func tidyNow(folderURL: URL, confirmedCount: Int, startedAt: Date) -> CleanupRunStart {
+        CleanupRunStart(logCode: ActivityRun.tidyNowActionCode, folderURL: folderURL, confirmedCount: confirmedCount, startedAt: startedAt)
+    }
+
+    private init(logCode: String, folderURL: URL, confirmedCount: Int, startedAt: Date) {
+        self.action = nil
+        self.logCode = logCode
         self.folderURL = folderURL
         self.confirmedCount = confirmedCount
         self.startedAt = startedAt

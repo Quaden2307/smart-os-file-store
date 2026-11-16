@@ -8,6 +8,9 @@ struct CleanUpCommandTarget {
     let canStart: Bool
 
     let start: @MainActor (CleanupAction) -> Void
+
+    /// Starts Tidy Now: every action at once, in one overview.
+    let startTidyNow: @MainActor () -> Void
 }
 
 extension FocusedValues {
@@ -15,14 +18,22 @@ extension FocusedValues {
     @Entry var cleanUpCommands: CleanUpCommandTarget?
 }
 
-/// The Clean Up menu: every action the app offers, each with its own shortcut (Shift-Command and
-/// a letter). The toolbar's Clean Up menu lists the same actions without shortcuts, so no key is
+/// The Clean Up menu: Tidy Now (Command-T), then every action the app offers, each with its own
+/// shortcut (Shift-Command and a letter). The toolbar's Clean Up menu lists the same actions without shortcuts, so no key is
 /// claimed twice.
 struct CleanUpCommands: Commands {
     @FocusedValue(\.cleanUpCommands) private var target
 
     var body: some Commands {
         CommandMenu("Clean Up") {
+            Button {
+                target?.startTidyNow()
+            } label: {
+                Label("Tidy Now", systemImage: "sparkles")
+            }
+            .keyboardShortcut("t", modifiers: .command)
+            .disabled(target?.canStart != true)
+            Divider()
             ForEach(CleanupAction.menuActions, id: \.self) { action in
                 let display = action.display
                 Button {

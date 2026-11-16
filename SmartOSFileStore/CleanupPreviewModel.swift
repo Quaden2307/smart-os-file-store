@@ -56,6 +56,8 @@ final class CleanupPreviewModel {
     ///   - activity: Told when the run has ended, so the totals and the Activity place follow.
     ///   - markKept: Marks files Kept, then says whether it could; the main window's list does it,
     ///     so its badges follow and a search started next sees the change.
+    ///   - initialTicked: The changes to show ticked, when the user chose them before (Tidy Now).
+    ///     Nil ticks what the preview ticks by itself.
     init(
         plan: CleanupPlan,
         eligibility: CandidateEligibility,
@@ -63,6 +65,7 @@ final class CleanupPreviewModel {
         log: ActivityLog,
         activity: ActivityLogModel,
         markKept: @escaping @MainActor ([FileRecord], @escaping @MainActor (Bool) -> Void) -> Void,
+        initialTicked: Set<ProposedChange.ID>? = nil,
         onExecuted: @escaping @MainActor (CleanupResult) -> Void
     ) {
         self.plan = plan
@@ -72,7 +75,8 @@ final class CleanupPreviewModel {
         self.executor = CleanupExecutor(recorder: log, eligibility: eligibility, applicationFolders: applicationFolders)
         self.activity = activity
         self.onExecuted = onExecuted
-        self.ticked = Set(plan.changes.filter { !$0.reason.isPossibleMatch && !$0.reason.isReviewOnly }.map(\.id))
+        let defaultTicks = Set(plan.changes.filter { !$0.reason.isPossibleMatch && !$0.reason.isReviewOnly }.map(\.id))
+        self.ticked = initialTicked.map { $0.intersection(plan.changes.map(\.id)) } ?? defaultTicks
     }
 
     // Isolated, so it may touch main-actor state: the sheet is gone, stop between items.

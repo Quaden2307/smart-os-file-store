@@ -24,7 +24,8 @@ public enum CleanupPlanners {
     ///     ones the file list marks with, so the two never disagree. Review Large Downloads plans by
     ///     its size threshold.
     ///   - hashCache: Content hashes read earlier in this session. Find Duplicates adds what it reads
-    ///     to it; Review Near-Duplicates reads from it and adds to it. The default remembers nothing.
+    ///     to it; Review Near-Duplicates, Fix Messy Names and Archive Old Downloads read from it and
+    ///     add to it. The default remembers nothing.
     ///   - onProgress: Called from planning threads while files are read, quickly and not too often.
     ///     Only an action that reads files reports any: Find Duplicates the files it hashes and their
     ///     bytes, Remove Unpacked Zips the zips it checks, Remove Used Installers the installers.
@@ -75,12 +76,12 @@ public enum CleanupPlanners {
             return try await InstallerPlanner(eligibility: eligibility)
                 .plan(records: records, in: folderURL, sources: installers, now: now, onProgress: onProgress)
         case .messyNames:
-            return try await MessyNamePlanner(eligibility: eligibility).plan(records: records, in: folderURL, now: now)
+            return try await MessyNamePlanner(eligibility: eligibility, hashCache: hashCache).plan(records: records, in: folderURL, now: now)
         case .nearDuplicates:
             return try await NearDuplicatePlanner(eligibility: eligibility, hashCache: hashCache)
                 .plan(records: records, in: folderURL, now: now)
         case .archive:
-            return try await ArchivePlanner(eligibility: eligibility, settings: settings).plan(records: records, in: folderURL, now: now)
+            return try await ArchivePlanner(eligibility: eligibility, settings: settings, hashCache: hashCache).plan(records: records, in: folderURL, now: now)
         case .largeDownloads:
             return LargeFilePlanner(eligibility: eligibility, settings: settings).plan(records: records, in: folderURL, now: now)
         case .emptyFolders:

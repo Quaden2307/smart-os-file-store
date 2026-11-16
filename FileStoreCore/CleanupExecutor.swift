@@ -81,86 +81,139 @@ public struct CleanupExecutor: Sendable {
     ) async -> CleanupResult {
         let clock = ContinuousClock()
         let start = clock.now
-
-        // A plan built elsewhere could list one file twice; it is looked at once.
-        var seen: Set<ProposedChange.ID> = []
-        let confirmed = plan.changes.filter { confirmedChangeIDs.contains($0.id) && seen.insert($0.id).inserted }
-        let unknown = confirmedChangeIDs.subtracting(plan.changes.map(\.id))
-        if !unknown.isEmpty {
-            Self.logger.error("Ignoring \(unknown.count) confirmed items that are not in the plan")
-        }
-        let context = PlanContext(plan: plan, confirmed: Set(confirmed.map(\.id)))
-        // Checks that look up names do it through one handle on the folder, opened only if it is the
-        // folder the plan names. Opening it costs one call, so it is opened for every plan.
-        let folder = context.openFolder()
-
-        var items: [CleanupItemResult] = []
-        items.reserveCapacity(confirmed.count)
-        var bytesFreed: Int64 = 0
-        var wasCancelled = false
-        var verifiedKept: [URL: VerifiedFile] = [:]
-        // The run is opened in the activity log before anything is looked at. If that fails, the
-        // journal is stopped from the start and every item below is left alone.
-        var journal = RunJournal(recorder: recorder)
-        journal.begin(action: plan.action, folderURL: plan.folderURL, confirmedCount: confirmed.count)
-        var notReached: [CleanupRunFinish.NotReached] = []
-        onProgress?(CleanupExecutionProgress(itemsCompleted: 0, itemsTotal: confirmed.count, bytesFreed: 0))
-
-        for (sequence, change) in confirmed.enumerated() {
-            let item: CleanupItemResult
-            if journal.isStopped {
-                // The log failed. Nothing more is changed, and nothing more is written.
-                item = CleanupItemResult(change: change, outcome: .skipped(.activityLogUnavailable))
-            } else if wasCancelled || Task.isCancelled {
-                wasCancelled = true
-                item = CleanupItemResult(change: change, outcome: .skipped(.cancelled))
-                // Never attempted, so not written one by one: the run's last write records them all.
-                notReached.append(CleanupRunFinish.NotReached(sequence: sequence, change: change))
-            } else {
-                journal.startItem(sequence: sequence)
-                item = await process(
-                    change,
-                    context: context,
-                    folder: folder,
-                    now: now,
-                    verifiedKept: &verifiedKept,
-                    journal: &journal,
-                    beforeChange: beforeChange
-                )
-                if item.outcome == .skipped(.cancelled) {
-                    wasCancelled = true
-                }
-                // The item's row, right after the attempt and before anything else is looked at.
-                journal.complete(item)
-            }
-            if item.isTrashed {
-                bytesFreed += change.sizeInBytes
-            }
-            items.append(item)
-            Self.log(item)
-            onProgress?(
-                CleanupExecutionProgress(itemsCompleted: items.count, itemsTotal: confirmed.count, bytesFreed: bytesFreed)
-            )
-        }
-
-        journal.finish(wasCancelled: wasCancelled, notReached: notReached)
+        let run = await run(
+            [Segment(plan: plan, changes: plan.changes)],
+            confirmedChangeIDs: confirmedChangeIDs,
+            start: { count in CleanupRunStart(action: plan.action, folderURL: plan.folderURL, confirmedCount: count, startedAt: .now) },
+            now: now,
+            onProgress: onProgress,
+            beforeChange: beforeChange
+        )
         let result = CleanupResult(
             action: plan.action,
             folderURL: plan.folderURL,
-            items: items,
-            wasCancelled: wasCancelled,
-            logFailure: journal.failure,
-            runID: journal.runID
+            items: run.items.map(\.item),
+            wasCancelled: run.wasCancelled,
+            logFailure: run.logFailure,
+            runID: run.runID
         )
+        Self.logger.info(
+            "Trashed \(result.trashedCount), renamed \(result.renamed.count), moved \(result.moved.count) of \(run.items.count) confirmed items (\(result.bytesFreed) bytes freed), \(result.skipped.count) skipped, \(result.failed.count) failed, cancelled: \(run.wasCancelled), in \((clock.now - start).milliseconds, format: .fixed(precision: 1)) ms"
+        )
+        return result
+    }
+
+    // MARK: - One run
+
+    /// Some of one plan's changes, carried out together in a run.
+    struct Segment {
+        let plan: CleanupPlan
+        let changes: [ProposedChange]
+    }
+
+    /// What a run did: each item with the action whose plan proposed it, in the order tried.
+    struct RunOutcome {
+        var items: [(action: CleanupAction, item: CleanupItemResult)]
+        var wasCancelled: Bool
+        var logFailure: CleanupLogFailure?
+        var runID: Int64?
+    }
+
+    /// Carries out the confirmed changes of `segments`, one segment after another and each in its
+    /// own order, as one run of the activity log. Each item is checked by the rules of the plan
+    /// that proposed it, against that plan's groups and kept copies.
+    ///
+    /// - Parameter start: The run's first row, for the number of confirmed changes.
+    func run(
+        _ segments: [Segment],
+        confirmedChangeIDs: Set<ProposedChange.ID>,
+        start: (Int) -> CleanupRunStart,
+        now: Date,
+        onProgress: (@Sendable (CleanupExecutionProgress) -> Void)?,
+        beforeChange: (@Sendable (ProposedChange) -> Void)?
+    ) async -> RunOutcome {
+        // A plan built elsewhere could list one file twice, or two plans the same file; it is
+        // looked at once.
+        var seen: Set<ProposedChange.ID> = []
+        let confirmedSegments = segments.map { segment in
+            (segment.plan, segment.changes.filter { confirmedChangeIDs.contains($0.id) && seen.insert($0.id).inserted })
+        }
+        let unknown = confirmedChangeIDs.subtracting(segments.flatMap { $0.changes.map(\.id) })
+        if !unknown.isEmpty {
+            Self.logger.error("Ignoring \(unknown.count) confirmed items that are not in the plan")
+        }
+        let total = confirmedSegments.reduce(0) { $0 + $1.1.count }
+
+        var outcome = RunOutcome(items: [], wasCancelled: false)
+        outcome.items.reserveCapacity(total)
+        var bytesFreed: Int64 = 0
+        // The run is opened in the activity log before anything is looked at. If that fails, the
+        // journal is stopped from the start and every item below is left alone.
+        var journal = RunJournal(recorder: recorder)
+        journal.begin(start(total))
+        var notReached: [CleanupRunFinish.NotReached] = []
+        onProgress?(CleanupExecutionProgress(itemsCompleted: 0, itemsTotal: total, bytesFreed: 0))
+
+        var sequence = 0
+        // Looked up once per plan, however many segments it has.
+        var contexts: [CleanupAction: (context: PlanContext, folder: DirectoryHandle?)] = [:]
+        var verifiedKept: [URL: VerifiedFile] = [:]
+        for (plan, confirmed) in confirmedSegments where !confirmed.isEmpty {
+            let (context, folder) = contexts[plan.action] ?? {
+                let context = PlanContext(plan: plan, confirmed: confirmedChangeIDs.intersection(plan.changes.map(\.id)))
+                // Checks that look up names do it through one handle on the folder, opened only if it
+                // is the folder the plan names. Opening it costs one call, so it is opened for every plan.
+                return (context, context.openFolder())
+            }()
+            contexts[plan.action] = (context, folder)
+            for change in confirmed {
+                defer { sequence += 1 }
+                let item: CleanupItemResult
+                if journal.isStopped {
+                    // The log failed. Nothing more is changed, and nothing more is written.
+                    item = CleanupItemResult(change: change, outcome: .skipped(.activityLogUnavailable))
+                } else if outcome.wasCancelled || Task.isCancelled {
+                    outcome.wasCancelled = true
+                    item = CleanupItemResult(change: change, outcome: .skipped(.cancelled))
+                    // Never attempted, so not written one by one: the run's last write records them all.
+                    notReached.append(CleanupRunFinish.NotReached(sequence: sequence, change: change))
+                } else {
+                    journal.startItem(sequence: sequence)
+                    item = await process(
+                        change,
+                        context: context,
+                        folder: folder,
+                        now: now,
+                        verifiedKept: &verifiedKept,
+                        journal: &journal,
+                        beforeChange: beforeChange
+                    )
+                    if item.outcome == .skipped(.cancelled) {
+                        outcome.wasCancelled = true
+                    }
+                    // The item's row, right after the attempt and before anything else is looked at.
+                    journal.complete(item)
+                }
+                if item.isTrashed {
+                    bytesFreed += change.sizeInBytes
+                }
+                outcome.items.append((plan.action, item))
+                Self.log(item)
+                onProgress?(
+                    CleanupExecutionProgress(itemsCompleted: outcome.items.count, itemsTotal: total, bytesFreed: bytesFreed)
+                )
+            }
+        }
+
+        journal.finish(wasCancelled: outcome.wasCancelled, notReached: notReached)
+        outcome.logFailure = journal.failure
+        outcome.runID = journal.runID
         if let failure = journal.failure {
             Self.logger.error(
                 "The activity log failed (\(String(describing: failure.error), privacy: .public)); the run stopped. Change left unrecorded: \(failure.unrecordedChangeID != nil)"
             )
         }
-        Self.logger.info(
-            "Trashed \(result.trashedCount), renamed \(result.renamed.count), moved \(result.moved.count) of \(confirmed.count) confirmed items (\(result.bytesFreed) bytes freed), \(result.skipped.count) skipped, \(result.failed.count) failed, cancelled: \(wasCancelled), in \((clock.now - start).milliseconds, format: .fixed(precision: 1)) ms"
-        )
-        return result
+        return outcome
     }
 
     // MARK: - One item

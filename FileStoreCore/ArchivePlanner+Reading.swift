@@ -51,7 +51,13 @@ extension ArchivePlanner {
                 entries.append(ArchiveListing.Entry(name: name, contentHash: theirs))
                 guard theirs != nil else { continue }
                 do throws(ContentHashError) {
-                    hashes[candidate.id] = try await hasher.hash(contentsOf: candidate.url, expectedSizeInBytes: size)
+                    if let known = hashCache?.hash(for: candidate) {
+                        hashes[candidate.id] = known
+                    } else {
+                        let hash = try await hasher.hash(contentsOf: candidate.url, expectedSizeInBytes: size)
+                        hashes[candidate.id] = hash
+                        hashCache?.store(hash, for: candidate)
+                    }
                 } catch {
                     guard let reason = CleanupSkipReason(hashError: error) else {
                         throw .cancelled

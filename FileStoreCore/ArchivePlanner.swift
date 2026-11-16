@@ -21,16 +21,22 @@ public struct ArchivePlanner: Sendable {
 
     public let hasher: ContentHasher
 
+    /// Content hashes read earlier in this session, for the folder's own files only: read from and
+    /// added to. The executor hashes both copies again before it trashes one.
+    public let hashCache: ContentHashCache?
+
     static let logger = Logger(subsystem: "com.quaden2307.FileStoreCore", category: "ArchivePlanner")
 
     public init(
         eligibility: CandidateEligibility = CandidateEligibility(),
         settings: CleanupSettings = CleanupSettings(),
-        hasher: ContentHasher = ContentHasher()
+        hasher: ContentHasher = ContentHasher(),
+        hashCache: ContentHashCache? = nil
     ) {
         self.eligibility = eligibility
         self.settings = settings
         self.hasher = hasher
+        self.hashCache = hashCache
     }
 
     /// The archive folder inside `folderURL`.

@@ -48,7 +48,10 @@ extension ActivityRun {
     /// An undo is named after the run it undid: "Undo Find Duplicates".
     var title: String {
         if isUndo {
-            return UndoPlan.title(undoing: undoneAction)
+            return UndoPlan.title(undoingCode: undoneActionCode)
+        }
+        if isTidyNow {
+            return String(localized: "Tidy Now")
         }
         return action?.title ?? String(localized: "Cleanup")
     }
@@ -145,7 +148,8 @@ extension ActivityChange {
                 String(localized: "Moved")
             }
         case .skipped(let reason):
-            reason.localizedDescription(for: run.action)
+            // A Tidy Now run holds several actions' changes; each is worded for its own.
+            reason.localizedDescription(for: run.action ?? self.reason?.proposingAction)
         case .failed(let error):
             run.isUndo
                 ? UndoItemOutcome.failed(error).localizedDescription(for: undoRowOperation)

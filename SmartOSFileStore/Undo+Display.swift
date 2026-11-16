@@ -98,18 +98,23 @@ extension CleanupExecutionError {
 extension UndoPlan {
     /// "Undo Find Duplicates": the undo named after the run it undoes.
     var title: String {
-        UndoPlan.title(undoing: undoneAction)
+        UndoPlan.title(undoingCode: undoneActionCode)
     }
 
-    static func title(undoing action: CleanupAction?) -> String {
-        let actionTitle = action?.commandTitle ?? String(localized: "Cleanup")
+    /// "Undo Find Duplicates", or "Undo Tidy Now", for the run stored with `code`.
+    static func title(undoingCode code: String?) -> String {
+        let actionTitle = if code == ActivityRun.tidyNowActionCode {
+            String(localized: "Tidy Now")
+        } else {
+            CleanupAction.allCases.first { $0.definition.identifier == code }?.commandTitle ?? String(localized: "Cleanup")
+        }
         return String(localized: "Undo \(actionTitle)")
     }
 }
 
 extension UndoResult {
     var title: String {
-        UndoPlan.title(undoing: undoneAction)
+        UndoPlan.title(undoingCode: undoneActionCode)
     }
 }
 

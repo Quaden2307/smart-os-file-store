@@ -6,8 +6,10 @@ import Synchronization
 /// A hash is handed back only for a record with the size, modification date and disk identity
 /// (volume and file number) it was read at; any other record misses, so a file replaced under the
 /// same name, even at the same size and date, is read again. Find Duplicates only stores hashes here and never reads them, since its
-/// hashes decide what goes to the Trash; Review Near-Duplicates reads them, since its hashes only
-/// decide which files are shown together, and the executor rechecks every file before it moves.
+/// hashes decide what goes to the Trash on their own; Review Near-Duplicates, Fix Messy Names and
+/// Archive Old Downloads read them, since the executor hashes again every file whose change they
+/// decide before it moves. Tidy Now runs Find Duplicates first and those three after it, with one
+/// cache, so no file is read twice in one Tidy Now scan.
 public final class ContentHashCache: Sendable {
     private struct Entry {
         let sizeInBytes: Int64

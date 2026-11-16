@@ -171,6 +171,52 @@ struct BenchmarkTests {
         )
     }
 
+    /// Tidy Now on the same folder as above: one scan, then every planner together with a fresh
+    /// content-hash cache each run, so Find Duplicates reads every candidate and the planners after
+    /// it read from the cache. Memory is sampled on every progress report.
+    @Test func tidyNowAtTenThousandFiles() async throws {
+        let temp = try TemporaryFolder.make()
+        defer { temp.remove() }
+        _ = try BulkFiles.writeSmallFiles(count: Self.smallFileCount, in: temp.url)
+        _ = try BulkFiles.addDownloadAttributes(count: Self.smallFileCount, in: temp.url)
+        try BulkFiles.writeSparseFile(temp.url.appending(path: "big-a.bin"), size: Self.bigSize)
+        try BulkFiles.writeSparseFile(temp.url.appending(path: "big-b.bin"), size: Self.bigSize)
+        try BulkFiles.writeSparseFile(temp.url.appending(path: "big-c.bin"), size: Self.uniqueBigSize)
+        let clock = ContinuousClock()
+        let location = ScanLocation(folderURL: temp.url, source: .launchArgument)
+        let later = Date(timeIntervalSinceNow: 2 * 3_600)
+        let scan = try await FolderScanner().scan(location)
+        let before = try #require(physicalFootprintInBytes())
+        let peak = Mutex<UInt64>(before)
+        var times: [Duration] = []
+        for run in 0...Self.measuredRuns {
+            let planner = TidyNowPlanner(
+                eligibility: CandidateEligibility(),
+                keptItems: KeptItems(),
+                installers: .testing(),
+                records: scan.records,
+                folderURL: temp.url,
+                now: later
+            )
+            let start = clock.now
+            let plan = try await planner.plan { _ in
+                if let footprint = physicalFootprintInBytes() {
+                    peak.withLock { $0 = max($0, footprint) }
+                }
+            }
+            let time = clock.now - start
+            #expect(plan.outcomes.allSatisfy { $0.outcome != .failed })
+            #expect(plan.plans.first { $0.action == .findDuplicates }?.duplicateGroups.count == Self.smallFileCount / 2 + 1)
+            if run > 0 {
+                times.append(time)
+            }
+        }
+        let highest = peak.withLock { $0 }
+        let growth = highest > before ? highest - before : 0
+        Self.report("Tidy Now over \(Self.smallFileCount + 3) records: \(Self.summary(times)), median (min–max) of \(Self.measuredRuns) runs")
+        Self.report("Tidy Now memory: footprint before \(Measured.mebibytes(before)), sampled peak \(Measured.mebibytes(highest)), growth \(Measured.mebibytes(growth))")
+    }
+
     /// Remove Used Installers on 130 installers against 300 installed apps: the installed-apps
     /// index, the first search (every installer read, ten disk images attached two at a time),
     /// the second (everything from the cache, nothing attached), and the Installed marks.

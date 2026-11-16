@@ -33,11 +33,20 @@ public struct MessyNamePlanner: Sendable {
 
     public let hasher: ContentHasher
 
+    /// Content hashes read earlier in this session, read from and added to. Its hashes only decide
+    /// whether a clean name is taken by an identical file; the executor checks every rename again.
+    public let hashCache: ContentHashCache?
+
     private static let logger = Logger(subsystem: "com.quaden2307.FileStoreCore", category: "MessyNamePlanner")
 
-    public init(eligibility: CandidateEligibility = CandidateEligibility(), hasher: ContentHasher = ContentHasher()) {
+    public init(
+        eligibility: CandidateEligibility = CandidateEligibility(),
+        hasher: ContentHasher = ContentHasher(),
+        hashCache: ContentHashCache? = nil
+    ) {
         self.eligibility = eligibility
         self.hasher = hasher
+        self.hashCache = hashCache
     }
 
     // MARK: - Pure functions
@@ -198,9 +207,14 @@ public struct MessyNamePlanner: Sendable {
         if let known = cache[record.url] {
             return try known.get()
         }
+        if let known = hashCache?.hash(for: record) {
+            cache[record.url] = .success(known)
+            return known
+        }
         do throws(ContentHashError) {
             let hash = try await hasher.hash(contentsOf: record.url, expectedSizeInBytes: record.sizeInBytes)
             cache[record.url] = .success(hash)
+            hashCache?.store(hash, for: record)
             return hash
         } catch {
             if error != .cancelled {

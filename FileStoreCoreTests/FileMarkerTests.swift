@@ -50,7 +50,14 @@ struct FileMarkerTests {
         let installer = record("SomeApp-2.1.dmg", contentType: UTType(filenameExtension: "dmg"), added: Self.now - 100 * Self.day)
         #expect(FileMarker.marks(for: installer, now: Self.now, settings: settings, isInstalled: true) == [.installed, .neverOpened, .old])
         #expect(FileMarker.marks(for: installer, now: Self.now, settings: settings) == [.neverOpened, .old])
-        #expect(FileMark.allCases == [.kept, .failedDownload, .installed, .neverOpened, .unused, .old])
+        #expect(FileMark.allCases == [.kept, .failedDownload, .installed, .duplicate, .neverOpened, .unused, .old])
+    }
+
+    /// Duplicate comes from the last Tidy Now scan, which the caller passes; it sits after Installed.
+    @Test func aCopyTheCallerFoundDuplicateIsMarkedSoInOrder() {
+        let copy = record("report (1).pdf", contentType: UTType(filenameExtension: "pdf"), added: Self.now - 100 * Self.day)
+        #expect(FileMarker.marks(for: copy, now: Self.now, settings: settings, isInstalled: true, isDuplicate: true) == [.installed, .duplicate, .neverOpened, .old])
+        #expect(FileMarker.marks(for: copy, now: Self.now, settings: settings) == [.neverOpened, .old])
     }
 
     // MARK: - Thresholds

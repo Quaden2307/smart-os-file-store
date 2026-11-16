@@ -9,7 +9,7 @@ extension ActivityLog: CleanupRecording {
             try db.execute(
                 sql: "INSERT INTO runs (action, folderPath, startedAt, state, confirmedCount) VALUES (?, ?, ?, ?, ?)",
                 arguments: [
-                    start.action.logCode,
+                    start.logCode,
                     start.folderURL.path(percentEncoded: false),
                     start.startedAt.timeIntervalSinceReferenceDate,
                     ActivityRun.State.running.logCode,

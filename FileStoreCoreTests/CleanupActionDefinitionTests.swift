@@ -9,6 +9,9 @@ struct CleanupActionDefinitionTests {
         let identifiers = CleanupAction.allCases.map(\.definition.identifier)
         #expect(identifiers == ["findDuplicates", "clearFailedDownloads", "removeUnpackedZips", "removeUsedInstallers", "fixMessyNames", "reviewNearDuplicates", "archiveOldDownloads", "reviewLargeDownloads", "removeEmptyFolders"])
         #expect(Set(identifiers).count == identifiers.count)
+        // The codes the log stores for runs that are not one action's are no action's.
+        #expect(!identifiers.contains(ActivityRun.undoActionCode))
+        #expect(!identifiers.contains(ActivityRun.tidyNowActionCode))
     }
 
     @Test func eachActionMakesOneKindOfPlan() {

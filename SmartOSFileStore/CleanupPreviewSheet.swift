@@ -31,6 +31,10 @@ struct CleanupPreviewSheet: View {
     /// The summary's Undo: asks the main window to undo the run just shown, once this sheet is closed.
     private let onUndo: (@MainActor (ActivityRun.ID) -> Void)?
 
+    /// For Tidy Now: the preview only chooses. Nothing is carried out from here; Back to Tidy Now
+    /// (or Escape) hands the plan, less what Keep This File took out, and the ticks back.
+    private let onChoose: (@MainActor (CleanupPlan, Set<ProposedChange.ID>) -> Void)?
+
     init(
         plan: CleanupPlan,
         eligibility: CandidateEligibility,
@@ -39,9 +43,12 @@ struct CleanupPreviewSheet: View {
         activity: ActivityLogModel,
         markKept: @escaping @MainActor ([FileRecord], @escaping @MainActor (Bool) -> Void) -> Void,
         onUndo: (@MainActor (ActivityRun.ID) -> Void)? = nil,
+        initialTicked: Set<ProposedChange.ID>? = nil,
+        onChoose: (@MainActor (CleanupPlan, Set<ProposedChange.ID>) -> Void)? = nil,
         onExecuted: @escaping @MainActor (CleanupResult) -> Void
     ) {
         self.onUndo = onUndo
+        self.onChoose = onChoose
         _model = State(
             initialValue: CleanupPreviewModel(
                 plan: plan,
@@ -50,6 +57,7 @@ struct CleanupPreviewSheet: View {
                 log: log,
                 activity: activity,
                 markKept: markKept,
+                initialTicked: initialTicked,
                 onExecuted: onExecuted
             )
         )
@@ -301,7 +309,8 @@ struct CleanupPreviewSheet: View {
             // A list answers Return with its primary action (Quick Look) before the default button
             // is considered; here Return means the default button. That is Move to Trash or Rename,
             // which only opens the confirmation, or Done for a plan that is previewed only.
-            if model.isReviewing, !model.canBeApplied {
+            // In Tidy Now nothing is carried out from here: Return goes back to the overview.
+            if model.isReviewing, !model.canBeApplied || onChoose != nil {
                 close()
                 return .handled
             }
@@ -358,6 +367,22 @@ struct CleanupPreviewSheet: View {
     @ViewBuilder
     private var footerControls: some View {
         switch model.phase {
+        case .reviewing where onChoose != nil:
+            HStack(spacing: 12) {
+                if !plan.isEmpty {
+                    selectButtons
+                    Text("^[\(model.tickedCount) change](inflect: true) ticked")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                skippedNote
+                Spacer()
+                Button("Back to Tidy Now") {
+                    close()
+                }
+                .keyboardShortcut(.defaultAction)
+                .help(Text("Keep these choices and return to the overview (Return)"))
+            }
         case .reviewing where plan.isEmpty:
             HStack {
                 skippedNote
@@ -542,14 +567,18 @@ struct CleanupPreviewSheet: View {
     /// Asks before anything changes; `CleanupConfirmationSheet` calls `execute` only from its
     /// Move to Trash or Rename button. Quick Look closes first so its panel does not float over the question.
     private func confirm() {
-        guard model.canExecute, !model.isConfirming else { return }
+        guard onChoose == nil, model.canExecute, !model.isConfirming else { return }
         previewItem = nil
         model.isConfirming = true
     }
 
     private func close() {
         previewItem = nil
-        dismiss()
+        if let onChoose {
+            onChoose(model.plan, model.ticked)
+        } else {
+            dismiss()
+        }
     }
 }
 

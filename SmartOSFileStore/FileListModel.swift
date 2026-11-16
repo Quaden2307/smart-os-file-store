@@ -42,6 +42,10 @@ final class FileListModel {
     /// Drawing the list reads no installer, so one not checked yet has no mark.
     private(set) var installedIDs: Set<FileRecord.ID> = []
 
+    /// The copies the last Tidy Now scan's Find Duplicates would move to the Trash, marked Duplicate
+    /// until the next scan of the folder.
+    private(set) var duplicateIDs: Set<FileRecord.ID> = []
+
     /// Where installed apps are looked for: `/Applications` and `~/Applications`, or in a debug
     /// build the folder given with `-ApplicationsFolder`.
     let applicationFolders: [URL]
@@ -161,6 +165,8 @@ final class FileListModel {
         let keptItems = keptItems
         let eligibility = eligibility.keeping(keptItems)
         let installedIDs = installedIDs
+        // Marks from the last Tidy Now scan describe the listing it was given, not the new one.
+        duplicateIDs = []
         scanTask = Task {
             let outcome: Result<ScanOutcome, FolderScanError>
             do throws(FolderScanError) {
@@ -170,7 +176,8 @@ final class FileListModel {
                     now: result.scannedAt,
                     settings: settings,
                     eligibility: eligibility,
-                    installedIDs: installedIDs
+                    installedIDs: installedIDs,
+                    duplicateIDs: []
                 )
                 outcome = .success(ScanOutcome(result: result, settings: settings, keptItems: keptItems, marksByID: marksByID))
             } catch {
@@ -207,6 +214,16 @@ final class FileListModel {
             installedIDs = ids
             remark()
         }
+    }
+
+    // MARK: - Duplicate
+
+    /// Marks Duplicate the listed copies a Tidy Now scan's Find Duplicates would remove.
+    func showDuplicateMarks(_ ids: Set<FileRecord.ID>) {
+        let listed = ids.filter { recordsByID[$0] != nil }
+        guard listed != duplicateIDs else { return }
+        duplicateIDs = listed
+        remark()
     }
 
     // MARK: - Kept
@@ -317,13 +334,15 @@ final class FileListModel {
         let records = records
         let eligibility = eligibility.keeping(keptItems)
         let installedIDs = installedIDs
+        let duplicateIDs = duplicateIDs
         marksTask = Task {
             let marksByID = await Self.marks(
                 for: records,
                 now: markInputs.now,
                 settings: markInputs.settings,
                 eligibility: eligibility,
-                installedIDs: installedIDs
+                installedIDs: installedIDs,
+                duplicateIDs: duplicateIDs
             )
             guard !Task.isCancelled else { return }
             self.marksByID = marksByID
@@ -422,7 +441,8 @@ final class FileListModel {
         now: Date,
         settings: CleanupSettings,
         eligibility: CandidateEligibility,
-        installedIDs: Set<FileRecord.ID>
+        installedIDs: Set<FileRecord.ID>,
+        duplicateIDs: Set<FileRecord.ID>
     ) async -> [FileRecord.ID: [FileMark]] {
         var marksByID: [FileRecord.ID: [FileMark]] = [:]
         for record in records {
@@ -431,7 +451,8 @@ final class FileListModel {
                 now: now,
                 settings: settings,
                 eligibility: eligibility,
-                isInstalled: installedIDs.contains(record.id)
+                isInstalled: installedIDs.contains(record.id),
+                isDuplicate: duplicateIDs.contains(record.id) && !eligibility.keptItems.contains(record)
             )
             if !marks.isEmpty {
                 marksByID[record.id] = marks

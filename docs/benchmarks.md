@@ -44,6 +44,16 @@ Reading the three attributes adds about 0.6 s per 10,000 items, about 60 µs per
 
 The first search costs about 0.45 s per disk image, two at a time, for the checker, the mount and the eject; zips and packages take about a millisecond each. Once read, a search of 130 installers takes about 40 ms, so a second search never waits on a disk image.
 
+## Tidy Now
+
+`BenchmarkTests.tidyNowAtTenThousandFiles` plans Tidy Now over one scan of the same 10,000-file folder (5,000 duplicate pairs, two identical 2 GiB sparse files and a unique 3 GiB one): all nine planners, the hashing ones in a chain sharing a fresh content-hash cache each run, the others beside them, then the priority rule. The installer planner gets an empty fake Applications folder. Memory is sampled on every progress report. Times are the median of five runs after one warm-up, minimum and maximum in brackets.
+
+| Date | Mac | macOS | Build | Commit | Records | Tidy Now scan | Peak footprint (growth) |
+|---|---|---|---|---|---|---|---|
+| 2026-11-16 | MacBook Pro 13-inch, M1, 2020 (MacBookPro17,1), 8 GB | 27.2.1 (26B131) | Release | `8e10ace` + this segment (committed as *Add Tidy Now*) | 10,003 | 4,113.0 ms (3,862.9–5,886.3) | 189.2 MiB (+116.0 MiB) |
+
+Find Duplicates alone takes about 2 s on this folder (above); the rest is the other planners reading the scan and the priority rule. A first version of the priority rule looked up each duplicate's group by scanning every group, and took 13.8 s here; it now uses one lookup table.
+
 ## Activity log size
 
 `FileStoreCoreTests/ScaleTests.swift` (`tenThousandLoggedChangesStayUnderTenMegabytes`) writes 10,000 changes to a log in a temporary folder the way the executor writes them: a started row, then its result, each in its own transaction handed to the disk (write-ahead mode, `synchronous = FULL`). Every change is a move to the Trash with paths as long as real downloads have and a 32-byte content hash. The test fails if the database, its write-ahead file included, reaches 10 MB at any point; it runs with the normal tests and reports its figures in a `SCALE` line.

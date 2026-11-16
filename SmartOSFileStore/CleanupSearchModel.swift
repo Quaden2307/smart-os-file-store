@@ -49,8 +49,8 @@ final class CleanupSearchModel {
     private let logger = Logger(subsystem: "com.quaden2307.SmartOSFileStore", category: "Cleanup")
 
     /// Content hashes read by searches in this session, so Review Near-Duplicates reads no file
-    /// that an earlier search already read, unchanged.
-    private let hashCache = ContentHashCache()
+    /// that an earlier search already read, unchanged. Tidy Now reads and adds to it too.
+    let hashCache = ContentHashCache()
 
     // Isolated, so it may touch main-actor state: the window is gone, stop reading files for a
     // preview nobody will see.

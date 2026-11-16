@@ -77,6 +77,22 @@ public struct ProposedChange: Sendable, Hashable, Identifiable {
             }
         }
 
+        /// The action whose plans give this reason: what a change's own wording follows when a run
+        /// holds several actions' changes (Tidy Now).
+        public var proposingAction: CleanupAction {
+            switch self {
+            case .sameContent: .findDuplicates
+            case .messyName: .fixMessyNames
+            case .notOpenedSince, .neverOpened, .alreadyArchived: .archiveOldDownloads
+            case .failedDownload: .clearFailedDownloads
+            case .unpackedZip: .removeUnpackedZips
+            case .usedInstaller: .removeUsedInstallers
+            case .nearDuplicate: .reviewNearDuplicates
+            case .largeDownload: .reviewLargeDownloads
+            case .emptyFolder: .removeEmptyFolders
+            }
+        }
+
         /// True for a change the preview leaves unticked: a possible match, which the user ticks
         /// only after looking.
         public var isPossibleMatch: Bool {

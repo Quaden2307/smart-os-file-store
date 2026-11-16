@@ -4,7 +4,7 @@ extension CleanupPlan {
     /// This plan without the changes in `ids`: what the preview shows once the user has taken files
     /// out of it (Keep This File). Each change leaves its duplicate group too, and a group left with
     /// nothing proposed goes; a near-duplicate group left with one file goes with that file.
-    /// Everything else stays as it was, skipped items included. Pure.
+    /// Everything else stays as it was, skipped items and what was read from installers included. Pure.
     public func removing(_ ids: Set<ProposedChange.ID>) -> CleanupPlan {
         guard !ids.isEmpty else {
             return self
@@ -39,6 +39,7 @@ extension CleanupPlan {
             duplicateGroups: groups,
             nearDuplicateGroups: nearGroups,
             skippedItems: skippedItems,
+            installerFactsRead: installerFactsRead,
             archiveProblem: archiveProblem,
             topLevelSizeOnDisk: topLevelSizeOnDisk
         )

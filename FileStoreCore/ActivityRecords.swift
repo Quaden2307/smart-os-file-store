@@ -57,6 +57,13 @@ public struct ActivityRun: Sendable, Hashable, Identifiable {
     /// The action code an undo run is stored with. No cleanup action has it.
     public static let undoActionCode = "undo"
 
+    /// The action a Tidy Now run is stored with: the changes of several actions, in one run. No
+    /// action's identifier may ever be this.
+    public static let tidyNowActionCode = "tidyNow"
+
+    /// True for a Tidy Now run.
+    public var isTidyNow: Bool { actionCode == Self.tidyNowActionCode }
+
     public var action: CleanupAction? { CleanupAction(logCode: actionCode) }
 
     /// True for a run that undid changes rather than cleaning up.

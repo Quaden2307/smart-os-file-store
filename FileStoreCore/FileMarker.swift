@@ -11,6 +11,8 @@ public enum FileMarker {
     ///   which a Kept item never is.
     /// - Installed: `isInstalled`, which the caller works out from the facts cached for it
     ///   (`InstallerPlanner.strongMatches`).
+    /// - Duplicate: `isDuplicate`, which the caller takes from the last Tidy Now scan
+    ///   (`TidyNowPlan.duplicateURLs`).
     /// - Never opened: no last-opened date, and added more than `settings.unusedAfter` ago.
     /// - Unused: last opened more than `settings.unusedAfter` ago.
     /// - Old: added more than `settings.oldAfter` ago, opened or not, so it can join either of the two.
@@ -26,7 +28,8 @@ public enum FileMarker {
         now: Date,
         settings: CleanupSettings,
         eligibility: CandidateEligibility = CandidateEligibility(),
-        isInstalled: Bool = false
+        isInstalled: Bool = false,
+        isDuplicate: Bool = false
     ) -> [FileMark] {
         var marks: [FileMark] = eligibility.keptItems.contains(record) ? [.kept] : []
         // Only a download in progress can be a failed one; the flag spares every other item the check.
@@ -35,6 +38,9 @@ public enum FileMarker {
         }
         if isInstalled {
             marks.append(.installed)
+        }
+        if isDuplicate {
+            marks.append(.duplicate)
         }
         guard record.recordsLastOpened,
               !CandidateEligibility.isExcludedName(record.displayName),

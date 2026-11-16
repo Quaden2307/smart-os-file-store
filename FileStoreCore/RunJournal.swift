@@ -34,11 +34,9 @@ struct RunJournal {
     var isStopped: Bool { failure != nil }
 
     /// Opens the run. When this fails nothing on disk has been touched, and nothing will be.
-    mutating func begin(action: CleanupAction, folderURL: URL, confirmedCount: Int) {
+    mutating func begin(_ start: CleanupRunStart) {
         do throws(ActivityLogError) {
-            runID = try recorder.beginRun(
-                CleanupRunStart(action: action, folderURL: folderURL, confirmedCount: confirmedCount, startedAt: .now)
-            )
+            runID = try recorder.beginRun(start)
         } catch {
             failure = CleanupLogFailure(error: error, unrecordedChangeID: nil)
         }

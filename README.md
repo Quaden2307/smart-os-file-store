@@ -28,6 +28,7 @@ Smart OS File Store is a native macOS file browser that will replace Finder, sta
 - **Archive Old Downloads** (⇧⌘O, in the Clean Up menu) moves files marked Never opened or Unused into a folder named **Old downloads** at the top of the folder, made on first use, under their own name ("Not opened since 1 Feb 2025", "Never opened, downloaded 1 Jun 2024"). When the name is taken there by a different file, the file's Date Added goes in its name (`report 2025-01-01.pdf`, then ` v2`); when it is taken by an identical file, this copy goes to the Trash instead and the reason says so. Nothing is deleted, and moving keeps the file's dates, last-opened date and download source, so Undo puts it back exactly as it was. If something called Old downloads is a file or a link, nothing is archived and the preview says why. Double-click Old downloads in the list to open it in Finder.
 - **Review Large Downloads** (⇧⌘L, in the Clean Up menu) lists the files and packages taking at least 500 MB on disk, largest first, with size on disk, kind, Date Added, Last Opened and download source. The size is what each really occupies, so sparse files and cloud files that are not downloaded are not overstated. Nothing is ticked; tick what you want in the Trash. The footer says what share of the space taken by the folder's files they account for.
 - **Remove Empty Folders** (⇧⌘E, in the Clean Up menu) proposes, ticked, the folders that hold nothing but `.DS_Store`, `.localized` and empty folders. A folder holding any other item at any depth, one the app cannot read, Old downloads, apps, links, hidden and Kept folders are never proposed, and each folder is checked again right before it goes to the Trash.
+- **Tidy Now** (⌘T, first in the toolbar and the Clean Up menu) runs every cleanup over one scan and shows an overview: one row per cleanup that found something, with its count and the space it would move to the Trash, the review lists (possible installer matches, near-duplicates, large downloads) apart and unticked, and the cleanups with nothing to do at the bottom. Each file is in one row only, by priority: failed downloads, used installers, unpacked zips, duplicates, empty folders, archive, messy names. A row opens that cleanup's own preview; Back to Tidy Now keeps the ticks. One Tidy Up asks once ("Move 14 items to the Trash, archive 2, rename 9?", Cancel the default), then moves to the Trash, archives and renames, in that order, as one run that one Undo reverses. After the scan, the copies Find Duplicates would remove carry a Duplicate mark until the next refresh.
 - **Settings** (⌘,): "Treat files as unused after" 30, 60 or 90 days, "Mark files as old after" 90, 180 or 365 days, and "List downloads as large from" 500 MB, 1 GB or 5 GB; the marks in the list change at once. It also shows where the activity log is stored, its size, and a button to reveal it in Finder.
 - **Keep This File** (⌘K, File menu and context menu): marks files and folders Kept, so no cleanup ever proposes them. Kept items show a Kept badge and a Kept choice in the filter; File > Stop Keeping All clears them, after asking. In the preview, Keep This File takes a file out of the plan and marks it Kept. Kept follows the file through renames and moves; editing it in an app that saves a new copy makes it a new, unkept file. When one copy of a duplicate is Kept, that copy is the one kept.
 
@@ -43,10 +44,10 @@ open build/Build/Products/Debug/SmartOSFileStore.app --args -CleanupUnusedAfterD
 ## What it does not do yet
 
 - Only the top level of Downloads. No other folders and no subfolders.
-- All six cleanups are here: Find Duplicates, Clear Failed Downloads, Remove Unpacked Zips, Remove Used Installers, Fix Messy Names, Review Near-Duplicates and Archive Old Downloads, Remove Empty Folders, and the review list Review Large Downloads. Tidy Now, which runs them together, arrives in its own segment.
+- All six cleanups are here: Find Duplicates, Clear Failed Downloads, Remove Unpacked Zips, Remove Used Installers, Fix Messy Names, Review Near-Duplicates and Archive Old Downloads, Remove Empty Folders, and the review list Review Large Downloads, plus Tidy Now, which runs them together.
 - An Activity entry cannot be opened for more detail yet. That is planned for later, perhaps with an Apple Intelligence summary.
 - No watching of the folder: the list refreshes on launch, with ⌘R, and after Move to Trash.
-- No Stop button while files move; each move is quick, and closing the window stops between files.
+- No Stop button while one cleanup's files move (Tidy Now has one); each move is quick, and closing the window stops between files.
 - Columns sort by clicking their headers only.
 - English only. Every string is in a String Catalog, ready for translation.
 - The build is signed to run locally. It runs on the Mac that built it; another Mac's Gatekeeper will block it until it is signed with a Developer ID and notarized (Hardened Runtime is already on).
@@ -64,6 +65,7 @@ open build/Build/Products/Debug/SmartOSFileStore.app --args -CleanupUnusedAfterD
 | Main window | ⇧⌘O | Archive Old Downloads |
 | Main window | ⇧⌘L | Review Large Downloads |
 | Main window | ⇧⌘E | Remove Empty Folders |
+| Main window | ⌘T | Tidy Now |
 | Any | ⌘, | Settings |
 | Main window | ⌘R | Refresh the list |
 | Main window | Space, ⌘Y, double-click | Quick Look the selection (press again to close); double-click opens Old downloads in Finder |

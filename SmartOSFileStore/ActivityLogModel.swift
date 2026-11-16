@@ -108,8 +108,13 @@ final class ActivityLogModel {
 
     /// Called when a run has ended, from the task that ran it, whether or not its sheet is still there.
     func runFinished(_ result: CleanupResult) {
+        runFinished(logFailure: result.logFailure)
+    }
+
+    /// The same, for a run of several actions' changes (Tidy Now).
+    func runFinished(logFailure: CleanupLogFailure?) {
         revision += 1
-        if let failure = result.logFailure {
+        if let failure = logFailure {
             fail(failure.error)
             return
         }

@@ -18,6 +18,9 @@ struct ContentView: View {
     @State private var activitySelection: Set<ActivityRowID> = []
     @State private var undo = UndoModel()
 
+    /// The Tidy Now on screen, if any.
+    @State private var tidyNow: PresentedTidyNow?
+
     /// A run the cleanup summary asked to undo, started once its sheet has gone.
     @State private var runToUndoAfterSheet: ActivityRun.ID?
 
@@ -59,6 +62,22 @@ struct ContentView: View {
                 }
             )
             // A later plan must start with its own ticks and its own log, never an earlier sheet's.
+            .id(presented.id)
+        }
+        .sheet(item: $tidyNow, onDismiss: undoRunAfterSheet) { presented in
+            TidyNowSheet(
+                model: presented.model,
+                eligibility: model.eligibility,
+                applicationFolders: model.applicationFolders,
+                log: presented.log,
+                activity: activity,
+                markKept: { records, onFinish in
+                    model.keep(records, onFinish: onFinish)
+                },
+                onUndo: { runID in
+                    runToUndoAfterSheet = runID
+                }
+            )
             .id(presented.id)
         }
         .sheet(isPresented: $isConfirmingStopKeepingAll) {
@@ -189,6 +208,20 @@ struct ContentView: View {
         .frame(minWidth: 1_080, minHeight: 400)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                // The first step of a cleanup: every action at once. Its shortcut is in the Clean Up menu.
+                Button {
+                    startTidyNow()
+                } label: {
+                    Label("Tidy Now", systemImage: "sparkles")
+                }
+                .help(
+                    activity.failure == nil
+                        ? Text("Check the folder with every cleanup at once (⌘T)")
+                        : Text("Nothing can be cleaned up until the activity log works")
+                )
+                .disabled(!canStartCleanup)
+            }
+            ToolbarItem(placement: .primaryAction) {
                 // Every action, as in the menu bar's Clean Up menu, which holds their shortcuts.
                 Menu {
                     ForEach(CleanupAction.menuActions, id: \.self) { action in
@@ -228,7 +261,7 @@ struct ContentView: View {
     /// True while menu commands may act on the window: no preview, undo or confirmation sheet is up
     /// in front of it.
     private var actsOnWindow: Bool {
-        search.presentedPlan == nil && undo.presented == nil && !isConfirmingStopKeepingAll
+        search.presentedPlan == nil && tidyNow == nil && undo.presented == nil && !isConfirmingStopKeepingAll
     }
 
     // MARK: - Kept
@@ -261,7 +294,8 @@ struct ContentView: View {
     /// True while an undo may start: the log works, the folder is known, and nothing else that
     /// reads or moves files is under way or on screen.
     private var canStartUndo: Bool {
-        activity.log != nil && model.location != nil && !search.isRunning && search.presentedPlan == nil && !undo.isBusy
+        activity.log != nil && model.location != nil && !search.isRunning && search.presentedPlan == nil && tidyNow == nil
+            && !undo.isBusy
     }
 
     private func startUndo(_ target: UndoTarget) {
@@ -285,7 +319,7 @@ struct ContentView: View {
         let latest = activity.latestCleanupRun.flatMap { $0.hasChangesLeftToUndo ? $0 : nil }
         let selectionTarget = section == .activity ? activityList.undoTarget(for: activitySelection) : nil
         return UndoCommandTarget(
-            title: latest.map { UndoPlan.title(undoing: $0.action) } ?? String(localized: "Undo"),
+            title: latest.map { UndoPlan.title(undoingCode: $0.actionCode) } ?? String(localized: "Undo"),
             canUndo: canStartUndo && latest != nil,
             undo: {
                 if let latest {
@@ -349,13 +383,13 @@ struct ContentView: View {
     /// preview the user is still looking at. Without a working activity log nothing may
     /// be cleaned up, so nothing is searched for either.
     private var canStartCleanup: Bool {
-        model.isSettled && !search.isRunning && search.presentedPlan == nil && activity.log != nil && !undo.isBusy
-            && !model.isChangingKept && !isConfirmingStopKeepingAll
+        model.isSettled && !search.isRunning && search.presentedPlan == nil && tidyNow == nil && activity.log != nil
+            && !undo.isBusy && !model.isChangingKept && !isConfirmingStopKeepingAll
     }
 
     /// The Clean Up menu: every action, under the same rule as the toolbar's menu.
     private var cleanUpCommands: CleanUpCommandTarget {
-        CleanUpCommandTarget(canStart: canStartCleanup, start: startCleanup)
+        CleanUpCommandTarget(canStart: canStartCleanup, start: startCleanup, startTidyNow: startTidyNow)
     }
 
     /// `.sheet(item:)` keeps showing the plan while the sheet animates away; setting it to nil
@@ -386,6 +420,34 @@ struct ContentView: View {
             log: log,
             activity: activity,
             onInstallersRead: model.reloadInstalledMarks
+        )
+    }
+
+    /// Starts Tidy Now over the listed files, under the same rule as any cleanup.
+    private func startTidyNow() {
+        guard canStartCleanup, let location = model.location, let log = activity.log else { return }
+        let tidy = TidyNowModel(
+            eligibility: model.eligibility,
+            applicationFolders: model.applicationFolders,
+            log: log,
+            activity: activity,
+            onPlanned: { plan in
+                model.showDuplicateMarks(plan.duplicateURLs)
+                model.reloadInstalledMarks()
+            },
+            onExecuted: {
+                // Files moved, so the rows on screen are stale.
+                model.refresh()
+            }
+        )
+        tidyNow = PresentedTidyNow(model: tidy, log: log)
+        tidy.start(
+            records: model.records,
+            folderURL: location.folderURL,
+            eligibility: model.eligibility,
+            applicationFolders: model.applicationFolders,
+            hashCache: search.hashCache,
+            log: log
         )
     }
 
@@ -466,6 +528,13 @@ private struct PresentedPlanSheet: View {
             ActivityLogUnavailableSheet(activity: activity)
         }
     }
+}
+
+/// A Tidy Now on screen, with the activity log as it was when it started, as a sheet's item.
+private struct PresentedTidyNow: Identifiable {
+    let id = UUID()
+    let model: TidyNowModel
+    let log: ActivityLog
 }
 
 private extension View {

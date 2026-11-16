@@ -20,13 +20,16 @@ public enum CleanupPlanners {
     ///   - installers: What Remove Used Installers reads besides the folder: the application folders,
     ///     the facts cache, the mount folder and the receipts. The other actions read none of it. It
     ///     is not optional either: a default would read the real Applications folder from a test.
+    ///   - settings: The thresholds behind the age marks, which Archive Old Downloads plans by: the
+    ///     ones the file list marks with, so the two never disagree.
     ///   - hashCache: Content hashes read earlier in this session. Find Duplicates adds what it reads
     ///     to it; Review Near-Duplicates reads from it and adds to it. The default remembers nothing.
     ///   - onProgress: Called from planning threads while files are read, quickly and not too often.
     ///     Only an action that reads files reports any: Find Duplicates the files it hashes and their
     ///     bytes, Remove Unpacked Zips the zips it checks, Remove Used Installers the installers.
     ///     Fix Messy Names reads only files that might be duplicates of each other, and Review
-    ///     Near-Duplicates only files with the same cleaned name; neither reports any.
+    ///     Near-Duplicates only files with the same cleaned name, and Archive Old Downloads only files
+    ///     with the name of one in the archive; none of them reports any.
     /// - Returns: The plan, or nil while the action has no planner yet.
     /// - Throws: `.cancelled` when the task is cancelled.
     @concurrent
@@ -38,6 +41,7 @@ public enum CleanupPlanners {
         keptItems: KeptItems,
         installers: InstallerSources,
         now: Date = .now,
+        settings: CleanupSettings = CleanupSettings(),
         hashCache: ContentHashCache = ContentHashCache(),
         onProgress: (@Sendable (CleanupPlanningProgress) -> Void)? = nil
     ) async throws(CleanupPlanningError) -> CleanupPlan? {
@@ -73,6 +77,8 @@ public enum CleanupPlanners {
         case .nearDuplicates:
             return try await NearDuplicatePlanner(eligibility: eligibility, hashCache: hashCache)
                 .plan(records: records, in: folderURL, now: now)
+        case .archive:
+            return try await ArchivePlanner(eligibility: eligibility, settings: settings).plan(records: records, in: folderURL, now: now)
         }
     }
 
@@ -90,6 +96,7 @@ public enum CleanupPlanners {
         case usedInstallers
         case messyNames
         case nearDuplicates
+        case archive
     }
 
     /// Each action's planner, in one list that both `plan` and `hasPlanner` read. Nil while the
@@ -109,7 +116,7 @@ public enum CleanupPlanners {
         case .reviewNearDuplicates:
             .nearDuplicates
         case .archiveOldDownloads:
-            nil
+            .archive
         }
     }
 }

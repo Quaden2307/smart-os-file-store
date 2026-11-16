@@ -26,8 +26,17 @@ public struct ProposedChange: Sendable, Hashable, Identifiable {
         /// The name has copy numbers or leftover junk that the new name drops, as `fix` says.
         case messyName(MessyNameFix)
 
-        /// The file is an old download, filed into the archive.
-        case oldDownload
+        /// The file is marked Unused: last opened on the date given, longer ago than the setting.
+        /// It is filed into the archive.
+        case notOpenedSince(Date)
+
+        /// The file is marked Never opened: added on the date given, longer ago than the setting,
+        /// and never opened since. It is filed into the archive.
+        case neverOpened(downloadedOn: Date)
+
+        /// The file would be filed into the archive, which already holds `copyNamed` with exactly the
+        /// same bytes, so this copy goes to the Trash instead.
+        case alreadyArchived(copyNamed: String)
 
         /// A download that stopped at `stoppedOn`, its last change, and never finished.
         /// `finishedFileName` names a finished item beside it with the name the download would

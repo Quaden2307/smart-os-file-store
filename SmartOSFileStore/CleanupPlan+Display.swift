@@ -28,10 +28,9 @@ extension CleanupPlan {
         action.definition.operation
     }
 
-    /// True when the preview can confirm and carry out the plan: moves to the Trash and renames, with
-    /// every change of its action's operation. Moves are shown but not applied until an action uses them.
+    /// True when the preview can confirm and carry out the plan: every change is of its action's kind.
     var canBeApplied: Bool {
-        operation != .move && changes.allSatisfy { action.allows($0.operation) }
+        changes.allSatisfy { action.allows($0.operation) }
     }
 }
 
@@ -93,7 +92,9 @@ extension ProposedChange.Reason {
             return evidence.historyDescription
         case .messyName(let fix):
             return fix.historyDescription
-        case .sameContent, .oldDownload, .failedDownload, .unpackedZip, .nearDuplicate:
+        case .alreadyArchived(let copyName):
+            return String(localized: "An identical copy, \(copyName), was already in Old downloads")
+        case .sameContent, .notOpenedSince, .neverOpened, .failedDownload, .unpackedZip, .nearDuplicate:
             return localizedDescription
         }
     }
@@ -105,8 +106,14 @@ extension ProposedChange.Reason {
             return String(localized: "Same content as \(fileName)")
         case .messyName(let fix):
             return fix.localizedDescription
-        case .oldDownload:
-            return String(localized: "Old download")
+        case .notOpenedSince(let lastOpened):
+            let date = lastOpened.formatted(.dateTime.day().month(.abbreviated).year())
+            return String(localized: "Not opened since \(date)")
+        case .neverOpened(let downloadedOn):
+            let date = downloadedOn.formatted(.dateTime.day().month(.abbreviated).year())
+            return String(localized: "Never opened, downloaded \(date)")
+        case .alreadyArchived(let copyName):
+            return String(localized: "An identical copy, \(copyName), is already in Old downloads, so this copy goes to the Trash")
         case .failedDownload(let stoppedOn, let finishedFileName):
             let date = stoppedOn.formatted(.dateTime.day().month(.abbreviated).year())
             guard let finishedFileName else {
@@ -259,6 +266,10 @@ extension CleanupSkipReason {
             return String(localized: "\(name) has changed since the check, so the installer was left alone. \(runAgain)")
         case .lastInGroup:
             return String(localized: "It was the last file of its group left in the folder, so it stays. At least one file of each group always stays.")
+        case .archivedCopyMissing(let name):
+            return String(localized: "The identical copy, \(name), is no longer in Old downloads, so this file was left alone. \(runAgain)")
+        case .archivedCopyNotVerified(let name):
+            return String(localized: "The copy in Old downloads, \(name), could not be confirmed identical, so this file was left alone. \(runAgain)")
         case .cancelled:
             return String(localized: "Stopped before this file was reached.")
         case .destinationExists(let name):
@@ -351,6 +362,20 @@ extension CleanupItemOutcome {
             reason.localizedDescription(for: action)
         case .failed(let error):
             error.localizedMessage
+        }
+    }
+}
+
+extension ArchiveProblem {
+    /// Why Archive Old Downloads stopped, and what to do, for the preview.
+    var localizedDescription: String {
+        switch self {
+        case .notAFolder:
+            String(localized: "Something called Old downloads is in the folder and is not a folder, so nothing was archived. Rename or move it, then run Archive Old Downloads again.")
+        case .symbolicLink:
+            String(localized: "Old downloads in the folder is a link, which is never followed, so nothing was archived. Replace it with a real folder, then run Archive Old Downloads again.")
+        case .unreadable:
+            String(localized: "The Old downloads folder could not be read, so nothing was archived. Check its permissions in Finder, then run Archive Old Downloads again.")
         }
     }
 }

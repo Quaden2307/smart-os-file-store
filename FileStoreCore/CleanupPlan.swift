@@ -37,6 +37,10 @@ public struct CleanupPlan: Sendable, Hashable {
     /// Files the action saw but could not check.
     public let skippedItems: [SkippedItem]
 
+    /// For `archiveOldDownloads`: why the archive folder cannot be used. The plan then proposes
+    /// nothing, and the preview says why. Nil for every other action.
+    public let archiveProblem: ArchiveProblem?
+
     /// For `removeUsedInstallers`: what was read from installers while planning and not cached yet,
     /// for the app to store in the activity log. The planner writes nothing itself.
     public let installerFactsRead: [InstallerFactsEntry]
@@ -48,7 +52,8 @@ public struct CleanupPlan: Sendable, Hashable {
         duplicateGroups: [DuplicateGroup] = [],
         nearDuplicateGroups: [NearDuplicateGroup] = [],
         skippedItems: [SkippedItem] = [],
-        installerFactsRead: [InstallerFactsEntry] = []
+        installerFactsRead: [InstallerFactsEntry] = [],
+        archiveProblem: ArchiveProblem? = nil
     ) {
         self.action = action
         self.folderURL = folderURL
@@ -57,6 +62,7 @@ public struct CleanupPlan: Sendable, Hashable {
         self.nearDuplicateGroups = nearDuplicateGroups
         self.skippedItems = skippedItems
         self.installerFactsRead = installerFactsRead
+        self.archiveProblem = archiveProblem
     }
 
     /// A plan that proposes nothing.
@@ -160,6 +166,14 @@ public enum CleanupSkipReason: Sendable, Hashable {
     /// Every other file of its near-duplicate group is gone, or is being moved to the Trash in this
     /// same run, so this one stays: a near-duplicate group always keeps at least one file.
     case lastInGroup
+
+    /// The identical copy in the archive that a file was to be trashed for is gone, or is no longer
+    /// a regular file there, so the file was left alone. `name` is the copy's name.
+    case archivedCopyMissing(name: String)
+
+    /// The identical copy in the archive could not be confirmed to still hold the file's bytes, so
+    /// the file was left alone. `name` is the copy's name.
+    case archivedCopyNotVerified(name: String)
 
     /// Execution was stopped before this item was reached.
     case cancelled

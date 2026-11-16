@@ -38,7 +38,8 @@ extension CleanupPlan {
             changes: changes.filter { !droppedIDs.contains($0.id) },
             duplicateGroups: groups,
             nearDuplicateGroups: nearGroups,
-            skippedItems: skippedItems
+            skippedItems: skippedItems,
+            archiveProblem: archiveProblem
         )
     }
 }

@@ -8,6 +8,10 @@ struct ContentView: View {
     @Environment(ActivityLogModel.self) private var activity
     @State private var model = FileListModel()
     @State private var search = CleanupSearchModel()
+
+    // Watched only, so marks follow a threshold changed in Settings at once; the list reads them itself.
+    @AppStorage(CleanupSettings.unusedAfterDaysKey) private var unusedAfterDays = CleanupSettings.defaultUnusedAfterDays
+    @AppStorage(CleanupSettings.oldAfterDaysKey) private var oldAfterDays = CleanupSettings.defaultOldAfterDays
     @State private var selection: Set<FileRecord.ID> = []
     @State private var section: SidebarSection = .downloads
     @State private var activityList = ActivityListModel()
@@ -89,9 +93,6 @@ struct ContentView: View {
         view
             // From either place, as the toolbar's menu: a cleanup always acts on the listed files.
             .focusedSceneValue(\.cleanUpCommands, actsOnWindow ? cleanUpCommands : nil)
-            #if DEBUG
-            .focusedSceneValue(\.cleanupSearch, search)
-            #endif
     }
 
     private func observingChanges(_ view: some View) -> some View {
@@ -120,6 +121,12 @@ struct ContentView: View {
             .onChange(of: model.filter) {
                 // Rows the filter hides must not stay selected, or menu commands would act on them.
                 keepSelectionVisible()
+            }
+            .onChange(of: unusedAfterDays) {
+                model.applySettings()
+            }
+            .onChange(of: oldAfterDays) {
+                model.applySettings()
             }
             .onChange(of: model.marksRevision) {
                 // Marks changed with the Kept list, so the Kept filter may hide selected rows now.

@@ -22,9 +22,12 @@ struct SmartOSFileStoreApp: App {
             // View > Show/Hide Sidebar, so the toolbar's sidebar button has a menu item and a shortcut.
             SidebarCommands()
             PlaceCommands()
-            #if DEBUG
-            DebugCommands()
-            #endif
+        }
+
+        // App menu > Settings… (⌘,).
+        Settings {
+            SettingsView()
+                .environment(activity)
         }
     }
 }

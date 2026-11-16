@@ -29,11 +29,11 @@ public enum CleanupAction: String, Sendable, Codable, CaseIterable, Hashable {
     /// Trash, never every file of a group.
     case reviewNearDuplicates
 
-    /// Proposes moving old downloads into the archive folder. Its planner arrives in its own
-    /// segment; until then no plan of this action is ever made.
+    /// Proposes moving the files marked Never opened or Unused into the archive folder, or, for a file
+    /// whose identical copy the archive already holds, the Trash (`ArchivePlanner`). Nothing is deleted.
     case archiveOldDownloads
 
-    /// True when a plan of this action may propose `operation`: the one its definition states. The
+    /// True when a plan of this action may propose `operation`: the kind its definition states. The
     /// executor refuses every other operation, so a plan built elsewhere cannot make Find Duplicates
     /// rename a file, say.
     public func allows(_ operation: ProposedChange.Operation) -> Bool {

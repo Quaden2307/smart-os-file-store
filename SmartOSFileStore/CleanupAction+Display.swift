@@ -150,14 +150,16 @@ extension CleanupAction {
             CleanupActionDisplay(
                 title: String(localized: "Old Downloads"),
                 commandTitle: String(localized: "Archive Old Downloads"),
-                explanation: String(localized: "Move old downloads into the Old downloads folder."),
+                explanation: String(localized: "Move files you haven’t opened in a while into the Old downloads folder. Nothing is deleted."),
                 symbol: "archivebox",
                 shortcutKey: "o",
                 progressLabel: String(localized: "Looking for old downloads"),
                 cancelHelp: String(localized: "Stop looking for old downloads (Esc)"),
                 progressStyle: .spinner,
                 emptyTitle: String(localized: "No Old Downloads Found"),
-                emptyDescription: String(localized: "None of the files checked is old enough to archive.")
+                emptyDescription: String(
+                    localized: "No file checked is marked Never opened or Unused. Change when files count as unused in Settings (⌘,). Files added or changed in the last hour are checked once they are an hour old."
+                )
             )
         }
     }

@@ -58,6 +58,17 @@ struct FileStatus: Sendable {
     /// - Parameter folder: A directory descriptor that a relative `path` is looked up in, as with
     ///   `fstatat`. By default a path is resolved as usual.
     static func dateAdded(path: String, relativeTo folder: Int32 = AT_FDCWD) throws(Failure) -> Date? {
+        try addedTime(path: path, relativeTo: folder).map(date(of:))
+    }
+
+    /// `time` as a `Date`.
+    static func date(of time: timespec) -> Date {
+        Date(timeIntervalSince1970: TimeInterval(time.tv_sec) + TimeInterval(time.tv_nsec) / 1_000_000_000)
+    }
+
+    /// The same Date Added, exactly as the volume stores it, so a move can set it back unchanged
+    /// (`DiskChange.setDateAdded`).
+    static func addedTime(path: String, relativeTo folder: Int32 = AT_FDCWD) throws(Failure) -> timespec? {
         var request = attrlist()
         request.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
         request.commonattr = attrgroup_t(ATTR_CMN_RETURNED_ATTRS) | attrgroup_t(ATTR_CMN_ADDEDTIME)
@@ -75,13 +86,12 @@ struct FileStatus: Sendable {
             }
             throw failure(code)
         }
-        return reply.withUnsafeBytes { buffer -> Date? in
+        return reply.withUnsafeBytes { buffer -> timespec? in
             let returned = buffer.loadUnaligned(fromByteOffset: returnedOffset, as: attribute_set_t.self)
             guard returned.commonattr & attrgroup_t(ATTR_CMN_ADDEDTIME) != 0 else {
                 return nil
             }
-            let time = buffer.loadUnaligned(fromByteOffset: timeOffset, as: timespec.self)
-            return Date(timeIntervalSince1970: TimeInterval(time.tv_sec) + TimeInterval(time.tv_nsec) / 1_000_000_000)
+            return buffer.loadUnaligned(fromByteOffset: timeOffset, as: timespec.self)
         }
     }
 

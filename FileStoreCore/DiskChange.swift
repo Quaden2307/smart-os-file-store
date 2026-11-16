@@ -1,11 +1,11 @@
 import Darwin
 import Foundation
 
-/// The one place in the engine that changes anything on disk. For a user's files there are four
+/// The one place in the engine that changes anything on disk. For a user's files there are five
 /// ways, and each needs a `ChangePermit`, the proof that the activity log already says the change is
 /// about to happen: move an item to the Trash, give it a new name or folder without ever replacing
-/// what is there, make a folder for a move, and, for undo only, put an item back from the Trash
-/// without ever replacing what is there. For the activity log's own storage there are three
+/// what is there, make a folder for a move, set a moved item's Date Added back, and, for undo
+/// only, put an item back from the Trash without ever replacing what is there. For the activity log's own storage there are three
 /// more, each needing a `StoragePermit`, which only the log's storage can make: make its folder,
 /// make its empty database file, and give one of its files a new name. And one for the folder disk
 /// images are read in, needing a `MountFolderPermit`: make it. Nothing is ever deleted and
@@ -61,6 +61,20 @@ enum DiskChange {
     /// - Returns: Nil once made, otherwise the `errno` value (`EEXIST` when something has the name).
     static func makeFolder(named name: String, in parent: DirectoryHandle, permit: ChangePermit) -> Int32? {
         makeFolder(named: name, in: parent, permissions: 0o777)
+    }
+
+    /// Sets the Date Added of the item `name` in `folder` back to `time`, as it was before a move:
+    /// the volume sets it to the moment an item arrives in another folder, which would make a file
+    /// moved out and back look new. No link is followed. Changes no content and no other date.
+    ///
+    /// - Returns: Nil once set, otherwise the `errno` value.
+    static func setDateAdded(of name: String, in folder: DirectoryHandle, to time: timespec, permit: ChangePermit) -> Int32? {
+        var request = attrlist()
+        request.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
+        request.commonattr = attrgroup_t(ATTR_CMN_ADDEDTIME)
+        var time = time
+        let result = setattrlistat(folder.descriptor, name, &request, &time, MemoryLayout<timespec>.size, UInt32(FSOPT_NOFOLLOW))
+        return result == 0 ? nil : errno
     }
 
     // MARK: - The activity log's own storage

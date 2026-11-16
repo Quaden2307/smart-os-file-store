@@ -9,7 +9,8 @@ import os
 /// again right before it changes, by its action's and operation's rules: the duplicate checks
 /// (`CleanupExecutor+Duplicates`), the failed-download checks (`CleanupExecutor+FailedDownloads`),
 /// the unpacked-zip checks (`CleanupExecutor+UnpackedZips`) and the used-installer checks
-/// (`CleanupExecutor+UsedInstallers`) for the Trash, the relocation checks
+/// (`CleanupExecutor+UsedInstallers`), the near-duplicate checks (`CleanupExecutor+NearDuplicates`)
+/// and the archived-copy checks (`CleanupExecutor+ArchivedCopies`) for the Trash, the relocation checks
 /// for renames and moves (`CleanupExecutor+Relocation`). Items succeed, are skipped or fail one by
 /// one; the executor never throws.
 ///
@@ -260,7 +261,21 @@ public struct CleanupExecutor: Sendable {
                     beforeChange: beforeChange
                 )
                 return CleanupItemResult(change: change, outcome: outcome)
-            case .fixMessyNames, .archiveOldDownloads:
+            case .archiveOldDownloads:
+                guard let folder else {
+                    return CleanupItemResult(change: change, outcome: .skipped(.folderUnavailable))
+                }
+                let outcome = await trashArchivedCopy(
+                    change,
+                    folder: folder,
+                    context: context,
+                    folderIdentity: folderIdentity,
+                    now: now,
+                    journal: &journal,
+                    beforeChange: beforeChange
+                )
+                return CleanupItemResult(change: change, outcome: outcome)
+            case .fixMessyNames:
                 return CleanupItemResult(change: change, outcome: .skipped(.notInPlan))
             }
         case .rename(to: let newName):
@@ -602,6 +617,10 @@ extension CleanupSkipReason {
             "installed app changed"
         case .lastInGroup:
             "last of its group"
+        case .archivedCopyMissing:
+            "archived copy missing"
+        case .archivedCopyNotVerified:
+            "archived copy not verified"
         case .cancelled:
             "cancelled"
         case .destinationExists:

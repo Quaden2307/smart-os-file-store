@@ -414,7 +414,8 @@ struct RenameExecutorTests {
     }
 
     /// A plan may only use its action's operation: Find Duplicates cannot rename, Fix messy names
-    /// cannot move, Archive old downloads cannot trash, whatever a plan built elsewhere lists.
+    /// cannot move, Archive old downloads cannot trash a file without an identical archived copy,
+    /// whatever a plan built elsewhere lists.
     @Test func eachActionMayOnlyUseItsOwnOperation() async throws {
         let temp = try TemporaryFolder.make()
         defer { temp.remove() }
@@ -447,7 +448,7 @@ struct RenameExecutorTests {
             .removeUsedInstallers: [true, false, false],
             .fixMessyNames: [false, true, false],
             .reviewNearDuplicates: [true, false, false],
-            .archiveOldDownloads: [false, false, true],
+            .archiveOldDownloads: [true, false, true],
         ]
         #expect(Set(allowed.keys) == Set(CleanupAction.allCases))
         for (action, expected) in allowed {

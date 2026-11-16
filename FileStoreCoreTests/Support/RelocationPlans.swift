@@ -4,8 +4,11 @@ import Foundation
 import Testing
 
 /// Plans of renames and moves for the executor tests, built from a real scan of a temporary folder
-/// the way Fix messy names and Archive old downloads will build them.
+/// the way Fix messy names and Archive old downloads build them.
 enum RelocationPlans {
+    /// The reason every move these plans make gives: a file never opened since 2025-01-01.
+    static let archiveReason = ProposedChange.Reason.neverOpened(downloadedOn: Date(timeIntervalSince1970: 1_735_722_000))
+
     static func records(in folder: URL) async throws -> [FileRecord] {
         try await FolderScanner().scan(ScanLocation(folderURL: folder, source: .launchArgument)).records
     }
@@ -31,7 +34,7 @@ enum RelocationPlans {
             ProposedChange(
                 record: try record(named: move.name, in: records),
                 operation: .move(to: move.to, name: move.newName),
-                reason: .oldDownload
+                reason: archiveReason
             )
         }
         return CleanupPlan(action: .archiveOldDownloads, folderURL: folder, changes: changes)

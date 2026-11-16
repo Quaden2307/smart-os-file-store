@@ -182,24 +182,12 @@ public struct MessyNamePlanner: Sendable {
 
     // MARK: - Helpers
 
-    /// The first free name of `<clean stem> YYYY-MM-DD<ext>`, then ` v2`, ` v3`…, or nil when the file
-    /// has no date or the name would be too long. One more try than names taken always finds a free one.
+    /// The first free dated form of the candidate's clean name (`FileNameRules.datedName`), or nil.
     private static func datedName(for candidate: Candidate, timeZone: TimeZone, takenCount: Int, isFree: (String) -> Bool) -> String? {
         guard let date = candidate.record.dateAdded ?? candidate.record.dateModified else {
             return nil
         }
-        let (stem, pathExtension) = MessyNameCleaner.parts(of: candidate.cleaned.name)
-        let dated = "\(stem) \(date.formatted(Date.ISO8601FormatStyle(timeZone: timeZone).year().month().day().dateSeparator(.dash)))"
-        for number in 1...(takenCount + 1) {
-            let name = (number == 1 ? dated : "\(dated) v\(number)") + pathExtension
-            guard FileNameRules.isAllowedFileName(name, maximumLength: FileNameRules.defaultMaximumLength) else {
-                return nil
-            }
-            if isFree(name) {
-                return name
-            }
-        }
-        return nil
+        return FileNameRules.datedName(candidate.cleaned.name, date: date, timeZone: timeZone, takenCount: takenCount, isFree: isFree)
     }
 
     /// A file's hash, or why it could not be read, each read at most once per plan.

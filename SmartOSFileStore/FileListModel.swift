@@ -293,6 +293,16 @@ final class FileListModel {
         }
     }
 
+    /// Works the marks out again with the thresholds as they are now, after Settings changed one.
+    func applySettings() {
+        guard let markInputs else { return }
+        let settings = CleanupSettings.load(from: UserDefaults.standard)
+        guard settings != markInputs.settings else { return }
+        // Now, not the scan's time: the planner marks with the time it runs, and so must the list.
+        self.markInputs = (now: .now, settings: settings)
+        remark()
+    }
+
     private func apply(_ keptItems: KeptItems) {
         guard keptItems != self.keptItems else { return }
         self.keptItems = keptItems
@@ -320,6 +330,11 @@ final class FileListModel {
             refilter()
             marksRevision += 1
         }
+    }
+
+    /// The listed record with `id`, if there is one.
+    func record(for id: FileRecord.ID) -> FileRecord? {
+        recordsByID[id]
     }
 
     private func records(for ids: Set<FileRecord.ID>) -> [FileRecord] {

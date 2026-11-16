@@ -250,6 +250,11 @@ extension CleanupExecutor {
         if Task.isCancelled {
             return .notUndone(.cancelled)
         }
+        // A move back gives the file its Date Added from before the move, which the move kept.
+        var addedTime: timespec?
+        if step.operation == .moveBack, case .folder(let parent, let name, _) = source {
+            addedTime = try? FileStatus.addedTime(path: name, relativeTo: parent.descriptor)
+        }
         beforeChange?(step)
 
         let failure = switch source {
@@ -260,6 +265,9 @@ extension CleanupExecutor {
         }
         if let failure {
             return Self.undoOutcome(Self.outcome(changeFailure: failure, name: originalName))
+        }
+        if let addedTime, let failure = DiskChange.setDateAdded(of: originalName, in: handle, to: addedTime, permit: permit) {
+            Self.logger.error("Could not set a file's Date Added back after undo: \(String(cString: strerror(failure)), privacy: .public)")
         }
         return .undone(to: URL(filePath: step.originalPath))
     }

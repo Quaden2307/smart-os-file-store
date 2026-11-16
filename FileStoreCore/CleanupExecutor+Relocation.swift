@@ -78,8 +78,11 @@ extension CleanupExecutor {
         if status.isDataless {
             return result(.skipped(.notDownloaded))
         }
+        // Read once, exactly as stored: the grace period checks it, and a move sets it back.
+        var addedTime: timespec?
         let readDateAdded = { () throws(FileStatus.Failure) -> Date? in
-            try FileStatus.dateAdded(path: name, relativeTo: folder.descriptor)
+            addedTime = try FileStatus.addedTime(path: name, relativeTo: folder.descriptor)
+            return addedTime.map(FileStatus.date(of:))
         }
         if let refused = sharedRefusal(status, itemURL: itemURL, change: change, now: now, readDateAdded: readDateAdded) {
             return result(refused)
@@ -176,6 +179,13 @@ extension CleanupExecutor {
                 return result(.skipped(.changedSinceScan), createdFolders: createdFolders)
             }
             return result(Self.outcome(changeFailure: failure, name: relocation.name), createdFolders: createdFolders)
+        }
+        // The volume gives an item moved into another folder a new Date Added; it gets its own back,
+        // so it is the same file to every rule and undo returns it exactly as it was. The move has
+        // happened either way, so a failure here is only logged.
+        if relocation.isMove, let addedTime,
+           let failure = DiskChange.setDateAdded(of: relocation.name, in: destination, to: addedTime, permit: permit) {
+            Self.logger.error("Could not set a moved file's Date Added back: \(String(cString: strerror(failure)), privacy: .public)")
         }
         let newURL = destinationURL.appending(path: relocation.name)
         let outcome: CleanupItemOutcome = relocation.isMove ? .moved(from: itemURL, to: newURL) : .renamed(from: itemURL, to: newURL)

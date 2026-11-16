@@ -44,3 +44,4 @@ One short record per segment for each decision a reader of the code would otherw
 - [0013. Reading installers without running or changing them](0013-reading-installers.md)
 - [0014. Fix Messy Names: the cleaning rules and name clashes](0014-fix-messy-names.md)
 - [0015. Review Near-Duplicates: a review list that always leaves a file](0015-review-near-duplicates.md)
+- [0016. Archive Old Downloads and Settings](0016-archive-old-downloads.md)

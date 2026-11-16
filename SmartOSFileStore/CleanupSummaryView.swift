@@ -7,11 +7,12 @@ struct CleanupSummaryView: View {
     let result: CleanupResult
 
     private var isRename: Bool { result.action.definition.operation == .rename }
+    private var isArchive: Bool { result.action.definition.operation == .archive }
 
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 6) {
-                Image(systemName: isRename ? "pencil" : "trash")
+                Image(systemName: isRename ? "pencil" : isArchive ? "archivebox" : "trash")
                     .font(.largeTitle)
                     .imageScale(.large)
                     .foregroundStyle(.secondary)
@@ -28,6 +29,23 @@ struct CleanupSummaryView: View {
                         .accessibilityAddTraits(.isHeader)
                     Text("Nothing in the folder was changed.")
                         .foregroundStyle(.secondary)
+                } else if isArchive, result.moved.isEmpty, result.trashedCount > 0 {
+                    Text("^[\(result.trashedCount) identical copy](inflect: true) moved to the Trash")
+                        .font(.title2.weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
+                    Text("Old downloads already held them. Undo puts them back where they were.")
+                        .foregroundStyle(.secondary)
+                } else if isArchive, !result.moved.isEmpty {
+                    Text("^[\(result.moved.count) file](inflect: true) moved into Old downloads")
+                        .font(.title2.weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
+                    if result.trashedCount > 0 {
+                        Text("^[\(result.trashedCount) identical copy](inflect: true) moved to the Trash. Undo puts every file back where it was.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Undo puts the files back where they were.")
+                            .foregroundStyle(.secondary)
+                    }
                 } else if result.trashedCount > 0 {
                     Text("^[\(result.trashedCount) file](inflect: true) moved to the Trash")
                         .font(.title2.weight(.semibold))

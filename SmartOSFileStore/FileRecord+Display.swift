@@ -2,6 +2,12 @@ import FileStoreCore
 import Foundation
 
 extension FileRecord {
+    /// True for the archive, Old downloads: a folder with its name at the top of the listed folder,
+    /// which is the only level the list shows.
+    var isArchiveFolder: Bool {
+        kind == .folder && displayName.compare(CandidateEligibility.archiveFolderName, options: .caseInsensitive) == .orderedSame
+    }
+
     /// The Kind column: macOS's description of the type, or a plain fallback when it has none.
     var kindDescription: String {
         if let localizedTypeDescription, !localizedTypeDescription.isEmpty {

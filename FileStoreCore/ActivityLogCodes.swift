@@ -104,8 +104,12 @@ extension ProposedChange.Reason {
             ActivityLogCode(code: "sameContent", detail: keptName)
         case .messyName(let fix):
             ActivityLogCode(code: "messyName", detail: fix.logDetail)
-        case .oldDownload:
-            ActivityLogCode(code: "oldDownload")
+        case .notOpenedSince(let date):
+            ActivityLogCode(code: "notOpenedSince", detail: String(date.timeIntervalSince1970))
+        case .neverOpened(let date):
+            ActivityLogCode(code: "neverOpened", detail: String(date.timeIntervalSince1970))
+        case .alreadyArchived(let copyName):
+            ActivityLogCode(code: "alreadyArchived", detail: copyName)
         case .failedDownload(_, let finishedFileName):
             // The date is the change's `dateModified`, already in the row, so it is not stored twice.
             ActivityLogCode(code: "failedDownload", detail: finishedFileName)
@@ -127,8 +131,15 @@ extension ProposedChange.Reason {
         case "messyName":
             // A row without a detail, or with one this version cannot read, still says it was a messy name.
             self = .messyName(logCode.detail.flatMap(MessyNameFix.init(logDetail:)) ?? MessyNameFix(fixes: []))
-        case "oldDownload":
-            self = .oldDownload
+        case "notOpenedSince", "neverOpened":
+            // Every row this version writes has the date; one without reads as unknown.
+            guard let seconds = logCode.detail.flatMap(TimeInterval.init) else {
+                return nil
+            }
+            let date = Date(timeIntervalSince1970: seconds)
+            self = logCode.code == "neverOpened" ? .neverOpened(downloadedOn: date) : .notOpenedSince(date)
+        case "alreadyArchived":
+            self = .alreadyArchived(copyNamed: logCode.detail ?? "")
         case "failedDownload":
             guard let dateModified else {
                 return nil
@@ -300,6 +311,10 @@ extension CleanupSkipReason {
             ActivityLogCode(code: "installedAppChanged", detail: name)
         case .lastInGroup:
             ActivityLogCode(code: "lastInGroup")
+        case .archivedCopyMissing(let name):
+            ActivityLogCode(code: "archivedCopyMissing", detail: name)
+        case .archivedCopyNotVerified(let name):
+            ActivityLogCode(code: "archivedCopyNotVerified", detail: name)
         case .cancelled:
             ActivityLogCode(code: "cancelled")
         case .destinationExists(let name):
@@ -370,6 +385,10 @@ extension CleanupSkipReason {
             self = .installedAppChanged(name: detail)
         case "lastInGroup":
             self = .lastInGroup
+        case "archivedCopyMissing":
+            self = .archivedCopyMissing(name: detail)
+        case "archivedCopyNotVerified":
+            self = .archivedCopyNotVerified(name: detail)
         case "cancelled":
             self = .cancelled
         case "destinationExists":

@@ -80,6 +80,8 @@ final class CleanupSearchModel {
         logger.info("Planning \(action.definition.identifier, privacy: .public) over \(records.count) records")
         let opening = activity.openings
         let hashCache = hashCache
+        // The thresholds the file list marks with, read the same way, so the two never disagree.
+        let settings = CleanupSettings.load(from: UserDefaults.standard)
 
         // Weak throughout: the task must not keep the model alive, and `deinit` cancels the task.
         searchTask = Task { [weak self] in
@@ -94,6 +96,7 @@ final class CleanupSearchModel {
                         eligibility: eligibility,
                         keptItems: keptItems,
                         installers: .standard(applicationFolders: applicationFolders, cache: log),
+                        settings: settings,
                         hashCache: hashCache
                     ) { progress in
                         Task { @MainActor in
@@ -142,19 +145,6 @@ final class CleanupSearchModel {
     func dismissPlan() {
         presentedPlan = nil
     }
-
-    #if DEBUG
-    /// True while a sample may be shown: no search running and no preview up.
-    var canPresentSample: Bool { !isRunning && presentedPlan == nil }
-
-    /// Shows `plan` in the preview sheet as a search result would be (debug builds only: the
-    /// Debug menu's made-up plans). Never while a search runs or another preview is up.
-    func presentSample(_ plan: CleanupPlan) {
-        guard canPresentSample else { return }
-        presentedPlan = PresentedPlan(plan: plan)
-        logger.info("Showing a sample plan with \(plan.changes.count) changes")
-    }
-    #endif
 
     private func report(_ progress: CleanupPlanningProgress, generation: Int) {
         guard generation == self.generation, let running else { return }

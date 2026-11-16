@@ -49,7 +49,7 @@ struct SafetyTests {
         #"\bwrite\s*\(\s*to"#, #"\bsetAttributes\s*\("#,
         #"\bFileHandle\s*\(\s*forWritingTo"#, #"\bFileHandle\s*\(\s*forUpdating"#,
         #"\bO_WRONLY\b"#, #"\bO_RDWR\b"#, #"\bO_TRUNC\b"#,
-        #"\bf?setxattr\s*\("#, #"\bf?removexattr\s*\("#, #"\bf?setattrlist(at)?\s*\("#,
+        #"\bf?setxattr\s*\("#, #"\bf?removexattr\s*\("#, #"\bf?setattrlist\s*\("#,
         #"\bf?chmod(at)?\s*\("#, #"\bf?chflags\s*\("#,
     ]
 
@@ -60,21 +60,26 @@ struct SafetyTests {
         (pattern: #"\btrashItem\s*\("#, count: 1),
         (pattern: #"\brenameatx_np\s*\("#, count: 1),
         (pattern: #"\bmkdirat\s*\("#, count: 1),
+        (pattern: #"\bsetattrlistat\s*\("#, count: 1),
         (pattern: #"\bO_CREAT\b"#, count: 1),
     ]
 
     /// A whole `renameatx_np` call, its arguments included (one level of nested parentheses).
     private static let renameCall = #"\brenameatx_np\s*\((?:[^()]|\([^()]*\))*\)"#
 
+    /// A whole `setattrlistat` call, its arguments included.
+    private static let setAttributesCall = #"\bsetattrlistat\s*\((?:[^()]|\([^()]*\))*\)"#
+
     /// A whole `openat` call, its arguments included.
     private static let openatCall = #"\bopenat\s*\((?:[^()]|\([^()]*\))*\)"#
 
-    /// The files that may ask `DiskChange` for a change: the executor's six parts, for a user's
-    /// files (the Trash for duplicates, for failed downloads, for unpacked zips and for used
-    /// installers, renames and moves, and undo), the activity log's storage, for its own folder and
+    /// The files that may ask `DiskChange` for a change: the executor's parts, for a user's files
+    /// (the Trash for duplicates, for failed downloads, for unpacked zips, for used installers, for
+    /// near-duplicates and for copies the archive already holds, renames and moves, and undo), the activity log's storage, for its own folder and
     /// database, and the disk image mounts, for the app's own private folder images are read in.
     private static let diskChangeCallers = [
         "FileStoreCore/ActivityLogStorage.swift",
+        "FileStoreCore/CleanupExecutor+ArchivedCopies.swift",
         "FileStoreCore/CleanupExecutor+Duplicates.swift",
         "FileStoreCore/CleanupExecutor+FailedDownloads.swift",
         "FileStoreCore/CleanupExecutor+NearDuplicates.swift",
@@ -155,7 +160,8 @@ struct SafetyTests {
         }
 
         // The engine's disk changes all sit in one file: the one removal call, a move to the Trash,
-        // a rename that never replaces anything, and making a folder for a move.
+        // a rename that never replaces anything, making a folder for a move, and setting a moved
+        // file's Date Added back.
         for call in Self.diskChangingCalls {
             let regex = try Self.regex(call.pattern)
             let callers = (engine + app).filter { $0.count(of: regex) > 0 }
@@ -171,6 +177,15 @@ struct SafetyTests {
             // And never through a link, whether the source is a name in a folder or a path in the Trash.
             #expect(call.output[0].substring?.contains("RENAME_NOFOLLOW_ANY") == true, "\(call.output[0].substring ?? "")")
         }
+        // The one attribute ever set is a moved file's Date Added, put back as it was, and never
+        // through a link.
+        let attributeCalls = diskChange.code.matches(of: try Self.regex(Self.setAttributesCall)).compactMap { $0.output[0].substring }
+        #expect(attributeCalls.count == 1)
+        for call in attributeCalls {
+            #expect(call.contains("FSOPT_NOFOLLOW"), "\(call)")
+        }
+        #expect(diskChange.code.contains("request.commonattr = attrgroup_t(ATTR_CMN_ADDEDTIME)\n"))
+        #expect(!diskChange.code.contains("attrgroup_t(ATTR_CMN_MODTIME)"))
         // The one file ever made is made exclusively, for its owner only, and through no link: the
         // call can neither empty nor replace a file that is already there.
         let creatingCalls = diskChange.code.matches(of: try Self.regex(Self.openatCall))
@@ -301,7 +316,7 @@ struct SafetyTests {
                 )
                 proposed[action] = plan.changes.count
             }
-            #expect(proposed == [.findDuplicates: 6, .clearFailedDownloads: 3, .removeUnpackedZips: 2, .removeUsedInstallers: 2, .fixMessyNames: 9, .reviewNearDuplicates: 6])
+            #expect(proposed == [.findDuplicates: 6, .clearFailedDownloads: 3, .removeUnpackedZips: 2, .removeUsedInstallers: 2, .fixMessyNames: 9, .reviewNearDuplicates: 6, .archiveOldDownloads: 2])
 
             let after = try Self.snapshot(of: fixture.url)
             #expect(after == before)

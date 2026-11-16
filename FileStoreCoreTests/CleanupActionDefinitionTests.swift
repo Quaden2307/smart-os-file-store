@@ -18,6 +18,6 @@ struct CleanupActionDefinitionTests {
         #expect(CleanupAction.removeUsedInstallers.definition.operation == .moveToTrash)
         #expect(CleanupAction.fixMessyNames.definition.operation == .rename)
         #expect(CleanupAction.reviewNearDuplicates.definition.operation == .moveToTrash)
-        #expect(CleanupAction.archiveOldDownloads.definition.operation == .move)
+        #expect(CleanupAction.archiveOldDownloads.definition.operation == .archive)
     }
 }

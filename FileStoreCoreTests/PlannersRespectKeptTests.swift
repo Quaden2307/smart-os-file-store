@@ -8,7 +8,7 @@ import Testing
 struct PlannersRespectKeptTests {
     /// The actions with a planner today, in declaration order. A new one must be added here too, so
     /// that this test is seen to cover it, and it must find something to propose in the fake folder.
-    static let plannedActions: [CleanupAction] = [.findDuplicates, .clearFailedDownloads, .removeUnpackedZips, .removeUsedInstallers, .fixMessyNames, .reviewNearDuplicates]
+    static let plannedActions: [CleanupAction] = [.findDuplicates, .clearFailedDownloads, .removeUnpackedZips, .removeUsedInstallers, .fixMessyNames, .reviewNearDuplicates, .archiveOldDownloads]
 
     private func plan(
         _ action: CleanupAction,

@@ -76,7 +76,13 @@ struct CleanupPreviewSheet: View {
             CompareFilesSheet(records: compared.records)
         }
         .sheet(isPresented: $model.isConfirming) {
-            CleanupConfirmationSheet(operation: model.operation, fileCount: model.tickedCount, bytes: model.tickedBytes) {
+            CleanupConfirmationSheet(
+                operation: model.operation,
+                fileCount: model.tickedCount,
+                bytes: model.tickedBytes,
+                trashCount: tickedTrash.count,
+                trashBytes: tickedTrash.reduce(0) { $0 + $1.sizeInBytes }
+            ) {
                 model.execute()
             }
         }
@@ -105,7 +111,10 @@ struct CleanupPreviewSheet: View {
             Text(plan.action.title)
                 .font(.title2.weight(.semibold))
                 .accessibilityAddTraits(.isHeader)
-            if plan.isEmpty, model.keptCount > 0 {
+            if plan.archiveProblem != nil {
+                Text("Nothing was archived")
+                    .foregroundStyle(.secondary)
+            } else if plan.isEmpty, model.keptCount > 0 {
                 Text("^[\(model.keptCount) file](inflect: true) kept")
                     .foregroundStyle(.secondary)
             } else if plan.isEmpty {
@@ -126,10 +135,6 @@ struct CleanupPreviewSheet: View {
                     Text("^[\(plan.changes.count) change](inflect: true)")
                         .foregroundStyle(.secondary)
                 }
-                if !model.canBeApplied {
-                    Text("Moves can’t be applied yet.")
-                        .foregroundStyle(.secondary)
-                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -139,6 +144,12 @@ struct CleanupPreviewSheet: View {
     private var content: some View {
         if let result = model.result {
             CleanupSummaryView(result: result)
+        } else if let problem = plan.archiveProblem {
+            ContentUnavailableView(
+                "Old downloads Can’t Be Used",
+                systemImage: "exclamationmark.triangle",
+                description: Text(problem.localizedDescription)
+            )
         } else if plan.isEmpty, plan.skippedItems.isEmpty, model.keptCount > 0 {
             ContentUnavailableView(
                 "Nothing Left to Clean Up",
@@ -347,13 +358,20 @@ struct CleanupPreviewSheet: View {
                 Button {
                     confirm()
                 } label: {
-                    model.operation == .rename ? Text("Rename") : Text("Move to Trash")
+                    switch model.operation {
+                    case .rename:
+                        Text("Rename")
+                    case .archive:
+                        Text("Archive")
+                    case .moveToTrash, .move:
+                        Text("Move to Trash")
+                    }
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(!model.canExecute || model.isConfirming)
             }
         case .reviewing:
-            // Moves: previewed only, so there is nothing to apply and Done closes.
+            // A plan with a change its action may not make: previewed only, and Done closes.
             HStack(spacing: 12) {
                 selectButtons
                 Text("^[\(model.tickedCount) change](inflect: true) selected")
@@ -366,13 +384,10 @@ struct CleanupPreviewSheet: View {
         case .executing(let progress):
             HStack(spacing: 12) {
                 let current = min(progress.itemsCompleted + 1, progress.itemsTotal)
-                let isRename = model.operation == .rename
                 ProgressView(value: progress.fractionCompleted)
                     .frame(maxWidth: 240)
-                    .accessibilityLabel(isRename ? Text("Progress renaming files") : Text("Progress moving files to the Trash"))
-                (isRename
-                    ? Text("Renaming file \(current) of \(progress.itemsTotal)…")
-                    : Text("Moving file \(current) of \(progress.itemsTotal) to the Trash…"))
+                    .accessibilityLabel(progressLabel)
+                progressText(current: current, total: progress.itemsTotal)
                     .monospacedDigit()
                 Spacer()
             }
@@ -398,6 +413,33 @@ struct CleanupPreviewSheet: View {
                 }
                 doneButton
             }
+        }
+    }
+
+    /// The ticked changes that go to the Trash: for Archive Old Downloads, the identical copies.
+    private var tickedTrash: [ProposedChange] {
+        model.tickedChanges.filter { $0.operation == .moveToTrash }
+    }
+
+    private var progressLabel: Text {
+        switch model.operation {
+        case .rename:
+            Text("Progress renaming files")
+        case .archive:
+            Text("Progress archiving files")
+        case .moveToTrash, .move:
+            Text("Progress moving files to the Trash")
+        }
+    }
+
+    private func progressText(current: Int, total: Int) -> Text {
+        switch model.operation {
+        case .rename:
+            Text("Renaming file \(current) of \(total)…")
+        case .archive:
+            Text("Archiving file \(current) of \(total)…")
+        case .moveToTrash, .move:
+            Text("Moving file \(current) of \(total) to the Trash…")
         }
     }
 

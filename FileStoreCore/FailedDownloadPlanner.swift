@@ -78,10 +78,13 @@ public struct FailedDownloadPlanner: Sendable {
         return eligibility.refusal(for: record, now: now, downloads: .allowed) == nil
     }
 
-    /// The plan for `records`, from one scan of `folderURL`, at `now`. Changes are in name order.
+    /// The plan for the records directly inside `folderURL`, from one scan of it, at `now`. Changes
+    /// are in name order.
     /// A `.download` folder whose contents could not be read is reported as not checked; one too
     /// big to be a download is left out.
     public func plan(records: [FileRecord], in folderURL: URL, now: Date = .now) -> CleanupPlan {
+        // Only the folder's own items: never anything inside a folder in it, the archive's included.
+        let records = DuplicatePlanner.recordsDirectlyInside(folderURL, among: records)
         let finished = Self.finishedItemNames(in: records)
         var changes: [ProposedChange] = []
         var skippedItems: [CleanupPlan.SkippedItem] = []

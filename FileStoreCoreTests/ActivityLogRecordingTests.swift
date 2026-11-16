@@ -145,7 +145,7 @@ struct ActivityLogRecordingTests {
             return
         }
         #expect(moved.operation == .move)
-        #expect(moved.reason == .oldDownload)
+        #expect(moved.reason == RelocationPlans.archiveReason)
         #expect(moved.outcome == .moved)
         #expect(moved.resultingPath == movedURL.path(percentEncoded: false))
         // Both folders were made for this move, and an undo will have to know.
@@ -351,7 +351,8 @@ struct ActivityLogRecordingTests {
         let skips: [CleanupSkipReason] = [
             .changedSinceScan, .notFound, .accessDenied, .notDownloaded, .notARegularFile,
             .unreadable(reason: "Input/output error"), .keptFile, .notInPlan, .markedKept, .outsideFolder, .folderUnavailable,
-            .keptFileMissing(name: "kept – ✓.pdf"), .keptFileNotVerified(name: "kept.pdf"), .lastInGroup, .cancelled,
+            .keptFileMissing(name: "kept – ✓.pdf"), .keptFileNotVerified(name: "kept.pdf"), .lastInGroup,
+            .archivedCopyMissing(name: "old – ✓.pdf"), .archivedCopyNotVerified(name: "old.pdf"), .cancelled,
             .destinationExists(name: "taken.txt"), .invalidName, .destinationOutsideFolder, .destinationNotAFolder,
             .destinationHidden, .activityLogUnavailable,
             .zipUnlistable(.damaged), .zipUnlistable(.encryptedListing), .zipUnlistable(.tooManyEntries),
@@ -374,7 +375,7 @@ struct ActivityLogRecordingTests {
                 outcome: .renamed(from: LogSamples.folderURL.appending(path: "messy (1).pdf"), to: LogSamples.folderURL.appending(path: "messy.pdf"))
             ),
             CleanupItemResult(
-                change: ProposedChange(record: LogSamples.record(named: "old.pdf"), operation: .move(to: archive, name: "old.pdf"), reason: .oldDownload),
+                change: ProposedChange(record: LogSamples.record(named: "old.pdf"), operation: .move(to: archive, name: "old.pdf"), reason: .notOpenedSince(Date(timeIntervalSince1970: 1_738_400_400.5))),
                 outcome: .moved(from: LogSamples.folderURL.appending(path: "old.pdf"), to: archive.appending(path: "old.pdf")),
                 createdFolders: [archive]
             ),
@@ -383,6 +384,13 @@ struct ActivityLogRecordingTests {
             ),
             LogSamples.trashed(
                 ProposedChange(record: LogSamples.record(named: "notes (1).txt"), operation: .moveToTrash, reason: .nearDuplicate(sameNameAs: "notes – ✓.txt"))
+            ),
+            LogSamples.trashed(
+                ProposedChange(record: LogSamples.record(named: "manual.pdf"), operation: .moveToTrash, reason: .alreadyArchived(copyNamed: "manual – ✓.pdf"))
+            ),
+            CleanupItemResult(
+                change: ProposedChange(record: LogSamples.record(named: "never.pdf"), operation: .move(to: archive, name: "never 2025-01-01.pdf"), reason: .neverOpened(downloadedOn: Date(timeIntervalSince1970: 1_735_722_000.123456))),
+                outcome: .moved(from: LogSamples.folderURL.appending(path: "never.pdf"), to: archive.appending(path: "never 2025-01-01.pdf"))
             ),
             // Every value the evidence carries, with a name and path that JSON must escape.
             LogSamples.trashed(
@@ -431,12 +439,12 @@ struct ActivityLogRecordingTests {
         let changes = try await log.changes(inRun: runID)
 
         #expect(changes.count == items.count)
-        let expectedOutcomes: [ActivityChange.Outcome] = [.trashed, .trashed, .renamed, .moved, .trashed, .trashed, .trashed, .trashed]
+        let expectedOutcomes: [ActivityChange.Outcome] = [.trashed, .trashed, .renamed, .moved, .trashed, .trashed, .trashed, .moved, .trashed, .trashed]
             + skips.map { .skipped($0) }
             + failures.map { .failed($0) }
         #expect(changes.map(\.outcome) == expectedOutcomes)
         #expect(changes.map(\.reason) == items.map { Optional($0.change.reason) })
-        let expectedOperations: [ActivityChange.Operation?] = [.moveToTrash, .moveToTrash, .rename, .move, .moveToTrash, .moveToTrash, .moveToTrash, .moveToTrash]
+        let expectedOperations: [ActivityChange.Operation?] = [.moveToTrash, .moveToTrash, .rename, .move, .moveToTrash, .moveToTrash, .moveToTrash, .move, .moveToTrash, .moveToTrash]
             + Array(repeating: .moveToTrash, count: skips.count + failures.count)
         #expect(changes.map(\.operation) == expectedOperations)
         #expect(changes.map(\.originalPath) == items.map(\.change.originalPath))

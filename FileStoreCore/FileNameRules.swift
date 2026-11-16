@@ -34,6 +34,24 @@ enum FileNameRules {
             && !FileRecord.isInProgressDownload(name: name)
     }
 
+    /// The first free name of `<stem> YYYY-MM-DD<ext>`, then ` v2`, ` v3`…, for `name` and `date`
+    /// written in `timeZone`, or nil when the name would be too long or not allowed. One more try
+    /// than names taken always finds a free one.
+    static func datedName(_ name: String, date: Date, timeZone: TimeZone, takenCount: Int, isFree: (String) -> Bool) -> String? {
+        let (stem, pathExtension) = MessyNameCleaner.parts(of: name)
+        let dated = "\(stem) \(date.formatted(Date.ISO8601FormatStyle(timeZone: timeZone).year().month().day().dateSeparator(.dash)))"
+        for number in 1...(takenCount + 1) {
+            let name = (number == 1 ? dated : "\(dated) v\(number)") + pathExtension
+            guard isAllowedFileName(name, maximumLength: defaultMaximumLength) else {
+                return nil
+            }
+            if isFree(name) {
+                return name
+            }
+        }
+        return nil
+    }
+
     /// True when a move may put an item in a folder named `name`, or make one: a single name that
     /// does not hide what goes inside. The archive's name is allowed; it is where archiving moves to.
     static func isAllowedFolderName(_ name: String, maximumLength: Int) -> Bool {

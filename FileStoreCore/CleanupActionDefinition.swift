@@ -5,11 +5,14 @@ import Foundation
 /// `CleanupAction.definition`, whose switch makes that a compile-time duty, and stating its planner
 /// in `CleanupPlanners`.
 public struct CleanupActionDefinition: Sendable, Hashable {
-    /// The one operation every change in the action's plans uses.
+    /// The kind of change every change in the action's plans makes.
     public enum OperationKind: Sendable, Hashable {
         case moveToTrash
         case rename
         case move
+        /// A move into the archive folder, or, for a file whose identical copy the archive already
+        /// holds, the Trash: Archive Old Downloads, the one action with two operations.
+        case archive
     }
 
     /// The name the activity log stores for the action, and later on-device tools call it by. It is
@@ -43,7 +46,7 @@ extension CleanupAction {
         case .reviewNearDuplicates:
             CleanupActionDefinition(identifier: "reviewNearDuplicates", operation: .moveToTrash)
         case .archiveOldDownloads:
-            CleanupActionDefinition(identifier: "archiveOldDownloads", operation: .move)
+            CleanupActionDefinition(identifier: "archiveOldDownloads", operation: .archive)
         }
     }
 }
@@ -52,9 +55,9 @@ extension CleanupActionDefinition.OperationKind {
     /// True when `operation` is of this kind.
     func matches(_ operation: ProposedChange.Operation) -> Bool {
         switch (self, operation) {
-        case (.moveToTrash, .moveToTrash), (.rename, .rename), (.move, .move):
+        case (.moveToTrash, .moveToTrash), (.rename, .rename), (.move, .move), (.archive, .move), (.archive, .moveToTrash):
             true
-        case (.moveToTrash, _), (.rename, _), (.move, _):
+        case (.moveToTrash, _), (.rename, _), (.move, _), (.archive, .rename):
             false
         }
     }

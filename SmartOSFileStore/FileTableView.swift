@@ -1,9 +1,10 @@
+import AppKit
 import FileStoreCore
 import QuickLook
 import SwiftUI
 
 /// The sortable file table, showing the rows the filter lets through. Space, Command-Y or a double
-/// click opens Quick Look; the context menu and the File menu reveal the selection in Finder and
+/// click opens Quick Look (on the Old downloads folder alone, each opens it in Finder); the context menu and the File menu reveal the selection in Finder and
 /// keep it (Keep This File, Command-K), and the context menu copies where a file was downloaded
 /// from. Hovering anywhere on a row shows the site and app it came from.
 struct FileTableView: View {
@@ -144,6 +145,11 @@ struct FileTableView: View {
     }
 
     private func preview(_ ids: Set<FileRecord.ID>) {
+        // The archive is a folder to look in, not a file to look at: it opens in Finder.
+        if ids.count == 1, let id = ids.first, let record = model.record(for: id), record.isArchiveFolder {
+            NSWorkspace.shared.open(record.url)
+            return
+        }
         let urls = urls(for: ids)
         guard !urls.isEmpty else { return }
         previewItems = urls

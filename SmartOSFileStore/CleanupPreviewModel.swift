@@ -113,9 +113,8 @@ final class CleanupPreviewModel {
         tickedChanges.reduce(0) { $0 + $1.sizeInBytes }
     }
 
-    /// True when Move to Trash or Rename may be offered: still reviewing, with at least one change
-    /// ticked, in a plan that can be applied. Moves are previewed only, until an action that
-    /// proposes them brings its own confirmation.
+    /// True when Move to Trash, Rename or Archive may be offered: still reviewing, with at least one
+    /// change ticked, in a plan that can be applied.
     var canExecute: Bool { isReviewing && tickedCount > 0 && canBeApplied }
 
     func isTicked(_ id: ProposedChange.ID) -> Bool {

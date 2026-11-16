@@ -444,6 +444,7 @@ struct RenameExecutorTests {
             .findDuplicates: [true, false, false],
             .clearFailedDownloads: [true, false, false],
             .removeUnpackedZips: [true, false, false],
+            .removeUsedInstallers: [true, false, false],
             .fixMessyNames: [false, true, false],
             .archiveOldDownloads: [false, false, true],
         ]

@@ -41,6 +41,7 @@ struct ContentView: View {
             PresentedPlanSheet(
                 plan: presented.plan,
                 eligibility: model.eligibility,
+                applicationFolders: model.applicationFolders,
                 activity: activity,
                 markKept: { records, onFinish in
                     model.keep(records, onFinish: onFinish)
@@ -99,6 +100,9 @@ struct ContentView: View {
                 model.connect(to: activity)
                 activity.open()
                 model.refresh()
+                // Makes the folder disk images are read in, and detaches what a crashed run left
+                // mounted there. Once per launch; a search waits for it.
+                Task { await DiskImageMounts.shared.prepare() }
             }
             .onChange(of: model.isLoading) { _, isLoading in
                 // A refresh replaces the rows a running search was given, so its plan would describe
@@ -126,6 +130,8 @@ struct ContentView: View {
                 // list is the one that counts.
                 activitySelection = []
                 model.reloadKeptItems()
+                // Its installer facts are the ones the Installed marks come from.
+                model.reloadInstalledMarks()
             }
             .onChange(of: section) { _, section in
                 guard placeToFocus == section else { return }
@@ -364,7 +370,16 @@ struct ContentView: View {
 
     private func startCleanup(_ action: CleanupAction) {
         guard canStartCleanup, let location = model.location, let log = activity.log else { return }
-        search.start(action, records: model.records, folderURL: location.folderURL, eligibility: model.eligibility, log: log, activity: activity)
+        search.start(
+            action,
+            records: model.records,
+            folderURL: location.folderURL,
+            eligibility: model.eligibility,
+            applicationFolders: model.applicationFolders,
+            log: log,
+            activity: activity,
+            onInstallersRead: model.reloadInstalledMarks
+        )
     }
 
     @ViewBuilder
@@ -398,6 +413,7 @@ struct ContentView: View {
 private struct PresentedPlanSheet: View {
     let plan: CleanupPlan
     let eligibility: CandidateEligibility
+    let applicationFolders: [URL]
     let activity: ActivityLogModel
     let markKept: @MainActor ([FileRecord], @escaping @MainActor (Bool) -> Void) -> Void
     let onExecuted: @MainActor () -> Void
@@ -408,6 +424,7 @@ private struct PresentedPlanSheet: View {
     init(
         plan: CleanupPlan,
         eligibility: CandidateEligibility,
+        applicationFolders: [URL],
         activity: ActivityLogModel,
         markKept: @escaping @MainActor ([FileRecord], @escaping @MainActor (Bool) -> Void) -> Void,
         onExecuted: @escaping @MainActor () -> Void,
@@ -415,6 +432,7 @@ private struct PresentedPlanSheet: View {
     ) {
         self.plan = plan
         self.eligibility = eligibility
+        self.applicationFolders = applicationFolders
         self.activity = activity
         self.markKept = markKept
         self.onExecuted = onExecuted
@@ -424,7 +442,15 @@ private struct PresentedPlanSheet: View {
 
     var body: some View {
         if let log {
-            CleanupPreviewSheet(plan: plan, eligibility: eligibility, log: log, activity: activity, markKept: markKept, onUndo: onUndo) { _ in
+            CleanupPreviewSheet(
+                plan: plan,
+                eligibility: eligibility,
+                applicationFolders: applicationFolders,
+                log: log,
+                activity: activity,
+                markKept: markKept,
+                onUndo: onUndo
+            ) { _ in
                 onExecuted()
             }
         } else {

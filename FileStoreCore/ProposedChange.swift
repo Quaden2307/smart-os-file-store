@@ -38,6 +38,19 @@ public struct ProposedChange: Sendable, Hashable, Identifiable {
         /// names the item beside it that holds them (`project` beside `project.zip`), which is never
         /// touched.
         case unpackedZip(unpackedTo: String)
+
+        /// An installer whose app is installed, as `evidence` shows: ticked when it is strong, a
+        /// possible match when only the name matches.
+        case usedInstaller(UsedInstallerEvidence)
+
+        /// True for a change the preview leaves unticked: a possible match, which the user ticks
+        /// only after looking.
+        public var isPossibleMatch: Bool {
+            if case .usedInstaller(let evidence) = self {
+                return evidence.strength == .possible
+            }
+            return false
+        }
     }
 
     public var id: URL { record.url }

@@ -24,17 +24,18 @@ struct ActivityLogSchemaTests {
             #expect(databaseURL.lastPathComponent == "FileStore.sqlite")
             #expect(canonicalPath(databaseURL.deletingLastPathComponent()).hasSuffix("/Application Support/" + LogSandbox.appIdentifier))
 
-            // The migrations made exactly the five tables, with one totals row and one maintenance row.
+            // The migrations made exactly the six tables, with one totals row and one maintenance row.
             try await log.close()
             let raw = try RawDatabase(databaseURL)
             let tables = try raw.text(
                 "SELECT group_concat(name, ',') FROM (SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'grdb_%' ORDER BY name)"
             )
-            #expect(tables == "changes,keptItems,maintenance,runs,totals")
+            #expect(tables == "changes,installerFacts,keptItems,maintenance,runs,totals")
+            #expect(try raw.text("SELECT count(*) FROM installerFacts") == "0")
             #expect(try raw.text("SELECT count(*) FROM keptItems") == "0")
             #expect(try raw.text("SELECT count(*) FROM totals") == "1")
             #expect(try raw.text("SELECT count(*) FROM maintenance") == "1")
-            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4")
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5")
         }
     }
 
@@ -63,11 +64,13 @@ struct ActivityLogSchemaTests {
             let log = try await ActivityLog.open(location, now: now)
             let runID = try LogSamples.writeRun(to: log, startedAt: now, count: 2)
             try await log.close()
-            // What the previous version left: no `changes.isFolder`, and migrations up to `v3`.
+            // What the version before segment 7 left: no `changes.isFolder`, no `installerFacts`, and
+            // migrations up to `v3`.
             do {
                 let raw = try RawDatabase(databaseURL)
+                try raw.execute("DROP TABLE installerFacts")
                 try raw.execute("ALTER TABLE changes DROP COLUMN isFolder")
-                try raw.execute("DELETE FROM grdb_migrations WHERE identifier = 'v4'")
+                try raw.execute("DELETE FROM grdb_migrations WHERE identifier IN ('v4', 'v5')")
             }
 
             let upgraded = try await ActivityLog.open(location, now: now)
@@ -77,7 +80,7 @@ struct ActivityLogSchemaTests {
             try await upgraded.close()
 
             let raw = try RawDatabase(databaseURL)
-            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4")
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5")
             #expect(try raw.text("SELECT count(*) FROM changes WHERE isFolder = 0") == "2")
             // Only 0 and 1 are a value it may hold.
             #expect(throws: (any Error).self) {
@@ -144,7 +147,7 @@ struct ActivityLogSchemaTests {
             }
 
             let raw = try RawDatabase(databaseURL)
-            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v999")
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v999")
             #expect(try raw.text("SELECT count(*) FROM runs") == "1")
         }
     }

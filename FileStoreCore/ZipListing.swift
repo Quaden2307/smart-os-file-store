@@ -82,12 +82,29 @@ public struct ZipListing: Sendable, Hashable {
             throw Failure(statusFailure: error)
         }
         try checkBeforeOpening(looked)
-        return try read(try ZipArchiveFile.open(atPath: path), lookedAt: looked, limits: limits)
+        return try read(try ZipArchiveFile.open(atPath: path), lookedAt: looked, limits: limits).listing
     }
 
     /// Lists a whole archive held in memory, such as one a test builds byte by byte.
     public static func parse(_ bytes: [UInt8], limits: Limits = .standard) throws(Failure) -> ZipListing {
         ZipListing(entries: try ZipCentralDirectory.entries(in: InMemoryZipBytes(storage: bytes), limits: limits))
+    }
+
+    /// The unpacked bytes of the entries at `paths` in an archive held in memory, as the installer
+    /// reader reads them: only plain, unencrypted files, stored or deflated, of at most
+    /// `maximumEntrySize` bytes; the others are missing from the result.
+    public static func contents(
+        ofEntries paths: Set<String>,
+        inBytes bytes: [UInt8],
+        maximumEntrySize: Int,
+        limits: Limits = .standard
+    ) throws(Failure) -> [String: [UInt8]] {
+        let source = InMemoryZipBytes(storage: bytes)
+        var contents: [String: [UInt8]] = [:]
+        for record in try ZipCentralDirectory.records(in: source, limits: limits) where paths.contains(record.entry.path) {
+            contents[record.entry.path] = try ZipCentralDirectory.contents(of: record, in: source, maximumSize: maximumEntrySize)
+        }
+        return contents
     }
 
     /// Reads the zip called `name` directly inside `folder`, through the handle and never through a
@@ -109,7 +126,35 @@ public struct ZipListing: Sendable, Hashable {
         guard isExpected(looked) else {
             throw .changedSinceScan
         }
-        return try read(try ZipArchiveFile.open(named: name, in: folder), lookedAt: looked, limits: limits)
+        return try read(try ZipArchiveFile.open(named: name, in: folder), lookedAt: looked, limits: limits).listing
+    }
+
+    /// Reads the zip called `name` directly inside `folder`, as above, and the unpacked bytes of the
+    /// entries `wanted` picks from the listing, each at most `maximumEntrySize` bytes packed and
+    /// unpacked. An entry that is not a plain, unencrypted file, stored or deflated, within the limit
+    /// is left out of the contents. Nothing is written: the bytes stay in memory.
+    static func read(
+        named name: String,
+        in folder: DirectoryHandle,
+        limits: Limits,
+        contentsOf wanted: ([ZipEntry]) -> Set<String>,
+        maximumEntrySize: Int
+    ) throws(Failure) -> (listing: ZipListing, contents: [String: [UInt8]], status: FileStatus) {
+        let looked: FileStatus
+        do throws(FileStatus.Failure) {
+            looked = try folder.status(of: name)
+        } catch {
+            throw Failure(statusFailure: error)
+        }
+        try checkBeforeOpening(looked)
+        let read = try read(
+            try ZipArchiveFile.open(named: name, in: folder),
+            lookedAt: looked,
+            limits: limits,
+            contentsOf: wanted,
+            maximumEntrySize: maximumEntrySize
+        )
+        return (read.listing, read.contents, looked)
     }
 
     /// Only a regular file is opened, and never a placeholder: opening one would download it.
@@ -122,15 +167,28 @@ public struct ZipListing: Sendable, Hashable {
         }
     }
 
-    /// Lists the open `file`, which must be the very file looked at and stay unchanged throughout.
-    private static func read(_ file: ZipArchiveFile, lookedAt looked: FileStatus, limits: Limits) throws(Failure) -> ZipListing {
+    /// Lists the open `file`, which must be the very file looked at and stay unchanged throughout,
+    /// and reads the contents of the entries `wanted` picks.
+    private static func read(
+        _ file: ZipArchiveFile,
+        lookedAt looked: FileStatus,
+        limits: Limits,
+        contentsOf wanted: ([ZipEntry]) -> Set<String> = { _ in [] },
+        maximumEntrySize: Int = 0
+    ) throws(Failure) -> (listing: ZipListing, contents: [String: [UInt8]]) {
         let opened = try file.status()
         guard opened.isRegularFile, opened.identity == looked.identity, isUnchanged(opened, since: looked) else {
             throw .changedSinceScan
         }
         let entries: [ZipEntry]
+        var contents: [String: [UInt8]] = [:]
         do throws(Failure) {
-            entries = try ZipCentralDirectory.entries(in: file, limits: limits)
+            let records = try ZipCentralDirectory.records(in: file, limits: limits)
+            entries = records.map(\.entry)
+            let paths = wanted(entries)
+            for record in records where paths.contains(record.entry.path) {
+                contents[record.entry.path] = try ZipCentralDirectory.contents(of: record, in: file, maximumSize: maximumEntrySize)
+            }
         } catch {
             // A file written to while it was read can look damaged; that is a change, not damage.
             if case .unlistable = error, let now = try? file.status(), !isUnchanged(now, since: opened) {
@@ -141,7 +199,7 @@ public struct ZipListing: Sendable, Hashable {
         guard isUnchanged(try file.status(), since: opened) else {
             throw .changedSinceScan
         }
-        return ZipListing(entries: entries)
+        return (ZipListing(entries: entries), contents)
     }
 
     private static func isUnchanged(_ status: FileStatus, since earlier: FileStatus) -> Bool {

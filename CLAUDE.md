@@ -37,7 +37,7 @@ A native macOS file browser that will replace Finder, starting with a self-clean
 - Every executed change is recorded in the activity log with enough information to undo it.
 - Files the user marked Keep never appear as a proposed change in any plan.
 - Each segment adds a short decision record under `docs/decisions/` (what was decided, the alternatives, why).
-- The scanned folder is Downloads by default. Debug builds accept an override (launch argument `-ScanFolder <path>` or environment variable `SMARTOS_SCAN_FOLDER`) so hand testing uses a fake folder, and `-GracePeriodSeconds <n>` so freshly made files can be candidates. Release builds ignore all three.
+- The scanned folder is Downloads by default. Debug builds accept an override (launch argument `-ScanFolder <path>` or environment variable `SMARTOS_SCAN_FOLDER`) so hand testing uses a fake folder, `-GracePeriodSeconds <n>` so freshly made files can be candidates, and `-ApplicationsFolder <path>` so Remove Used Installers looks for installed apps in a fake Applications folder. Release builds ignore all four.
 
 ## Code standards
 

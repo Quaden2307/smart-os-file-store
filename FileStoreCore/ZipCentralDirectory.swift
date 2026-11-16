@@ -58,6 +58,10 @@ enum ZipCentralDirectory {
     private static let placeholder16: UInt16 = 0xFFFF
     /// General purpose bit 3: the CRC and sizes follow the data, in a data descriptor.
     private static let dataDescriptorFlag: UInt16 = 0x0008
+    /// General purpose bit 0: the entry is encrypted.
+    private static let encryptedFlag: UInt16 = 0x0001
+    private static let storedMethod: UInt16 = 0
+    private static let deflatedMethod: UInt16 = 8
     /// General purpose bit 11: the archive says its names are UTF-8.
     private static let utf8NamesFlag: UInt16 = 0x0800
     /// The makers whose external attributes hold a Unix mode: Unix (ditto, Info-ZIP) and macOS.
@@ -68,6 +72,11 @@ enum ZipCentralDirectory {
 
     /// Every entry of the archive in `source`, in the order the directory lists them.
     static func entries(in source: some ZipByteSource, limits: ZipListing.Limits) throws(ZipListing.Failure) -> [ZipEntry] {
+        try records(in: source, limits: limits).map(\.entry)
+    }
+
+    /// Every record of the archive in `source`, checked as `entries` describes.
+    static func records(in source: some ZipByteSource, limits: ZipListing.Limits) throws(ZipListing.Failure) -> [Record] {
         let end = try endOfDirectory(in: source)
         // The limits, before anything is allocated for the entries or the directory is read.
         guard end.entryCount <= UInt64(limits.maximumEntryCount), end.directorySize <= UInt64(limits.maximumDirectorySize) else {
@@ -88,7 +97,38 @@ enum ZipCentralDirectory {
         let directory = LittleEndianBytes(try source.bytes(at: end.directoryOffset, count: size))
         let records = try readRecords(directory, count: count, limits: limits)
         try checkLocalHeaders(records, in: source, directoryOffset: end.directoryOffset)
-        return records.map(\.entry)
+        return records
+    }
+
+    /// The unpacked bytes of `record`'s entry, read only when it is a file, not encrypted, stored or
+    /// deflated, and at most `maximumSize` bytes packed and unpacked; nil otherwise. Deflated data is
+    /// inflated into its declared size and no more. Data that does not inflate to exactly that size,
+    /// or whose CRC-32 is not the directory's, is damage.
+    static func contents(of record: Record, in source: some ZipByteSource, maximumSize: Int) throws(ZipListing.Failure) -> [UInt8]? {
+        guard record.entry.kind == .file, record.flags & encryptedFlag == 0,
+              record.compressedSize <= UInt64(maximumSize), record.uncompressedSize <= UInt64(maximumSize),
+              record.method == storedMethod || record.method == deflatedMethod else {
+            return nil
+        }
+        let header = LittleEndianBytes(try source.bytes(at: record.localHeaderOffset, count: localHeaderLength))
+        let dataOffset = try sum(record.localHeaderOffset, UInt64(localHeaderLength), UInt64(try header.uint16(at: 26)), UInt64(try header.uint16(at: 28)))
+        let stored = try source.bytes(at: dataOffset, count: Int(record.compressedSize))
+        let bytes: [UInt8]
+        if record.method == storedMethod {
+            guard record.compressedSize == record.uncompressedSize else {
+                throw .unlistable(.damaged)
+            }
+            bytes = stored
+        } else {
+            guard let inflated = Inflate.inflate(stored, expectedSize: Int(record.uncompressedSize), raw: true) else {
+                throw .unlistable(.damaged)
+            }
+            bytes = inflated
+        }
+        guard Inflate.crc32(bytes) == record.crc else {
+            throw .unlistable(.damaged)
+        }
+        return bytes
     }
 
     // MARK: - The end records
@@ -206,9 +246,11 @@ enum ZipCentralDirectory {
 
     /// One record of the central directory: the entry it lists, and what its local header and data
     /// descriptor must say.
-    private struct Record {
+    struct Record {
         let entry: ZipEntry
         let flags: UInt16
+        /// How the data is stored: 0 stored, 8 deflated, anything else not read.
+        let method: UInt16
         let crc: UInt32
         let compressedSize: UInt64
         let uncompressedSize: UInt64
@@ -230,6 +272,7 @@ enum ZipCentralDirectory {
             }
             let madeBy = try directory.uint16(at: position + 4)
             let flags = try directory.uint16(at: position + 8)
+            let method = try directory.uint16(at: position + 10)
             let crc = try directory.uint32(at: position + 16)
             let storedCompressedSize = try directory.uint32(at: position + 20)
             let storedSize = try directory.uint32(at: position + 24)
@@ -267,6 +310,7 @@ enum ZipCentralDirectory {
                 Record(
                     entry: ZipEntry(path: path, kind: kind(of: path, madeBy: madeBy, attributes: attributes), uncompressedSize: uncompressedSize),
                     flags: flags,
+                    method: method,
                     crc: crc,
                     compressedSize: zip64.compressed ?? UInt64(storedCompressedSize),
                     uncompressedSize: size,

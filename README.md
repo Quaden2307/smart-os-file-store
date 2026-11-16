@@ -14,7 +14,7 @@ Smart OS File Store is a native macOS file browser that will replace Finder, sta
 
 - **Last Opened column**: the date macOS records when a file is opened (the `com.apple.lastuseddate#PS` attribute Launch Services writes), read from the file itself, so it shows at once in any folder, indexed by Spotlight or not. Files never opened show "Never" and sort as the oldest. Folders, apps, links and Finder aliases, which macOS does not date when they are opened, show a dash unless a date is recorded, as does an item whose date could not be read.
 - **Marks**, as small badges after the name: Never opened (no last-opened date, added more than 30 days ago), Unused (last opened more than 30 days ago) and Old (added more than 90 days ago, opened or not). Folders, apps, links, aliases, hidden items and downloads in progress get none.
-- **A filter** above the table and in the View menu (All, Kept, Never opened, Unused, Old). The status line shows how many items match and their total size.
+- **A filter** above the table and in the View menu (All, Kept, Failed download, Installed, Never opened, Unused, Old). The status line shows how many items match and their total size.
 - **Download source**: hover over a row to see the site a file was downloaded from and the app that downloaded it. Copy Download Source, in the context menu and the Edit menu, copies the file's address.
 - **Rename and move in the engine**, for Fix messy names and Archive old downloads to use: exclusive, so nothing is ever replaced, through a handle on the folder, so no link is followed. Nothing proposes them yet.
 - **An activity log**: every confirmed cleanup is recorded as it happens, one row per file, in a local database. A row that says a change was started is written before the file changes and completed right after, so if the app crashes or is force-quit, no moved file is missing from the log. If the log cannot be written, the cleanup stops with the file untouched.
@@ -22,6 +22,7 @@ Smart OS File Store is a native macOS file browser that will replace Finder, sta
 - **Moved to the Trash**: the summary says how much a cleanup moved to the Trash, and the status line shows the total so far. The space is free once you empty the Trash.
 - **Undo**: Edit > Undo (⌘Z) undoes the newest cleanup; Activity undoes any cleanup or single file that can still be put back.
 - **A Clean Up menu**, in the toolbar and the menu bar, with two more cleanups. **Clear Failed Downloads** (⇧⌘F) proposes partial downloads that stopped more than an hour ago and never finished. **Remove Unpacked Zips** (⇧⌘U) proposes a zip whose every file already sits next to it, unpacked, at the same size, where Archive Utility puts it (one item beside the zip, several in a folder named after it, or a numbered name such as `project 2`). The unpacked copy is never touched, and zips are only ever read, never extracted.
+- **Remove Used Installers** (⇧⌘I, in the Clean Up menu) proposes a disk image (`.dmg`), installer package (`.pkg`) or zip holding an app at its top level once that app is in `/Applications` or `~/Applications`. It is ticked when the app's identifier matches and the installed version is the same or newer; it is proposed unticked, as a **Possible match**, when only the name matches (the file name without version numbers and words like `arm64`). An installed version older than the installer's is never proposed, and neither is a disk image someone has open. Installers are only read: a zip's `Info.plist` in memory, a package's own description without its payload, and a disk image attached read-only and hidden, checked by macOS's checker, and always ejected. Nothing is run, nothing is written into them, and an image that asks for a password or a licence is never opened. What was read is kept in the activity log, so the next search reads none of them again, and the file list marks strong matches **Installed**.
 - **Keep This File** (⌘K, File menu and context menu): marks files and folders Kept, so no cleanup ever proposes them. Kept items show a Kept badge and a Kept choice in the filter; File > Stop Keeping All clears them, after asking. In the preview, Keep This File takes a file out of the plan and marks it Kept. Kept follows the file through renames and moves; editing it in an app that saves a new copy makes it a new, unkept file. When one copy of a duplicate is Kept, that copy is the one kept.
 
 The two thresholds live in the app's defaults. There is no settings window yet; to change them for good, or for one launch:
@@ -35,7 +36,7 @@ open build/Build/Products/Debug/SmartOSFileStore.app --args -CleanupUnusedAfterD
 ## What it does not do yet
 
 - Only the top level of Downloads. No other folders and no subfolders.
-- Three cleanups so far: Find Duplicates, Clear Failed Downloads and Remove Unpacked Zips. The others arrive in their own segments.
+- Four cleanups so far: Find Duplicates, Clear Failed Downloads, Remove Unpacked Zips and Remove Used Installers. The others arrive in their own segments.
 - An Activity entry cannot be opened for more detail yet. That is planned for later, perhaps with an Apple Intelligence summary.
 - No watching of the folder: the list refreshes on launch, with ⌘R, and after Move to Trash.
 - No Stop button while files move; each move is quick, and closing the window stops between files.
@@ -50,6 +51,7 @@ open build/Build/Products/Debug/SmartOSFileStore.app --args -CleanupUnusedAfterD
 | Main window | ⇧⌘D | Find Duplicates |
 | Main window | ⇧⌘F | Clear Failed Downloads |
 | Main window | ⇧⌘U | Remove Unpacked Zips |
+| Main window | ⇧⌘I | Remove Used Installers |
 | Main window | ⌘R | Refresh the list |
 | Main window | Space, ⌘Y, double-click | Quick Look the selection (press again to close) |
 | Main window | ⌥⌘R | Reveal the selection in Finder |
@@ -128,6 +130,12 @@ Cleanup actions leave anything added or modified in the last hour alone. The scr
 
 ```bash
 open build/Build/Products/Debug/SmartOSFileStore.app --args -ScanFolder /path/to/FakeDownloads -GracePeriodSeconds 0
+```
+
+Remove Used Installers looks for installed apps in `/Applications` and `~/Applications`. To try it against the script's fake apps instead, also pass `-ApplicationsFolder` (debug only; a path that is not a folder means no folder at all, never the real ones):
+
+```bash
+open build/Build/Products/Debug/SmartOSFileStore.app --args -ScanFolder /path/to/FakeDownloads -ApplicationsFolder /path/to/FakeApplications
 ```
 
 While the scan folder is overridden, the activity log is a separate database under the temporary directory, one per fake folder, so hand testing never opens or writes the real log. The status line of a debug build shows its path. To see how the app handles a damaged log, quit the app, overwrite that file (`head -c 8192 /dev/urandom > "<path>"`) and launch again.

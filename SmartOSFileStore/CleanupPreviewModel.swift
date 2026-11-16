@@ -23,7 +23,7 @@ final class CleanupPreviewModel {
     /// Whether the plan can be carried out from here: so far only moves to the Trash can be.
     let isTrashOnly: Bool
 
-    /// Changes the user has left ticked. Everything is ticked to begin with.
+    /// Changes the user has left ticked. Everything but a possible match is ticked to begin with.
     private(set) var ticked: Set<ProposedChange.ID>
 
     /// True while the confirmation sheet is up, so it is never shown twice.
@@ -48,6 +48,8 @@ final class CleanupPreviewModel {
 
     /// - Parameters:
     ///   - eligibility: The rules the plan was made with; the executor checks them again.
+    ///   - applicationFolders: Where installed apps are, the same folders the search used: an
+    ///     installer's app must still be in one of them. The window's own, never the plan's.
     ///   - log: The open activity log. Every change is written to it as it happens; there is no
     ///     way to carry out a plan without one.
     ///   - activity: Told when the run has ended, so the totals and the Activity place follow.
@@ -56,6 +58,7 @@ final class CleanupPreviewModel {
     init(
         plan: CleanupPlan,
         eligibility: CandidateEligibility,
+        applicationFolders: [URL],
         log: ActivityLog,
         activity: ActivityLogModel,
         markKept: @escaping @MainActor ([FileRecord], @escaping @MainActor (Bool) -> Void) -> Void,
@@ -65,10 +68,10 @@ final class CleanupPreviewModel {
         self.markKept = markKept
         self.isGroupedByDuplicates = plan.isGroupedByDuplicates
         self.isTrashOnly = plan.isTrashOnly
-        self.executor = CleanupExecutor(recorder: log, eligibility: eligibility)
+        self.executor = CleanupExecutor(recorder: log, eligibility: eligibility, applicationFolders: applicationFolders)
         self.activity = activity
         self.onExecuted = onExecuted
-        self.ticked = Set(plan.changes.map(\.id))
+        self.ticked = Set(plan.changes.filter { !$0.reason.isPossibleMatch }.map(\.id))
     }
 
     // Isolated, so it may touch main-actor state: the sheet is gone, stop between items.

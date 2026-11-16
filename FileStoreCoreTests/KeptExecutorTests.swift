@@ -13,7 +13,7 @@ struct KeptExecutorTests {
         let records = try await RelocationPlans.records(in: temp.url)
         let log = try await ActivityLog.open(.inMemory)
         let plan = try #require(
-            try await CleanupPlanners.plan(.findDuplicates, records: records, in: temp.url, eligibility: CandidateEligibility(), keptItems: KeptItems())
+            try await CleanupPlanners.plan(.findDuplicates, records: records, in: temp.url, eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: .testing())
         )
         let copy = try #require(plan.changes.first)
         #expect(copy.record.displayName == "report (1).pdf")

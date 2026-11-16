@@ -15,6 +15,11 @@ public enum CleanupAction: String, Sendable, Codable, CaseIterable, Hashable {
     /// same size. What they were unpacked to is never touched.
     case removeUnpackedZips
 
+    /// Proposes for the Trash the disk images, packages and app zips whose apps are already
+    /// installed: ticked when the identifier and version say so, unticked as a possible match when
+    /// only the name does.
+    case removeUsedInstallers
+
     /// Proposes cleaner names for files with copy numbers or leftover junk in their names. Its
     /// planner arrives in its own segment; until then no plan of this action is ever made.
     case fixMessyNames

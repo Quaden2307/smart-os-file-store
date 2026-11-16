@@ -7,7 +7,8 @@ import Foundation
 /// what is there, make a folder for a move, and, for undo only, put an item back from the Trash
 /// without ever replacing what is there. For the activity log's own storage there are three
 /// more, each needing a `StoragePermit`, which only the log's storage can make: make its folder,
-/// make its empty database file, and give one of its files a new name. Nothing is ever deleted and
+/// make its empty database file, and give one of its files a new name. And one for the folder disk
+/// images are read in, needing a `MountFolderPermit`: make it. Nothing is ever deleted and
 /// nothing is ever replaced; a source-scanning test keeps every file-changing call in this file.
 /// The executor decides whether a change may happen; this only carries it out.
 enum DiskChange {
@@ -68,6 +69,16 @@ enum DiskChange {
     ///
     /// - Returns: Nil once made, otherwise the `errno` value (`EEXIST` when something has the name).
     static func makePrivateFolder(named name: String, in parent: DirectoryHandle, permit: StoragePermit) -> Int32? {
+        makeFolder(named: name, in: parent, permissions: 0o700)
+    }
+
+    // MARK: - The folder disk images are read in
+
+    /// Makes a folder that Remove Used Installers mounts disk images in, read-only, open to its
+    /// owner only. The app's own folder, never a user's.
+    ///
+    /// - Returns: Nil once made, otherwise the `errno` value (`EEXIST` when something has the name).
+    static func makePrivateFolder(named name: String, in parent: DirectoryHandle, permit: MountFolderPermit) -> Int32? {
         makeFolder(named: name, in: parent, permissions: 0o700)
     }
 

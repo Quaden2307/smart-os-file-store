@@ -170,4 +170,114 @@ struct BenchmarkTests {
             "row: | \(date) | \(model) | \(system) | \(configuration) | <commit> | \(Self.summary(listingTimes)) | \(Self.summary(scanTimes)) | \(Self.summary(markTimes)) | \(Self.summary(sortTimes)) | \(Self.summary(keyedSortTimes)) | \(Self.summary(planTimes)) | \(Measured.mebibytes(highest)) (+\(Measured.mebibytes(growth))) | \(lifetime) |"
         )
     }
+
+    /// Remove Used Installers on 130 installers against 300 installed apps: the installed-apps
+    /// index, the first search (every installer read, ten disk images attached two at a time),
+    /// the second (everything from the cache, nothing attached), and the Installed marks.
+    @Test func installerScanAtThreeHundredApps() async throws {
+        let temp = try TemporaryFolder.make()
+        defer { temp.remove() }
+        let downloads = temp.url.appending(path: "Downloads", directoryHint: .isDirectory)
+        let applications = temp.url.appending(path: "Applications", directoryHint: .isDirectory)
+        let staging = temp.url.appending(path: "Staging", directoryHint: .isDirectory)
+        for folder in [downloads, applications, staging] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
+        let clock = ContinuousClock()
+        let setupStart = clock.now
+        for index in 0..<300 {
+            try FakeDownloadsFolder.writeApp(at: applications.appending(path: "App\(index).app"), identifier: "com.example.App\(index)", version: "1.\(index)", build: "\(index)")
+        }
+        var installers: [URL] = []
+        for index in 0..<100 {
+            let app = staging.appending(path: "App\(index).app")
+            try FakeDownloadsFolder.writeApp(at: app, identifier: "com.example.App\(index)", version: "1.\(index)", build: "\(index)")
+            let zip = downloads.appending(path: "App\(index)-1.\(index).zip")
+            try ZipTools.ditto(app, to: zip, keepParent: true)
+            installers.append(zip)
+        }
+        for index in 100..<120 {
+            let root = staging.appending(path: "root\(index)", directoryHint: .isDirectory)
+            try FakeDownloadsFolder.writeApp(at: root.appending(path: "App\(index).app"), identifier: "com.example.App\(index)", version: "1.\(index)", build: "\(index)")
+            let package = downloads.appending(path: "App\(index).pkg")
+            try CommandLineTool.run("/usr/bin/pkgbuild", [
+                "--quiet", "--root", root.path(percentEncoded: false), "--identifier", "com.example.App\(index).pkg",
+                "--version", "1.\(index)", "--install-location", "/Applications", package.path(percentEncoded: false),
+            ])
+            installers.append(package)
+        }
+        for index in 120..<130 {
+            let source = staging.appending(path: "image\(index)", directoryHint: .isDirectory)
+            try FakeDownloadsFolder.writeApp(at: source.appending(path: "App\(index).app"), identifier: "com.example.App\(index)", version: "1.\(index)", build: "\(index)")
+            let image = downloads.appending(path: "App\(index).dmg")
+            try FakeDownloadsFolder.makeDiskImage(from: source, volumeName: "App\(index)", to: image, staging: staging)
+            installers.append(image)
+        }
+        try FileDates.settle(installers)
+        let setupTime = clock.now - setupStart
+
+        let records = try await RelocationPlans.records(in: downloads)
+        let mountFolder = try TemporaryFolder.make(prefix: "Mounts")
+        defer { mountFolder.remove() }
+        let log = try await ActivityLog.open(.inMemory)
+        let mounts = DiskImageMounts(root: mountFolder.url.appending(path: "root", directoryHint: .isDirectory))
+        #expect(await mounts.prepare())
+        let sources = InstallerSources.testing(applications: [applications], cache: log, mounts: mounts)
+        func plan() async throws -> CleanupPlan {
+            try #require(try await CleanupPlanners.plan(
+                .removeUsedInstallers, records: records, in: downloads, eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: sources
+            ))
+        }
+
+        var indexTimes: [Duration] = []
+        for run in 0...Self.measuredRuns {
+            let start = clock.now
+            let index = await InstalledApps.read(folders: [applications])
+            if run > 0 {
+                indexTimes.append(clock.now - start)
+            }
+            #expect(index.count == 300)
+        }
+
+        let firstStart = clock.now
+        let first = try await plan()
+        let firstTime = clock.now - firstStart
+        // Every zip and image is strong; the packages have no receipt and match by name.
+        #expect(first.changes.count == 130)
+        #expect(first.changes.filter(\.reason.isPossibleMatch).count == 20)
+        try await log.storeInstallerFacts(first.installerFactsRead)
+
+        var cachedTimes: [Duration] = []
+        var markTimes: [Duration] = []
+        for run in 0...Self.measuredRuns {
+            let start = clock.now
+            let again = try await plan()
+            let planned = clock.now - start
+            #expect(again.installerFactsRead.isEmpty)
+            #expect(again.changes == first.changes)
+            let marksStart = clock.now
+            let marked = await InstallerPlanner.strongMatches(among: records, in: downloads, applicationFolders: [applications], cache: log, receipts: .fixed([]))
+            let marksTime = clock.now - marksStart
+            #expect(marked.count == 110)
+            if run > 0 {
+                cachedTimes.append(planned)
+                markTimes.append(marksTime)
+            }
+        }
+
+        #if DEBUG
+        let configuration = "Debug"
+        #else
+        let configuration = "Release"
+        #endif
+        let date = Date.now.formatted(Date.ISO8601FormatStyle(timeZone: .current).year().month().day())
+        Self.report("installer setup of 300 apps, 100 zips, 20 packages and 10 disk images: \(String(format: "%.0f", Measured.milliseconds(setupTime))) ms")
+        Self.report("installed-apps index of 300 apps: \(Self.summary(indexTimes)), median (min–max) of \(Self.measuredRuns) runs")
+        Self.report("first installer search, 130 read, 10 attached: \(String(format: "%.1f", Measured.milliseconds(firstTime))) ms, one run")
+        Self.report("cached installer search, nothing attached: \(Self.summary(cachedTimes)), median (min–max) of \(Self.measuredRuns) runs")
+        Self.report("Installed marks from the cache: \(Self.summary(markTimes)), median (min–max) of \(Self.measuredRuns) runs")
+        Self.report(
+            "installer row: | \(date) | \(Self.machineModel()) | \(ProcessInfo.processInfo.operatingSystemVersionString) | \(configuration) | <commit> | \(Self.summary(indexTimes)) | \(String(format: "%.1f ms", Measured.milliseconds(firstTime))) | \(Self.summary(cachedTimes)) | \(Self.summary(markTimes)) |"
+        )
+    }
 }

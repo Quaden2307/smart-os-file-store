@@ -74,6 +74,8 @@ extension ProposedChange.Reason {
         case .failedDownload(let stoppedOn, let finishedFileName?):
             let date = stoppedOn.formatted(.dateTime.day().month(.abbreviated).year())
             return String(localized: "Download stopped on \(date) and never finished. \(finishedFileName) was next to it.")
+        case .usedInstaller(let evidence):
+            return evidence.historyDescription
         case .sameContent, .messyName, .oldDownload, .failedDownload, .unpackedZip:
             return localizedDescription
         }
@@ -96,7 +98,44 @@ extension ProposedChange.Reason {
             return String(localized: "Download stopped on \(date) and never finished. \(finishedFileName) is next to it.")
         case .unpackedZip(let unpackedTo):
             return String(localized: "Already unpacked to \(unpackedTo)")
+        case .usedInstaller(let evidence):
+            return evidence.localizedDescription
         }
+    }
+}
+
+extension UsedInstallerEvidence {
+    /// "SomeApp 2.1 is installed in /Applications", for the preview.
+    var localizedDescription: String {
+        switch (version, folderDescription) {
+        case (let version?, let folder?):
+            String(localized: "\(name) \(version) is installed in \(folder)")
+        case (nil, let folder?):
+            String(localized: "\(name) is installed in \(folder)")
+        case (let version?, nil):
+            String(localized: "\(name) \(version) is installed")
+        case (nil, nil):
+            String(localized: "\(name) is installed")
+        }
+    }
+
+    /// The same, in the past tense, for Activity.
+    var historyDescription: String {
+        switch (version, folderDescription) {
+        case (let version?, let folder?):
+            String(localized: "\(name) \(version) was installed in \(folder)")
+        case (nil, let folder?):
+            String(localized: "\(name) was installed in \(folder)")
+        case (let version?, nil):
+            String(localized: "\(name) \(version) was installed")
+        case (nil, nil):
+            String(localized: "\(name) was installed")
+        }
+    }
+
+    /// The folder the installed app is in, with `~` for the home folder.
+    private var folderDescription: String? {
+        installedAppPath.map { (($0 as NSString).deletingLastPathComponent as NSString).abbreviatingWithTildeInPath }
     }
 }
 
@@ -113,6 +152,8 @@ extension CleanupSkipReason {
         case .changedSinceScan where action == .removeUnpackedZips:
             // Starting a cleanup plans from the list as it is, so only a refresh sees the change.
             return String(localized: "It changed since the folder was listed, so it was left alone. Refresh the list (⌘R), then run Remove Unpacked Zips again.")
+        case .changedSinceScan where action == .removeUsedInstallers:
+            return String(localized: "It changed since the folder was listed, so it was left alone. Refresh the list (⌘R), then run Remove Used Installers again.")
         case .changedSinceScan:
             return String(localized: "Changed since the folder was scanned. \(runAgain)")
         case .notFound:
@@ -127,6 +168,10 @@ extension CleanupSkipReason {
             return String(localized: "Could not be read. Check that its disk is connected and try again.")
         case .zipUnlistable(let problem):
             return problem.localizedDescription
+        case .installerUnreadable(let problem):
+            return problem.localizedDescription
+        case .diskImageInUse:
+            return String(localized: "It is open (mounted), or whether it is could not be checked, so it was left alone.")
         case .keptFile:
             return String(localized: "This is the copy that is kept.")
         case .notInPlan:
@@ -147,6 +192,10 @@ extension CleanupSkipReason {
             return String(localized: "The unpacked copy, \(name), could not be confirmed to hold everything in the zip, so the zip was left alone. \(runAgain)")
         case .unpackedCopyRecentlyChanged(let name):
             return String(localized: "The unpacked copy, \(name), was added or changed in the last hour and may still be unpacking, so the zip was left alone. It can go once the copy has gone untouched for an hour.")
+        case .installedAppMissing(let name):
+            return String(localized: "\(name) is no longer installed, so the installer was left alone.")
+        case .installedAppChanged(let name):
+            return String(localized: "\(name) has changed since the check, so the installer was left alone. \(runAgain)")
         case .cancelled:
             return String(localized: "Stopped before this file was reached.")
         case .destinationExists(let name):
@@ -177,6 +226,28 @@ extension ZipListing.Problem {
             String(localized: "It holds too much to check.")
         case .unreadableNames:
             String(localized: "Its file names use an encoding this app can’t read.")
+        }
+    }
+}
+
+extension InstallerFacts.Problem {
+    /// Why an installer could not be read, in the user's words.
+    var localizedDescription: String {
+        switch self {
+        case .passwordProtected:
+            String(localized: "It asks for a password, so only its name could be compared.")
+        case .licenseAgreement:
+            String(localized: "It asks you to accept a licence, so only its name could be compared.")
+        case .timedOut:
+            String(localized: "It took too long to open, so only its name could be compared.")
+        case .couldNotOpen:
+            String(localized: "It could not be opened this time, so only its name could be compared. It is tried again next time.")
+        case .damaged:
+            String(localized: "It is damaged, or not an installer.")
+        case .tooLarge:
+            String(localized: "It holds too much to check.")
+        case .unsupported:
+            String(localized: "It uses a format this app can’t read.")
         }
     }
 }

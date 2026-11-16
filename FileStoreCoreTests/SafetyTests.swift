@@ -69,9 +69,10 @@ struct SafetyTests {
     /// A whole `openat` call, its arguments included.
     private static let openatCall = #"\bopenat\s*\((?:[^()]|\([^()]*\))*\)"#
 
-    /// The files that may ask `DiskChange` for a change: the executor's five parts, for a user's
-    /// files (the Trash for duplicates, for failed downloads and for unpacked zips, renames and
-    /// moves, and undo), and the activity log's storage, for its own folder and database.
+    /// The files that may ask `DiskChange` for a change: the executor's six parts, for a user's
+    /// files (the Trash for duplicates, for failed downloads, for unpacked zips and for used
+    /// installers, renames and moves, and undo), the activity log's storage, for its own folder and
+    /// database, and the disk image mounts, for the app's own private folder images are read in.
     private static let diskChangeCallers = [
         "FileStoreCore/ActivityLogStorage.swift",
         "FileStoreCore/CleanupExecutor+Duplicates.swift",
@@ -79,6 +80,8 @@ struct SafetyTests {
         "FileStoreCore/CleanupExecutor+Relocation.swift",
         "FileStoreCore/CleanupExecutor+Undo.swift",
         "FileStoreCore/CleanupExecutor+UnpackedZips.swift",
+        "FileStoreCore/CleanupExecutor+UsedInstallers.swift",
+        "FileStoreCore/DiskImageMounts.swift",
     ]
 
     /// Constructs that crash or bypass the type checker. Forbidden anywhere near user files.
@@ -178,7 +181,7 @@ struct SafetyTests {
             #expect(call.contains("O_NOFOLLOW"), "\(call)")
             #expect(call.contains("0o600"), "\(call)")
         }
-        // Only the executor and the log's storage ask for a change at all.
+        // Only the executor, the log's storage and the disk image mounts ask for a change at all.
         let diskChangeUse = try Self.regex(#"\bDiskChange\s*\."#)
         let users = (engine + app).filter { $0.contains(diskChangeUse) }.map(\.label)
         #expect(users == Self.diskChangeCallers)
@@ -293,11 +296,11 @@ struct SafetyTests {
             var proposed: [CleanupAction: Int] = [:]
             for action in PlannersRespectKeptTests.plannedActions {
                 let plan = try #require(
-                    try await CleanupPlanners.plan(action, records: records, in: fixture.url, eligibility: CandidateEligibility(), keptItems: KeptItems())
+                    try await CleanupPlanners.plan(action, records: records, in: fixture.url, eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: .testing(applications: [fixture.applicationsURL]))
                 )
                 proposed[action] = plan.changes.count
             }
-            #expect(proposed == [.findDuplicates: 6, .clearFailedDownloads: 3, .removeUnpackedZips: 2])
+            #expect(proposed == [.findDuplicates: 6, .clearFailedDownloads: 3, .removeUnpackedZips: 2, .removeUsedInstallers: 2])
 
             let after = try Self.snapshot(of: fixture.url)
             #expect(after == before)

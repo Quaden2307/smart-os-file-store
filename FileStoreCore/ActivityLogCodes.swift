@@ -111,6 +111,8 @@ extension ProposedChange.Reason {
             ActivityLogCode(code: "failedDownload", detail: finishedFileName)
         case .unpackedZip(let unpackedTo):
             ActivityLogCode(code: "unpackedZip", detail: unpackedTo)
+        case .usedInstaller(let evidence):
+            ActivityLogCode(code: "usedInstaller", detail: evidence.logDetail)
         }
     }
 
@@ -135,9 +137,53 @@ extension ProposedChange.Reason {
                 return nil
             }
             self = .unpackedZip(unpackedTo: unpackedTo)
+        case "usedInstaller":
+            guard let evidence = logCode.detail.flatMap(UsedInstallerEvidence.init(logDetail:)) else {
+                return nil
+            }
+            self = .usedInstaller(evidence)
         default:
             return nil
         }
+    }
+}
+
+extension UsedInstallerEvidence {
+    /// The detail a `usedInstaller` reason stores: JSON with written-out keys, which a later
+    /// version reads the same way. An unknown shape reads as an unknown reason.
+    var logDetail: String {
+        var object: [String: Any] = [
+            "strength": strength == .strong ? "strong" : "possible",
+            "name": name,
+            "receipts": receiptIdentifiers,
+            "others": otherMatches,
+        ]
+        object["version"] = version
+        object["app"] = installedAppPath
+        object["bundle"] = bundleIdentifier
+        guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) else {
+            return ""
+        }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    init?(logDetail: String) {
+        guard let object = (try? JSONSerialization.jsonObject(with: Data(logDetail.utf8))) as? [String: Any],
+              let strength = object["strength"] as? String, strength == "strong" || strength == "possible",
+              let name = object["name"] as? String,
+              let receipts = object["receipts"] as? [String],
+              let others = object["others"] as? Int else {
+            return nil
+        }
+        self.init(
+            strength: strength == "strong" ? .strong : .possible,
+            name: name,
+            version: object["version"] as? String,
+            installedAppPath: object["app"] as? String,
+            bundleIdentifier: object["bundle"] as? String,
+            receiptIdentifiers: receipts,
+            otherMatches: others
+        )
     }
 }
 
@@ -158,6 +204,10 @@ extension CleanupSkipReason {
             ActivityLogCode(code: "unreadable", detail: reason)
         case .zipUnlistable(let problem):
             ActivityLogCode(code: "zipUnlistable", detail: problem.logCode)
+        case .installerUnreadable(let problem):
+            ActivityLogCode(code: "installerUnreadable", detail: problem.rawValue)
+        case .diskImageInUse:
+            ActivityLogCode(code: "diskImageInUse")
         case .keptFile:
             ActivityLogCode(code: "keptFile")
         case .notInPlan:
@@ -178,6 +228,10 @@ extension CleanupSkipReason {
             ActivityLogCode(code: "unpackedCopyNotVerified", detail: name)
         case .unpackedCopyRecentlyChanged(let name):
             ActivityLogCode(code: "unpackedCopyRecentlyChanged", detail: name)
+        case .installedAppMissing(let name):
+            ActivityLogCode(code: "installedAppMissing", detail: name)
+        case .installedAppChanged(let name):
+            ActivityLogCode(code: "installedAppChanged", detail: name)
         case .cancelled:
             ActivityLogCode(code: "cancelled")
         case .destinationExists(let name):
@@ -215,6 +269,13 @@ extension CleanupSkipReason {
                 return nil
             }
             self = .zipUnlistable(problem)
+        case "installerUnreadable":
+            guard let problem = InstallerFacts.Problem(rawValue: detail) else {
+                return nil
+            }
+            self = .installerUnreadable(problem)
+        case "diskImageInUse":
+            self = .diskImageInUse
         case "keptFile":
             self = .keptFile
         case "notInPlan":
@@ -235,6 +296,10 @@ extension CleanupSkipReason {
             self = .unpackedCopyNotVerified(name: detail)
         case "unpackedCopyRecentlyChanged":
             self = .unpackedCopyRecentlyChanged(name: detail)
+        case "installedAppMissing":
+            self = .installedAppMissing(name: detail)
+        case "installedAppChanged":
+            self = .installedAppChanged(name: detail)
         case "cancelled":
             self = .cancelled
         case "destinationExists":

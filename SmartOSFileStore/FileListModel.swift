@@ -38,6 +38,16 @@ final class FileListModel {
     /// The Kept list as last read from the activity log. Empty until the log has been read.
     private(set) var keptItems = KeptItems()
 
+    /// The installers marked Installed: strong matches by the facts the activity log holds for them.
+    /// Drawing the list reads no installer, so one not checked yet has no mark.
+    private(set) var installedIDs: Set<FileRecord.ID> = []
+
+    /// Where installed apps are looked for: `/Applications` and `~/Applications`, or in a debug
+    /// build the folder given with `-ApplicationsFolder`.
+    let applicationFolders: [URL]
+
+    private var installedTask: Task<Void, Never>?
+
     /// Items the last scan saw but could not read.
     private(set) var skippedItems: [FolderScanResult.SkippedItem] = []
 
@@ -115,6 +125,7 @@ final class FileListModel {
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) {
         eligibility = CandidateEligibility.resolve(arguments: arguments)
+        applicationFolders = ApplicationFolders.resolve(arguments: arguments)
         do throws(ScanLocationError) {
             location = try ScanLocation.resolve(arguments: arguments, environment: environment)
         } catch {
@@ -149,11 +160,18 @@ final class FileListModel {
         let settings = CleanupSettings.load(from: UserDefaults.standard)
         let keptItems = keptItems
         let eligibility = eligibility.keeping(keptItems)
+        let installedIDs = installedIDs
         scanTask = Task {
             let outcome: Result<ScanOutcome, FolderScanError>
             do throws(FolderScanError) {
                 let result = try await scanner.scan(location)
-                let marksByID = await Self.marks(for: result.records, now: result.scannedAt, settings: settings, eligibility: eligibility)
+                let marksByID = await Self.marks(
+                    for: result.records,
+                    now: result.scannedAt,
+                    settings: settings,
+                    eligibility: eligibility,
+                    installedIDs: installedIDs
+                )
                 outcome = .success(ScanOutcome(result: result, settings: settings, keptItems: keptItems, marksByID: marksByID))
             } catch {
                 outcome = .failure(error)
@@ -163,7 +181,31 @@ final class FileListModel {
             apply(outcome)
             if case .success = outcome {
                 reloadKeptItems()
+                reloadInstalledMarks()
             }
+        }
+    }
+
+    // MARK: - Installed
+
+    /// Works out the Installed marks again from the facts the activity log holds: after a scan, and
+    /// after Remove Used Installers has read installers.
+    func reloadInstalledMarks() {
+        guard let log = activity?.log, let folderURL = location?.folderURL else { return }
+        installedTask?.cancel()
+        let records = records
+        let applicationFolders = applicationFolders
+        installedTask = Task {
+            let ids = await InstallerPlanner.strongMatches(
+                among: records,
+                in: folderURL,
+                applicationFolders: applicationFolders,
+                cache: log,
+                receipts: .system
+            )
+            guard !Task.isCancelled, ids != installedIDs else { return }
+            installedIDs = ids
+            remark()
         }
     }
 
@@ -264,8 +306,15 @@ final class FileListModel {
         marksTask?.cancel()
         let records = records
         let eligibility = eligibility.keeping(keptItems)
+        let installedIDs = installedIDs
         marksTask = Task {
-            let marksByID = await Self.marks(for: records, now: markInputs.now, settings: markInputs.settings, eligibility: eligibility)
+            let marksByID = await Self.marks(
+                for: records,
+                now: markInputs.now,
+                settings: markInputs.settings,
+                eligibility: eligibility,
+                installedIDs: installedIDs
+            )
             guard !Task.isCancelled else { return }
             self.marksByID = marksByID
             refilter()
@@ -357,11 +406,18 @@ final class FileListModel {
         for records: [FileRecord],
         now: Date,
         settings: CleanupSettings,
-        eligibility: CandidateEligibility
+        eligibility: CandidateEligibility,
+        installedIDs: Set<FileRecord.ID>
     ) async -> [FileRecord.ID: [FileMark]] {
         var marksByID: [FileRecord.ID: [FileMark]] = [:]
         for record in records {
-            let marks = FileMarker.marks(for: record, now: now, settings: settings, eligibility: eligibility)
+            let marks = FileMarker.marks(
+                for: record,
+                now: now,
+                settings: settings,
+                eligibility: eligibility,
+                isInstalled: installedIDs.contains(record.id)
+            )
             if !marks.isEmpty {
                 marksByID[record.id] = marks
             }

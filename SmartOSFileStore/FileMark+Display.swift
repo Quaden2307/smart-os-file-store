@@ -9,6 +9,8 @@ extension FileMark {
             String(localized: "Kept")
         case .failedDownload:
             String(localized: "Failed download")
+        case .installed:
+            String(localized: "Installed")
         case .neverOpened:
             String(localized: "Never opened")
         case .unused:
@@ -25,6 +27,8 @@ extension FileMark {
             String(localized: "No files are marked Kept.")
         case .failedDownload:
             String(localized: "No failed downloads.")
+        case .installed:
+            String(localized: "No installer checked so far is for an installed app. Clean Up > Remove Used Installers checks them.")
         case .neverOpened:
             String(localized: "No files are marked Never opened.")
         case .unused:

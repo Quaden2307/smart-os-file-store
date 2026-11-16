@@ -17,9 +17,12 @@ public enum CleanupPlanners {
     ///   - eligibility: The rules every action shares.
     ///   - keptItems: The Kept list as just read from the activity log. It is not optional: a plan
     ///     made without the list could propose a Kept file.
+    ///   - installers: What Remove Used Installers reads besides the folder: the application folders,
+    ///     the facts cache, the mount folder and the receipts. The other actions read none of it. It
+    ///     is not optional either: a default would read the real Applications folder from a test.
     ///   - onProgress: Called from planning threads while files are read, quickly and not too often.
     ///     Only an action that reads files reports any: Find Duplicates the files it hashes and their
-    ///     bytes, Remove Unpacked Zips the zips it checks.
+    ///     bytes, Remove Unpacked Zips the zips it checks, Remove Used Installers the installers.
     /// - Returns: The plan, or nil while the action has no planner yet.
     /// - Throws: `.cancelled` when the task is cancelled.
     @concurrent
@@ -29,6 +32,7 @@ public enum CleanupPlanners {
         in folderURL: URL,
         eligibility: CandidateEligibility,
         keptItems: KeptItems,
+        installers: InstallerSources,
         now: Date = .now,
         onProgress: (@Sendable (CleanupPlanningProgress) -> Void)? = nil
     ) async throws(CleanupPlanningError) -> CleanupPlan? {
@@ -56,6 +60,9 @@ public enum CleanupPlanners {
         case .unpackedZips:
             return try await UnpackedZipPlanner(eligibility: eligibility)
                 .plan(records: records, in: folderURL, now: now, onProgress: onProgress)
+        case .usedInstallers:
+            return try await InstallerPlanner(eligibility: eligibility)
+                .plan(records: records, in: folderURL, sources: installers, now: now, onProgress: onProgress)
         }
     }
 
@@ -70,6 +77,7 @@ public enum CleanupPlanners {
         case duplicates
         case failedDownloads
         case unpackedZips
+        case usedInstallers
     }
 
     /// Each action's planner, in one list that both `plan` and `hasPlanner` read. Nil while the
@@ -82,6 +90,8 @@ public enum CleanupPlanners {
             .failedDownloads
         case .removeUnpackedZips:
             .unpackedZips
+        case .removeUsedInstallers:
+            .usedInstallers
         case .fixMessyNames, .archiveOldDownloads:
             nil
         }

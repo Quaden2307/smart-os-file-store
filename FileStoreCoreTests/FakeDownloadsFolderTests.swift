@@ -190,7 +190,9 @@ struct FakeDownloadsFolderTests {
             #expect(data.count > 512)
             #expect(data.suffix(512).prefix(4) == Data("koly".utf8))
             let listed = Set(try await records(fixture).map(\.displayName))
-            #expect(listed == FakeDownloadsFolder.expectedTopLevelNames.union([Names.diskImage]))
+            #expect(listed == FakeDownloadsFolder.expectedTopLevelNames.union([Names.diskImage, Names.encryptedImage]))
+            // The encrypted image starts as an encrypted image does, so it is never attached.
+            #expect(try Data(contentsOf: fixture.url(for: Names.encryptedImage)).prefix(8) == Data("encrcdsa".utf8))
 
             let info = fixture.applicationsURL.appending(path: "\(Names.diskImageApp)/Contents/Info.plist")
             let plist = try #require(
@@ -205,8 +207,9 @@ struct FakeDownloadsFolderTests {
     @Test func diskImageIsLeftOutByDefault() async throws {
         try await withFakeDownloadsFolder { fixture in
             #expect(!FileManager.default.fileExists(atPath: fixture.url(for: Names.diskImage).path(percentEncoded: false)))
+            #expect(!FileManager.default.fileExists(atPath: fixture.url(for: Names.encryptedImage).path(percentEncoded: false)))
             let installed = try contents(of: fixture.applicationsURL)
-            #expect(installed == [Names.diskImageApp])
+            #expect(Set(installed) == FakeDownloadsFolder.installedApps)
         }
     }
 }

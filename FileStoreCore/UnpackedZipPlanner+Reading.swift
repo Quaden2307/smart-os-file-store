@@ -29,7 +29,7 @@ extension UnpackedZipPlanner {
         let inside = DuplicatePlanner.recordsDirectlyInside(folderURL, among: records)
         let zips = candidates(in: inside, now: now).sorted { Self.isOrderedBefore($0.displayName, $1.displayName) }
         let copyNames = Self.unpackedCopies(in: inside).map(\.displayName)
-        var progress = ZipCheckProgress(total: zips.count, onProgress: onProgress)
+        var progress = ItemCheckProgress(total: zips.count, onProgress: onProgress)
         progress.report(checked: 0)
         guard !zips.isEmpty else {
             return Self.makePlan(folderURL: folderURL, findings: [])
@@ -162,32 +162,6 @@ extension UnpackedZipPlanner {
         if Task.isCancelled {
             throw .cancelled
         }
-    }
-}
-
-/// Reports the zips checked of the total: always the first and the last report, and in between at
-/// most one every 100 ms.
-private struct ZipCheckProgress {
-    static let minimumInterval: Duration = .milliseconds(100)
-
-    let total: Int
-    let onProgress: (@Sendable (CleanupPlanningProgress) -> Void)?
-    private let clock = ContinuousClock()
-    private var lastReport: ContinuousClock.Instant?
-
-    init(total: Int, onProgress: (@Sendable (CleanupPlanningProgress) -> Void)?) {
-        self.total = total
-        self.onProgress = onProgress
-    }
-
-    mutating func report(checked: Int) {
-        guard let onProgress else { return }
-        let now = clock.now
-        if checked < total, let lastReport, now - lastReport < Self.minimumInterval {
-            return
-        }
-        lastReport = now
-        onProgress(CleanupPlanningProgress(itemsChecked: checked, itemsToCheck: total))
     }
 }
 

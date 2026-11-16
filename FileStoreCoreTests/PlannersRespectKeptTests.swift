@@ -8,10 +8,23 @@ import Testing
 struct PlannersRespectKeptTests {
     /// The actions with a planner today, in declaration order. A new one must be added here too, so
     /// that this test is seen to cover it, and it must find something to propose in the fake folder.
-    static let plannedActions: [CleanupAction] = [.findDuplicates, .clearFailedDownloads, .removeUnpackedZips]
+    static let plannedActions: [CleanupAction] = [.findDuplicates, .clearFailedDownloads, .removeUnpackedZips, .removeUsedInstallers]
 
-    private func plan(_ action: CleanupAction, _ records: [FileRecord], in folder: URL, keeping keptItems: KeptItems) async throws -> CleanupPlan? {
-        try await CleanupPlanners.plan(action, records: records, in: folder, eligibility: CandidateEligibility(), keptItems: keptItems)
+    private func plan(
+        _ action: CleanupAction,
+        _ records: [FileRecord],
+        in folder: URL,
+        keeping keptItems: KeptItems,
+        applications: [URL] = []
+    ) async throws -> CleanupPlan? {
+        try await CleanupPlanners.plan(
+            action,
+            records: records,
+            in: folder,
+            eligibility: CandidateEligibility(),
+            keptItems: keptItems,
+            installers: .testing(applications: applications)
+        )
     }
 
     /// The records a plan names as changing or as unchecked. A group's kept copy is neither: a Kept
@@ -38,20 +51,21 @@ struct PlannersRespectKeptTests {
             let log = try await ActivityLog.open(.inMemory)
 
             // Without Kept the planner has something to propose, or this test would prove nothing.
-            let unkept = try #require(try await plan(action, records, in: fixture.url, keeping: KeptItems()))
+            let applications = [fixture.applicationsURL]
+            let unkept = try #require(try await plan(action, records, in: fixture.url, keeping: KeptItems(), applications: applications))
             let proposed = named(in: unkept, among: records)
             #expect(!unkept.changes.isEmpty)
 
             // Everything it proposed is now Kept: none of it may be named again.
             try await log.keep(proposed)
             let keptProposed = try await log.keptItems(forFolder: fixture.url)
-            let again = try #require(try await plan(action, records, in: fixture.url, keeping: keptProposed))
+            let again = try #require(try await plan(action, records, in: fixture.url, keeping: keptProposed, applications: applications))
             #expect(named(in: again, among: records).filter(keptProposed.contains).isEmpty)
 
             // Everything is Kept: nothing is proposed or named at all.
             try await log.keep(records)
             let all = try await log.keptItems(forFolder: fixture.url)
-            let none = try #require(try await plan(action, records, in: fixture.url, keeping: all))
+            let none = try #require(try await plan(action, records, in: fixture.url, keeping: all, applications: applications))
             #expect(none.isEmpty)
             #expect(named(in: none, among: records).isEmpty)
         }

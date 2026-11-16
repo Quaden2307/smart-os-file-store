@@ -36,6 +36,8 @@ extension CleanupAction {
             CleanupActionDefinition(identifier: "clearFailedDownloads", operation: .moveToTrash)
         case .removeUnpackedZips:
             CleanupActionDefinition(identifier: "removeUnpackedZips", operation: .moveToTrash)
+        case .removeUsedInstallers:
+            CleanupActionDefinition(identifier: "removeUsedInstallers", operation: .moveToTrash)
         case .fixMessyNames:
             CleanupActionDefinition(identifier: "fixMessyNames", operation: .rename)
         case .archiveOldDownloads:

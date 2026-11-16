@@ -195,7 +195,7 @@ struct UnpackedZipDiskTests {
             try FileManager.default.moveItem(at: again, to: project)
 
             let plan = try #require(
-                try await CleanupPlanners.plan(.removeUnpackedZips, records: records, in: folder, eligibility: CandidateEligibility(), keptItems: KeptItems())
+                try await CleanupPlanners.plan(.removeUnpackedZips, records: records, in: folder, eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: .testing())
             )
 
             #expect(UnpackedZips.proposals(plan) == ["\(UnpackedZips.contractZip) → \(UnpackedZips.contract)"])

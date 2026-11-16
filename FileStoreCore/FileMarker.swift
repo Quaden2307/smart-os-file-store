@@ -9,6 +9,8 @@ public enum FileMarker {
     ///   included, so this mark comes before every rule below.
     /// - Failed download: Clear Failed Downloads would propose it (`FailedDownloadPlanner.isCandidate`),
     ///   which a Kept item never is.
+    /// - Installed: `isInstalled`, which the caller works out from the facts cached for it
+    ///   (`InstallerPlanner.strongMatches`).
     /// - Never opened: no last-opened date, and added more than `settings.unusedAfter` ago.
     /// - Unused: last opened more than `settings.unusedAfter` ago.
     /// - Old: added more than `settings.oldAfter` ago, opened or not, so it can join either of the two.
@@ -23,12 +25,16 @@ public enum FileMarker {
         for record: FileRecord,
         now: Date,
         settings: CleanupSettings,
-        eligibility: CandidateEligibility = CandidateEligibility()
+        eligibility: CandidateEligibility = CandidateEligibility(),
+        isInstalled: Bool = false
     ) -> [FileMark] {
         var marks: [FileMark] = eligibility.keptItems.contains(record) ? [.kept] : []
         // Only a download in progress can be a failed one; the flag spares every other item the check.
         if record.isDownloading, FailedDownloadPlanner(eligibility: eligibility).isCandidate(record, now: now) {
             marks.append(.failedDownload)
+        }
+        if isInstalled {
+            marks.append(.installed)
         }
         guard record.recordsLastOpened,
               !CandidateEligibility.isExcludedName(record.displayName),

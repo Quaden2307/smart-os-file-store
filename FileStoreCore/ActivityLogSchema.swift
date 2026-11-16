@@ -21,6 +21,11 @@ internal import GRDB
 /// proves by its disk ID and contents rather than its size and date (decision record 0010). Every
 /// row written before it describes a regular file, since no action could change anything else.
 ///
+/// `v5` adds `installerFacts`: what Remove Used Installers read from each installer, as JSON, keyed
+/// like `keptItems` by identity or path, with the size, modification date and status-change time it
+/// was read at, so a second scan reads nothing again (decision record 0013). No link to `runs`;
+/// `pruneIfDue` removes rows read more than the retention period ago.
+///
 /// Every time is a `Date.timeIntervalSinceReferenceDate`, the number a `Date` itself holds, so a
 /// modification date read back is bit for bit the one the scan saw. Paths are stored as text;
 /// file content never is.
@@ -118,6 +123,26 @@ enum ActivityLogSchema {
         migrator.registerMigration("v4") { db in
             try db.execute(sql: """
                 ALTER TABLE changes ADD COLUMN isFolder INTEGER NOT NULL DEFAULT 0 CHECK (isFolder IN (0, 1));
+                """)
+        }
+        migrator.registerMigration("v5") { db in
+            try db.execute(sql: """
+                CREATE TABLE installerFacts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    volumeUUID TEXT,
+                    fileNumber INTEGER,
+                    path TEXT NOT NULL,
+                    sizeInBytes INTEGER NOT NULL,
+                    dateModified REAL NOT NULL,
+                    statusChanged REAL NOT NULL,
+                    readerVersion INTEGER NOT NULL,
+                    facts TEXT NOT NULL,
+                    readAt REAL NOT NULL,
+                    CHECK ((volumeUUID IS NULL) = (fileNumber IS NULL))
+                ) STRICT;
+
+                CREATE UNIQUE INDEX installerFacts_identity ON installerFacts (volumeUUID, fileNumber) WHERE volumeUUID IS NOT NULL;
+                CREATE UNIQUE INDEX installerFacts_path ON installerFacts (path) WHERE volumeUUID IS NULL;
                 """)
         }
         return migrator

@@ -43,6 +43,8 @@ extension ActivityLog {
             // The changes go with their run (ON DELETE CASCADE).
             try db.execute(sql: "DELETE FROM runs WHERE startedAt < ?", arguments: [moment - Self.retention])
             let removed = db.changesCount
+            // Facts read that long ago are read again when the installer is next checked.
+            try db.execute(sql: "DELETE FROM installerFacts WHERE readAt < ?", arguments: [moment - Self.retention])
             try db.execute(sql: "UPDATE maintenance SET lastPrunedAt = ? WHERE id = 1", arguments: [moment])
             return removed
         }

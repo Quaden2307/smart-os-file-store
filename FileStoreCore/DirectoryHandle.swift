@@ -5,7 +5,11 @@ import Darwin
 /// ever opened directly, never through a symbolic link. The executor checks and moves items through
 /// these, so a link swapped into a path cannot send a rename anywhere else. Opening and reading
 /// only; `DiskChange` makes the changes.
-final class DirectoryHandle {
+///
+/// Sendable: it holds one descriptor that never changes, and the calls made with it (`openat`,
+/// `fstatat`, `getattrlistat`, and a listing through a descriptor of its own) are safe from any
+/// thread, so planners may read several items at once.
+final class DirectoryHandle: Sendable {
     enum OpenFailure: Error, Sendable, Hashable {
         case notFound
         /// A symbolic link sits at the name. It is never followed.

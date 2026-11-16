@@ -28,6 +28,22 @@ A commit cannot record its own hash, so a row made before its commit names the c
 
 Reading the three attributes adds about 0.6 s per 10,000 items, about 60 µs per item. The scan runs off the main actor, so the window stays responsive while it does. After a scan of 10,000 files, the main actor does about 25 ms of work: the keyed sort plus filtering. Peak memory grew by about 30 MiB from the first row. The likely reasons are that records now hold their download sources, and that each run now keeps two scans and two sorted copies alive at once.
 
+## Installer scan
+
+`BenchmarkTests.installerScanAtThreeHundredApps` builds a fake Applications folder of 300 apps and a folder of 130 installers: 100 app zips (ditto), 20 packages (`pkgbuild`, no receipt, so possible matches by name) and 10 disk images. Every zip and image holds an installed app at the same version.
+
+- **Index:** reading the 300 apps' `Info.plist` files (`InstalledApps.read`).
+- **First search:** Remove Used Installers with an empty cache: every installer read, the 10 images checked, mounted and ejected, two at a time. One run, since a second would find everything cached.
+- **Cached search:** the same search with what the first one read stored in the activity log: nothing attached, nothing read but the zips' listings of those that are not installers (none here).
+- **Marks:** the Installed marks from the cache (`InstallerPlanner.strongMatches`), as the file list works them out after a scan.
+- **Times:** the median of five runs after one warm-up, minimum and maximum in brackets, except the first search.
+
+| Date | Mac | macOS | Build | Commit | Index of 300 apps | First search, 130 installers | Cached search | Marks |
+|---|---|---|---|---|---|---|---|---|
+| 2026-11-15 | MacBook Pro 13-inch, M1, 2020 (MacBookPro17,1), 8 GB | 27.2.1 (26B131) | Release | `113086a` + this segment (committed as *Add Remove Used Installers*) | 13.8 ms (13.3–14.5) | 4,709.9 ms | 40.9 ms (40.1–41.2) | 27.3 ms (26.4–27.5) |
+
+The first search costs about 0.45 s per disk image, two at a time, for the checker, the mount and the eject; zips and packages take about a millisecond each. Once read, a search of 130 installers takes about 40 ms, so a second search never waits on a disk image.
+
 ## Activity log size
 
 `FileStoreCoreTests/ScaleTests.swift` (`tenThousandLoggedChangesStayUnderTenMegabytes`) writes 10,000 changes to a log in a temporary folder the way the executor writes them: a started row, then its result, each in its own transaction handed to the disk (write-ahead mode, `synchronous = FULL`). Every change is a move to the Trash with paths as long as real downloads have and a 32-byte content hash. The test fails if the database, its write-ahead file included, reaches 10 MB at any point; it runs with the normal tests and reports its figures in a `SCALE` line.

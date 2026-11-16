@@ -7,8 +7,9 @@ import os
 /// user's disk. Nothing is ever deleted permanently and nothing is ever overwritten. A plan may
 /// only use the operation its action allows (`CleanupAction.allows`), and each item is checked
 /// again right before it changes, by its action's and operation's rules: the duplicate checks
-/// (`CleanupExecutor+Duplicates`), the failed-download checks (`CleanupExecutor+FailedDownloads`)
-/// and the unpacked-zip checks (`CleanupExecutor+UnpackedZips`) for the Trash, the relocation checks
+/// (`CleanupExecutor+Duplicates`), the failed-download checks (`CleanupExecutor+FailedDownloads`),
+/// the unpacked-zip checks (`CleanupExecutor+UnpackedZips`) and the used-installer checks
+/// (`CleanupExecutor+UsedInstallers`) for the Trash, the relocation checks
 /// for renames and moves (`CleanupExecutor+Relocation`). Items succeed, are skipped or fail one by
 /// one; the executor never throws.
 ///
@@ -29,16 +30,27 @@ public struct CleanupExecutor: Sendable {
     /// Where every run is written down: the activity log.
     public let recorder: any CleanupRecording
 
+    /// Where installed apps are, for Remove Used Installers: an installer's app must still be in one
+    /// of them. The executor's own, never the plan's. None means no installer is ever moved.
+    public let applicationFolders: [URL]
+
+    /// Where package receipts come from, for a package matched by its receipts alone.
+    public let receipts: InstallReceipts
+
     static let logger = Logger(subsystem: "com.quaden2307.FileStoreCore", category: "CleanupExecutor")
 
     public init(
         recorder: any CleanupRecording,
         hasher: ContentHasher = ContentHasher(),
-        eligibility: CandidateEligibility = CandidateEligibility()
+        eligibility: CandidateEligibility = CandidateEligibility(),
+        applicationFolders: [URL] = [],
+        receipts: InstallReceipts = .system
     ) {
         self.recorder = recorder
         self.hasher = hasher
         self.eligibility = eligibility
+        self.applicationFolders = applicationFolders
+        self.receipts = receipts
     }
 
     /// Carries out the confirmed changes of `plan`, in plan order.
@@ -211,6 +223,20 @@ public struct CleanupExecutor: Sendable {
                     return CleanupItemResult(change: change, outcome: .skipped(.folderUnavailable))
                 }
                 let outcome = trashUnpackedZip(
+                    change,
+                    folder: folder,
+                    context: context,
+                    folderIdentity: folderIdentity,
+                    now: now,
+                    journal: &journal,
+                    beforeChange: beforeChange
+                )
+                return CleanupItemResult(change: change, outcome: outcome)
+            case .removeUsedInstallers:
+                guard let folder else {
+                    return CleanupItemResult(change: change, outcome: .skipped(.folderUnavailable))
+                }
+                let outcome = await trashUsedInstaller(
                     change,
                     folder: folder,
                     context: context,
@@ -509,6 +535,10 @@ extension CleanupSkipReason {
             "unreadable: \(reason)"
         case .zipUnlistable(let problem):
             "zip not listed: \(problem.logCode)"
+        case .installerUnreadable(let problem):
+            "installer not read: \(problem.rawValue)"
+        case .diskImageInUse:
+            "disk image in use"
         case .keptFile:
             "is a kept file"
         case .notInPlan:
@@ -529,6 +559,10 @@ extension CleanupSkipReason {
             "unpacked copy not verified"
         case .unpackedCopyRecentlyChanged:
             "unpacked copy changed recently"
+        case .installedAppMissing:
+            "installed app missing"
+        case .installedAppChanged:
+            "installed app changed"
         case .cancelled:
             "cancelled"
         case .destinationExists:

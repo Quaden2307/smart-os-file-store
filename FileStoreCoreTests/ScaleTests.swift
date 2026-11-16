@@ -216,7 +216,7 @@ struct ScaleTests {
 
         let planStart = clock.now
         let plan = try #require(
-            try await CleanupPlanners.plan(.removeUnpackedZips, records: records, in: temp.url, eligibility: CandidateEligibility(), keptItems: KeptItems())
+            try await CleanupPlanners.plan(.removeUnpackedZips, records: records, in: temp.url, eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: .testing())
         )
         let planTime = clock.now - planStart
         let after = try #require(physicalFootprintInBytes())

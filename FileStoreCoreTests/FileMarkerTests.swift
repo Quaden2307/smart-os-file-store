@@ -42,6 +42,17 @@ struct FileMarkerTests {
         FileMarker.marks(for: record, now: Self.now, settings: settings ?? self.settings)
     }
 
+    // MARK: - Installed
+
+    /// The caller works out whether an installer is a strong match from what the cache holds; the
+    /// mark takes its place after Failed download and before the age marks.
+    @Test func anInstallerTheCallerFoundInstalledIsMarkedSoInOrder() {
+        let installer = record("SomeApp-2.1.dmg", contentType: UTType(filenameExtension: "dmg"), added: Self.now - 100 * Self.day)
+        #expect(FileMarker.marks(for: installer, now: Self.now, settings: settings, isInstalled: true) == [.installed, .neverOpened, .old])
+        #expect(FileMarker.marks(for: installer, now: Self.now, settings: settings) == [.neverOpened, .old])
+        #expect(FileMark.allCases == [.kept, .failedDownload, .installed, .neverOpened, .unused, .old])
+    }
+
     // MARK: - Thresholds
 
     @Test func neverOpenedAfterMoreThanThirtyDays() {

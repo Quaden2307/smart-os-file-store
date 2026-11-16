@@ -1,7 +1,8 @@
 import Darwin
 
 /// A zip open for reading, held by descriptor. It is read with `pread` alone, so no file position
-/// is shared or moved, and nothing here can change the file. The descriptor closes with it.
+/// is shared or moved, and nothing here can change the file. The descriptor closes with it. The
+/// installer readers read packages and `Info.plist` files through it too.
 final class ZipArchiveFile: ZipByteSource {
     /// Read only: never for writing, never through a link at the name, and never waiting on a pipe
     /// put at the name after it was looked at.

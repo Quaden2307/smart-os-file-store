@@ -110,7 +110,18 @@ struct ChangeRow: View {
             HStack(spacing: 8) {
                 FileIconView(record: change.record)
                 VStack(alignment: .leading, spacing: 1) {
-                    names
+                    HStack(spacing: 6) {
+                        names
+                        if change.reason.isPossibleMatch {
+                            // Left unticked: only the name matches, so the user decides.
+                            Text("Possible match")
+                                .font(.caption.weight(.semibold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .foregroundStyle(.secondary)
+                                .background(.quaternary, in: Capsule())
+                        }
+                    }
                     // Two lines, so a reason's second sentence ("movie.mp4 is next to it.") shows.
                     Text(change.reason.localizedDescription)
                         .font(.caption)

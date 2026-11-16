@@ -358,7 +358,8 @@ struct ActivityLogRecordingTests {
             .zipUnlistable(.nameTooLong), .zipUnlistable(.unreadableNames),
             .unpackedCopyMissing(name: "project – ✓"), .unpackedCopyNotVerified(name: "contract.docx"),
             .unpackedCopyRecentlyChanged(name: "photos 2"),
-        ]
+            .diskImageInUse, .installedAppMissing(name: "Some App – ✓"), .installedAppChanged(name: "SomeApp"),
+        ] + InstallerFacts.Problem.allCases.map(CleanupSkipReason.installerUnreadable)
         let failures: [CleanupExecutionError] = [
             .fileIsLocked, .accessDenied, .volumeReadOnly, .trashUnavailable, .renameUnsupported,
             .other(domain: "NSCocoaErrorDomain", code: 513, description: "You don’t have permission."),
@@ -380,6 +381,35 @@ struct ActivityLogRecordingTests {
             LogSamples.trashed(
                 ProposedChange(record: LogSamples.record(named: "project.zip"), operation: .moveToTrash, reason: .unpackedZip(unpackedTo: "project 2"))
             ),
+            // Every value the evidence carries, with a name and path that JSON must escape.
+            LogSamples.trashed(
+                ProposedChange(
+                    record: LogSamples.record(named: "SomeApp-2.1.dmg"),
+                    operation: .moveToTrash,
+                    reason: .usedInstaller(UsedInstallerEvidence(
+                        strength: .strong,
+                        name: "Some \"App\" – ✓",
+                        version: "2.1",
+                        installedAppPath: "/Applications/Some \"App\" – ✓.app",
+                        bundleIdentifier: "com.example.SomeApp",
+                        otherMatches: 1
+                    ))
+                )
+            ),
+            LogSamples.trashed(
+                ProposedChange(
+                    record: LogSamples.record(named: "Driver.pkg"),
+                    operation: .moveToTrash,
+                    reason: .usedInstaller(UsedInstallerEvidence(
+                        strength: .possible,
+                        name: "com.example.driver.pkg",
+                        version: nil,
+                        installedAppPath: nil,
+                        bundleIdentifier: nil,
+                        receiptIdentifiers: ["com.example.driver.pkg", "com.example.helper.pkg"]
+                    ))
+                )
+            ),
         ]
         var items = done
         items += skips.enumerated().map { index, reason in
@@ -398,12 +428,12 @@ struct ActivityLogRecordingTests {
         let changes = try await log.changes(inRun: runID)
 
         #expect(changes.count == items.count)
-        let expectedOutcomes: [ActivityChange.Outcome] = [.trashed, .trashed, .renamed, .moved, .trashed]
+        let expectedOutcomes: [ActivityChange.Outcome] = [.trashed, .trashed, .renamed, .moved, .trashed, .trashed, .trashed]
             + skips.map { .skipped($0) }
             + failures.map { .failed($0) }
         #expect(changes.map(\.outcome) == expectedOutcomes)
         #expect(changes.map(\.reason) == items.map { Optional($0.change.reason) })
-        let expectedOperations: [ActivityChange.Operation?] = [.moveToTrash, .moveToTrash, .rename, .move, .moveToTrash]
+        let expectedOperations: [ActivityChange.Operation?] = [.moveToTrash, .moveToTrash, .rename, .move, .moveToTrash, .moveToTrash, .moveToTrash]
             + Array(repeating: .moveToTrash, count: skips.count + failures.count)
         #expect(changes.map(\.operation) == expectedOperations)
         #expect(changes.map(\.originalPath) == items.map(\.change.originalPath))

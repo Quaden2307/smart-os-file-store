@@ -23,6 +23,11 @@ struct CleanupProgressView: View {
                 Text("Checked \(progress.itemsChecked) of ^[\(progress.itemsToCheck) zip](inflect: true)")
                     .monospacedDigit()
                     .lineLimit(1)
+            case .installersChecked:
+                bar(showing: progress.itemsToCheck > 0)
+                Text("Checked \(progress.itemsChecked) of ^[\(progress.itemsToCheck) installer](inflect: true)")
+                    .monospacedDigit()
+                    .lineLimit(1)
             case .spinner:
                 spinner
                 Text("\(display.progressLabel)…")

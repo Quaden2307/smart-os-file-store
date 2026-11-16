@@ -6,8 +6,8 @@ import Foundation
 /// files each action must leave alone; `.claude/skills/cleanup-test-fixtures/SKILL.md` lists them.
 ///
 /// Two deliberate differences from the script: `big-video.mov` is 1 MiB here instead of 200 MB,
-/// and the disk image `SomeApp-2.1.dmg` is built only when a test asks for it
-/// (`make(includingDiskImage: true)`), because `hdiutil` takes a second or two.
+/// and the disk images `SomeApp-2.1.dmg` and `Locked-1.0.dmg` are built only when a test asks for
+/// them (`make(includingDiskImage: true)`), because `hdiutil` takes a second or two for each.
 ///
 /// Dates: the app leaves anything added or modified in the last hour alone, and a fixture is always
 /// scanned moments after it is made. So every item is dated two hours back (`FileDates.settledAge`),
@@ -18,7 +18,8 @@ import Foundation
 /// Two files are locked (`uchg`): `locked.txt`, which has unique content, and `report (3).pdf`, a
 /// duplicate, so that carrying out a plan has exactly one failure to report.
 ///
-/// Beside the folder sits `FakeApplications/` (`applicationsURL`), standing in for /Applications.
+/// Beside the folder sits `FakeApplications/` (`applicationsURL`), standing in for /Applications,
+/// with the apps of the disk images, `Widget-3.2-arm64.zip` and `Gizmo-1.5.pkg` installed.
 struct FakeDownloadsFolder {
     /// File names in the fixture, so tests never retype them.
     enum Names {
@@ -76,6 +77,17 @@ struct FakeDownloadsFolder {
         static let appZip = "OtherApp-1.4.zip"
         static let appZipApp = "OtherApp.app"
         static let installer = "Tool.pkg"
+        /// A zip holding `Widget.app`, which is installed at the same version: a strong match.
+        static let usedAppZip = "Widget-3.2-arm64.zip"
+        static let usedAppZipApp = "Widget.app"
+        /// A real package installing `Gizmo.app`, which is installed, but with no receipt on any Mac:
+        /// a possible match by its name.
+        static let package = "Gizmo-1.5.pkg"
+        static let packageApp = "Gizmo.app"
+        /// An encrypted disk image, beside an installed `Locked.app`; built only with
+        /// `make(includingDiskImage: true)`. Never asks for its password: a possible match.
+        static let encryptedImage = "Locked-1.0.dmg"
+        static let encryptedImageApp = "Locked.app"
 
         // Messy names
         static let numberedName = "manual (2).pdf"
@@ -129,7 +141,7 @@ struct FakeDownloadsFolder {
         Names.chromeDownload, Names.partialDownload, Names.safariDownload, Names.freshDownload,
         Names.zipArchive, Names.zipFolder, Names.singleFileZip, Names.singleFileZipContent,
         Names.partialZipArchive, Names.partialZipFolder, Names.lonelyZip,
-        Names.appZip, Names.installer,
+        Names.appZip, Names.installer, Names.usedAppZip, Names.package,
         Names.numberedName, Names.copyWordName, Names.percentEncodedName, Names.queryLeftoverName,
         Names.doubledExtensionName, Names.invoice, Names.invoiceCopy,
         Names.todoText, Names.todoMarkdown,
@@ -154,6 +166,15 @@ struct FakeDownloadsFolder {
     static let diskImageAppBuild = "210"
     static let appZipAppIdentifier = "com.example.OtherApp"
     static let appZipAppVersion = "1.4"
+    static let usedAppZipAppIdentifier = "com.example.Widget"
+    static let usedAppZipAppVersion = "3.2"
+    static let packageIdentifier = "com.example.Gizmo.pkg"
+    static let packageAppIdentifier = "com.example.Gizmo"
+    static let packageVersion = "1.5"
+    static let encryptedImageAppIdentifier = "com.example.Locked"
+    static let encryptedImagePassword = "fixture"
+    /// Every app installed in `FakeApplications`.
+    static let installedApps: Set<String> = [Names.diskImageApp, Names.usedAppZipApp, Names.packageApp, Names.encryptedImageApp]
 
     /// `statement.pdf`'s download source, as a browser records it: the file's URL, then the page.
     static let statementSources = ["https://example.com/statements/statement.pdf", "https://example.com/account"]
@@ -174,7 +195,7 @@ struct FakeDownloadsFolder {
     /// The fake Downloads folder itself.
     let url: URL
 
-    /// The fake Applications folder beside it, holding the installed copy of the disk image's app.
+    /// The fake Applications folder beside it, holding the installed apps (`installedApps`).
     let applicationsURL: URL
 
     private let root: TemporaryFolder
@@ -327,15 +348,43 @@ struct FakeDownloadsFolder {
             )
             try Self.makeDiskImage(from: imageSource, volumeName: "SomeApp", to: url(for: Names.diskImage), staging: staging)
             settled.append(url(for: Names.diskImage))
+            let lockedSource = staging.appending(path: "Locked", directoryHint: .isDirectory)
+            try fileManager.createDirectory(at: lockedSource, withIntermediateDirectories: false)
+            try Self.writeApp(at: lockedSource.appending(path: Names.encryptedImageApp), identifier: Self.encryptedImageAppIdentifier, version: "1.0", build: "100")
+            try Self.makeDiskImage(
+                from: lockedSource,
+                volumeName: "Locked",
+                to: url(for: Names.encryptedImage),
+                staging: staging,
+                password: Self.encryptedImagePassword
+            )
+            settled.append(url(for: Names.encryptedImage))
         }
         let zippedApp = staging.appending(path: Names.appZipApp)
         try Self.writeApp(at: zippedApp, identifier: Self.appZipAppIdentifier, version: Self.appZipAppVersion, build: "140")
         try zip(zippedApp, to: Names.appZip, keepParent: true)
         try write("pkg", to: Names.installer)
+        let widget = staging.appending(path: Names.usedAppZipApp)
+        try Self.writeApp(at: widget, identifier: Self.usedAppZipAppIdentifier, version: Self.usedAppZipAppVersion, build: "320")
+        try zip(widget, to: Names.usedAppZip, keepParent: true)
+        let packageRoot = staging.appending(path: "GizmoRoot", directoryHint: .isDirectory)
+        try Self.writeApp(at: packageRoot.appending(path: Names.packageApp), identifier: Self.packageAppIdentifier, version: Self.packageVersion, build: "150")
+        try CommandLineTool.run(
+            "/usr/bin/pkgbuild",
+            [
+                "--quiet", "--root", packageRoot.path(percentEncoded: false), "--identifier", Self.packageIdentifier,
+                "--version", Self.packageVersion, "--install-location", "/Applications", url(for: Names.package).path(percentEncoded: false),
+            ]
+        )
+        settled.append(url(for: Names.package))
+        // The installed apps: the disk images', the zip's and the package's.
         try Self.writeApp(
             at: applicationsURL.appending(path: Names.diskImageApp),
             identifier: Self.diskImageAppIdentifier, version: Self.diskImageAppVersion, build: Self.diskImageAppBuild
         )
+        try Self.writeApp(at: applicationsURL.appending(path: Names.usedAppZipApp), identifier: Self.usedAppZipAppIdentifier, version: Self.usedAppZipAppVersion, build: "320")
+        try Self.writeApp(at: applicationsURL.appending(path: Names.packageApp), identifier: Self.packageAppIdentifier, version: Self.packageVersion, build: "150")
+        try Self.writeApp(at: applicationsURL.appending(path: Names.encryptedImageApp), identifier: Self.encryptedImageAppIdentifier, version: "1.0", build: "100")
 
         // Messy names, each a different length so none shares a size with another file by accident
         try write("printer manual", to: Names.numberedName)
@@ -430,10 +479,16 @@ struct FakeDownloadsFolder {
     }
 
     /// A compressed disk image (UDZO) of `source`, made without mounting anything: `hdiutil
-    /// makehybrid` writes the file system straight into an image, then `convert` compresses it.
-    /// Tried twice, since `hdiutil` occasionally reports a busy resource.
-    private static func makeDiskImage(from source: URL, volumeName: String, to image: URL, staging: URL) throws {
+    /// makehybrid` writes the file system straight into an image, then `convert` compresses it,
+    /// encrypting it with `password` when one is given. Tried twice, since `hdiutil` occasionally
+    /// reports a busy resource.
+    static func makeDiskImage(from source: URL, volumeName: String, to image: URL, staging: URL, password: String? = nil) throws {
         let raw = staging.appending(path: "image-raw.dmg").path(percentEncoded: false)
+        let passwordFile = staging.appending(path: "image-password")
+        if let password {
+            try Data(password.utf8).write(to: passwordFile)
+        }
+        let encryption = password == nil ? [] : ["-encryption", "AES-256", "-stdinpass"]
         var lastError: (any Error)?
         for _ in 0..<2 {
             do {
@@ -444,7 +499,8 @@ struct FakeDownloadsFolder {
                 )
                 try CommandLineTool.run(
                     "/usr/bin/hdiutil",
-                    ["convert", "-quiet", raw, "-format", "UDZO", "-ov", "-o", image.path(percentEncoded: false)]
+                    ["convert", "-quiet", raw, "-format", "UDZO"] + encryption + ["-ov", "-o", image.path(percentEncoded: false)],
+                    input: password == nil ? nil : passwordFile
                 )
                 return
             } catch {

@@ -138,6 +138,7 @@ enum UnpackedZips {
             in: folder,
             eligibility: CandidateEligibility(),
             keptItems: keptItems,
+            installers: .testing(),
             now: now,
             onProgress: onProgress
         )

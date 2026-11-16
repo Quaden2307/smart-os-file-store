@@ -33,18 +33,24 @@ public struct CleanupPlan: Sendable, Hashable {
     /// Files the action saw but could not check.
     public let skippedItems: [SkippedItem]
 
+    /// For `removeUsedInstallers`: what was read from installers while planning and not cached yet,
+    /// for the app to store in the activity log. The planner writes nothing itself.
+    public let installerFactsRead: [InstallerFactsEntry]
+
     public init(
         action: CleanupAction,
         folderURL: URL,
         changes: [ProposedChange],
         duplicateGroups: [DuplicateGroup] = [],
-        skippedItems: [SkippedItem] = []
+        skippedItems: [SkippedItem] = [],
+        installerFactsRead: [InstallerFactsEntry] = []
     ) {
         self.action = action
         self.folderURL = folderURL
         self.changes = changes
         self.duplicateGroups = duplicateGroups
         self.skippedItems = skippedItems
+        self.installerFactsRead = installerFactsRead
     }
 
     /// A plan that proposes nothing.
@@ -92,8 +98,15 @@ public enum CleanupSkipReason: Sendable, Hashable {
     /// it declares more than the reader accepts, or its names are not UTF-8.
     case zipUnlistable(ZipListing.Problem)
 
+    /// The installer could not be read, and its name matches no installed app.
+    case installerUnreadable(InstallerFacts.Problem)
+
+    /// The disk image is attached (open), or whether it is could not be told. It is never moved.
+    case diskImageInUse
+
     // The reasons below arise while a plan is carried out. `folderUnavailable` also arises when Remove
-    // Unpacked Zips plans, since it reads the zips through the folder.
+    // Unpacked Zips and Remove Used Installers plan, since they read through the folder, and
+    // `diskImageInUse` when Remove Used Installers plans.
 
     /// The item is the copy the plan keeps, or the same file as it (a hard link). It is never moved.
     case keptFile
@@ -129,6 +142,14 @@ public enum CleanupSkipReason: Sendable, Hashable {
     /// The item a zip was unpacked to arrived, or something in it was written, within the grace
     /// period, so it may still be being unpacked, and the zip was left alone. `name` is its name.
     case unpackedCopyRecentlyChanged(name: String)
+
+    /// The installed app an installer was matched with is no longer there, so the installer was left
+    /// alone. `name` is the app's name.
+    case installedAppMissing(name: String)
+
+    /// The installed app an installer was matched with is no longer the one matched: another
+    /// identifier, an older version, or not a real app any more. `name` is the app's name.
+    case installedAppChanged(name: String)
 
     /// Execution was stopped before this item was reached.
     case cancelled

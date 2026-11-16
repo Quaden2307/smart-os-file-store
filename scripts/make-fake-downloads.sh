@@ -10,7 +10,8 @@
 #                                                    # each with a download source, half of them Unused
 #
 # Then launch a debug build against it:
-#   open build/Build/Products/Debug/SmartOSFileStore.app --args -ScanFolder "<printed path>"
+#   open build/Build/Products/Debug/SmartOSFileStore.app --args -ScanFolder "<printed path>" \
+#     -ApplicationsFolder "<printed FakeApplications path>"
 set -euo pipefail
 
 SCRIPTS="$(cd "$(dirname "$0")" && pwd)"
@@ -113,14 +114,26 @@ printf 'year,total\n2023,42\n' > "$STAGE/old-data.csv"; zip_item "$STAGE/old-dat
 settled "archive-2023.zip"
 
 # Installers: a real disk image holding an app that is installed (made without mounting anything),
-# a zip holding an app that is not installed, and a file only named like an installer
+# a zip holding an app that is not installed, a file only named like an installer, a zip holding
+# an installed app, a real package holding an installed app but with no receipt on any Mac (a
+# possible match by name), and an encrypted disk image beside an installed app (a possible match,
+# never asked for its password)
 mkdir "$STAGE/SomeApp"; write_app "$STAGE/SomeApp/SomeApp.app" com.example.SomeApp 2.1 210
 hdiutil makehybrid -quiet -hfs -default-volume-name SomeApp -o "$STAGE/raw.dmg" "$STAGE/SomeApp"
 hdiutil convert -quiet "$STAGE/raw.dmg" -format UDZO -o "SomeApp-2.1.dmg"
 write_app "$STAGE/OtherApp.app" com.example.OtherApp 1.4 140; zip_item --keepParent "$STAGE/OtherApp.app" "OtherApp-1.4.zip"
 printf 'pkg' > "Tool.pkg"
-settled "SomeApp-2.1.dmg" "OtherApp-1.4.zip" "Tool.pkg"
+write_app "$STAGE/Widget.app" com.example.Widget 3.2 320; zip_item --keepParent "$STAGE/Widget.app" "Widget-3.2-arm64.zip"
+mkdir "$STAGE/GizmoRoot"; write_app "$STAGE/GizmoRoot/Gizmo.app" com.example.Gizmo 1.5 150
+pkgbuild --quiet --root "$STAGE/GizmoRoot" --identifier com.example.Gizmo.pkg --version 1.5 --install-location /Applications "Gizmo-1.5.pkg"
+mkdir "$STAGE/Locked"; write_app "$STAGE/Locked/Locked.app" com.example.Locked 1.0 100
+hdiutil makehybrid -quiet -hfs -default-volume-name Locked -o "$STAGE/raw-locked.dmg" "$STAGE/Locked"
+printf 'fixture' | hdiutil convert -quiet "$STAGE/raw-locked.dmg" -format UDZO -encryption AES-256 -stdinpass -o "Locked-1.0.dmg"
+settled "SomeApp-2.1.dmg" "Locked-1.0.dmg" "OtherApp-1.4.zip" "Tool.pkg" "Widget-3.2-arm64.zip" "Gizmo-1.5.pkg"
 write_app "$APPS/SomeApp.app" com.example.SomeApp 2.1 210
+write_app "$APPS/Widget.app" com.example.Widget 3.2 320
+write_app "$APPS/Gizmo.app" com.example.Gizmo 1.5 150
+write_app "$APPS/Locked.app" com.example.Locked 1.0 100
 
 # Messy names, each a different length so none shares a size with another file by accident
 printf 'printer manual' > "manual (2).pdf"

@@ -85,7 +85,7 @@ struct KeptDuplicatePlannerTests {
 
     private func findDuplicates(_ records: [FileRecord], in folder: URL, keeping keptItems: KeptItems) async throws -> CleanupPlan {
         try #require(
-            try await CleanupPlanners.plan(.findDuplicates, records: records, in: folder, eligibility: CandidateEligibility(), keptItems: keptItems)
+            try await CleanupPlanners.plan(.findDuplicates, records: records, in: folder, eligibility: CandidateEligibility(), keptItems: keptItems, installers: .testing())
         )
     }
 

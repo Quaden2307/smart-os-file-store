@@ -11,6 +11,8 @@ struct CleanupActionDisplay {
         case bytesRead
         /// A bar by zips checked, and the count.
         case zipsChecked
+        /// A bar by installers checked, and the count.
+        case installersChecked
         /// A small spinner and the progress label: an action that reads no files.
         case spinner
     }
@@ -97,6 +99,21 @@ extension CleanupAction {
                 emptyTitle: String(localized: "No Unpacked Zips Found"),
                 emptyDescription: String(
                     localized: "No zip checked has everything it holds next to it at the same size. Zips, and what they were unpacked to, are checked once they have gone untouched for an hour."
+                )
+            )
+        case .removeUsedInstallers:
+            CleanupActionDisplay(
+                title: String(localized: "Used Installers"),
+                commandTitle: String(localized: "Remove Used Installers"),
+                explanation: String(localized: "Move disk images, packages and app zips whose apps are already installed to the Trash."),
+                symbol: "shippingbox",
+                shortcutKey: "i",
+                progressLabel: String(localized: "Checking installers"),
+                cancelHelp: String(localized: "Stop checking installers (Esc)"),
+                progressStyle: .installersChecked,
+                emptyTitle: String(localized: "No Used Installers Found"),
+                emptyDescription: String(
+                    localized: "No disk image, package or app zip checked is for an app installed on this Mac. Installers added or changed in the last hour are checked once they are an hour old."
                 )
             )
         case .fixMessyNames:

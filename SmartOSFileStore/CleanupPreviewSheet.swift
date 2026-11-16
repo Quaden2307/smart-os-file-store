@@ -30,6 +30,7 @@ struct CleanupPreviewSheet: View {
     init(
         plan: CleanupPlan,
         eligibility: CandidateEligibility,
+        applicationFolders: [URL],
         log: ActivityLog,
         activity: ActivityLogModel,
         markKept: @escaping @MainActor ([FileRecord], @escaping @MainActor (Bool) -> Void) -> Void,
@@ -41,6 +42,7 @@ struct CleanupPreviewSheet: View {
             initialValue: CleanupPreviewModel(
                 plan: plan,
                 eligibility: eligibility,
+                applicationFolders: applicationFolders,
                 log: log,
                 activity: activity,
                 markKept: markKept,

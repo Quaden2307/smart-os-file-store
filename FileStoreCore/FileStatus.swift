@@ -24,6 +24,9 @@ struct FileStatus: Sendable {
     let isDirectory: Bool
     let sizeInBytes: Int64
     let modificationDate: Date
+    /// When anything about the item last changed, its attributes included. No tool can set it back,
+    /// unlike the modification date, so a cache keyed on it notices a file rewritten in place.
+    let statusChangeDate: Date
     /// Locked by the user (`uchg`, Finder's "Locked" checkbox).
     let isUserImmutable: Bool
     /// Locked by the system (`schg`).
@@ -108,6 +111,10 @@ extension FileStatus {
             modificationDate: Date(
                 timeIntervalSince1970: TimeInterval(status.st_mtimespec.tv_sec)
                     + TimeInterval(status.st_mtimespec.tv_nsec) / 1_000_000_000
+            ),
+            statusChangeDate: Date(
+                timeIntervalSince1970: TimeInterval(status.st_ctimespec.tv_sec)
+                    + TimeInterval(status.st_ctimespec.tv_nsec) / 1_000_000_000
             ),
             isUserImmutable: (flags & UInt32(UF_IMMUTABLE)) != 0,
             isSystemImmutable: (flags & UInt32(SF_IMMUTABLE)) != 0,

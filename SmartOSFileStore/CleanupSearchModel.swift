@@ -63,8 +63,10 @@ final class CleanupSearchModel {
         records: [FileRecord],
         folderURL: URL,
         eligibility: CandidateEligibility,
+        applicationFolders: [URL],
         log: ActivityLog,
-        activity: ActivityLogModel
+        activity: ActivityLogModel,
+        onInstallersRead: @escaping @MainActor () -> Void
     ) {
         searchTask?.cancel()
         generation += 1
@@ -85,11 +87,24 @@ final class CleanupSearchModel {
                         records: records,
                         in: folderURL,
                         eligibility: eligibility,
-                        keptItems: keptItems
+                        keptItems: keptItems,
+                        installers: .standard(applicationFolders: applicationFolders, cache: log)
                     ) { progress in
                         Task { @MainActor in
                             self?.report(progress, generation: generation)
                         }
+                    }
+                    // What was read from installers is kept, so the next search reads none of them again
+                    // and the list can mark them. The planner itself writes nothing.
+                    if let read = plan?.installerFactsRead, !read.isEmpty {
+                        do throws(ActivityLogError) {
+                            try await log.storeInstallerFacts(read)
+                        } catch {
+                            self?.logger.error("What was read from installers could not be kept: \(String(describing: error), privacy: .public)")
+                        }
+                    }
+                    if action == .removeUsedInstallers {
+                        onInstallersRead()
                     }
                     outcome = .success(plan)
                 } catch {

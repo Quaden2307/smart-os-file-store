@@ -85,6 +85,7 @@ enum FailedDownloads {
             in: folder,
             eligibility: CandidateEligibility(),
             keptItems: keptItems,
+            installers: .testing(),
             now: now
         )
     }

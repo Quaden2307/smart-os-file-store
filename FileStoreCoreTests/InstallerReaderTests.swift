@@ -192,11 +192,18 @@ struct InstallerReaderTests {
     @Test func theApplicationFoldersAreTheTwoStandardOnesWithoutAnOverride() {
         let home = URL(filePath: "/Users/someone", directoryHint: .isDirectory)
         #expect(ApplicationFolders.resolve(arguments: [], home: home).map { $0.path(percentEncoded: false) } == ["/Applications/", "/Users/someone/Applications/"])
+        let temporary = FileManager.default.temporaryDirectory
+        #if DEBUG
         // A debug build takes the override; a value that is not a folder gives none at all.
         #expect(ApplicationFolders.resolve(arguments: ["-ApplicationsFolder", "/nonexistent/folder"], home: home).isEmpty)
         #expect(ApplicationFolders.resolve(arguments: ["-ApplicationsFolder"], home: home).isEmpty)
-        let temporary = FileManager.default.temporaryDirectory
         #expect(ApplicationFolders.resolve(arguments: ["-ApplicationsFolder", temporary.path(percentEncoded: false)], home: home).count == 1)
+        #else
+        // A release build ignores the override and always looks in the two standard folders.
+        for arguments in [["-ApplicationsFolder", "/nonexistent/folder"], ["-ApplicationsFolder"], ["-ApplicationsFolder", temporary.path(percentEncoded: false)]] {
+            #expect(ApplicationFolders.resolve(arguments: arguments, home: home).map { $0.path(percentEncoded: false) } == ["/Applications/", "/Users/someone/Applications/"])
+        }
+        #endif
     }
 
     // MARK: - Receipts

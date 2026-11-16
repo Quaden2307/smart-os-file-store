@@ -21,7 +21,8 @@ public enum CleanupPlanners {
     ///     the facts cache, the mount folder and the receipts. The other actions read none of it. It
     ///     is not optional either: a default would read the real Applications folder from a test.
     ///   - settings: The thresholds behind the age marks, which Archive Old Downloads plans by: the
-    ///     ones the file list marks with, so the two never disagree.
+    ///     ones the file list marks with, so the two never disagree. Review Large Downloads plans by
+    ///     its size threshold.
     ///   - hashCache: Content hashes read earlier in this session. Find Duplicates adds what it reads
     ///     to it; Review Near-Duplicates reads from it and adds to it. The default remembers nothing.
     ///   - onProgress: Called from planning threads while files are read, quickly and not too often.
@@ -29,7 +30,8 @@ public enum CleanupPlanners {
     ///     bytes, Remove Unpacked Zips the zips it checks, Remove Used Installers the installers.
     ///     Fix Messy Names reads only files that might be duplicates of each other, and Review
     ///     Near-Duplicates only files with the same cleaned name, and Archive Old Downloads only files
-    ///     with the name of one in the archive; none of them reports any.
+    ///     with the name of one in the archive; none of them reports any. Review Large Downloads reads
+    ///     nothing: the scan read what it needs.
     /// - Returns: The plan, or nil while the action has no planner yet.
     /// - Throws: `.cancelled` when the task is cancelled.
     @concurrent
@@ -79,6 +81,8 @@ public enum CleanupPlanners {
                 .plan(records: records, in: folderURL, now: now)
         case .archive:
             return try await ArchivePlanner(eligibility: eligibility, settings: settings).plan(records: records, in: folderURL, now: now)
+        case .largeDownloads:
+            return LargeFilePlanner(eligibility: eligibility, settings: settings).plan(records: records, in: folderURL, now: now)
         }
     }
 
@@ -97,6 +101,7 @@ public enum CleanupPlanners {
         case messyNames
         case nearDuplicates
         case archive
+        case largeDownloads
     }
 
     /// Each action's planner, in one list that both `plan` and `hasPlanner` read. Nil while the
@@ -117,6 +122,8 @@ public enum CleanupPlanners {
             .nearDuplicates
         case .archiveOldDownloads:
             .archive
+        case .reviewLargeDownloads:
+            .largeDownloads
         }
     }
 }

@@ -61,6 +61,13 @@ All notable changes to Smart OS File Store are recorded here. The format follows
   - moving keeps the file's last-opened date, download source and Date Added (macOS would otherwise reset Date Added on a move), so Undo puts each file back exactly as it was; the empty Old downloads folder stays.
 - A **Settings** window (⌘,): when files count as unused (30, 60 or 90 days) and as old (90, 180 or 365 days), with the marks updated at once, and where the activity log is stored, its size and Reveal in Finder.
 - Double-clicking Old downloads in the list opens it in Finder.
+- **Review Large Downloads** (⇧⌘L). It lists the files and packages (such as apps) at the top of the folder that take at least 500 MB on disk, largest first, for review:
+  - the size is the space each really takes on disk, so a sparse file or a cloud file that is not downloaded is not overstated; a package counts everything inside it;
+  - nothing is ticked, and Select All is not offered: tick what you want in the Trash;
+  - each row shows the size on disk, kind, Date Added, Last Opened and where it was downloaded from, and the reason says "1.2 GB, last opened 3 Mar 2026" or "1.2 GB, never opened" (an app, whose openings macOS does not date, shows only its size); Quick Look works as everywhere;
+  - the footer says how much of the space taken by the folder's files the list accounts for;
+  - folders, links, hidden items, downloads in progress, Kept items and anything added or changed in the last hour are never listed;
+  - Settings has "List downloads as large from" 500 MB, 1 GB or 5 GB.
 - A **Clean Up** menu in the toolbar and in the menu bar lists every cleanup action: Find Duplicates (⇧⌘D, unchanged), Clear Failed Downloads (⇧⌘F), Remove Unpacked Zips (⇧⌘U), Remove Used Installers (⇧⌘I) and Fix Messy Names (⇧⌘M). Every action runs through the same steps: progress and Cancel, the preview, the confirmation, the summary with Undo.
 - A **Failed download** mark and filter in the file list, for the partial downloads Clear Failed Downloads would propose.
 - A Last Opened column: the date macOS records when a file is opened, read from the file itself, so it shows at once in any folder. Files never opened show "Never" and sort as the oldest. Folders, apps, links and Finder aliases, which macOS does not date when they are opened, show a dash unless a date is recorded, and so does any item whose date could not be read.

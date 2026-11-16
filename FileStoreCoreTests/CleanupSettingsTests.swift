@@ -34,6 +34,24 @@ struct CleanupSettingsTests {
         #expect(settings.oldAfter == 90 * 24 * 60 * 60)
     }
 
+    @Test func largeDownloadsDefaultToFiveHundredMegabytes() {
+        let settings = CleanupSettings()
+        #expect(settings.largeDownloadMegabytes == 500)
+        #expect(settings.largeDownloadThreshold == 500_000_000)
+        #expect(CleanupSettings(largeDownloadMegabytes: 5_000).largeDownloadThreshold == 5_000_000_000)
+    }
+
+    @Test func largeDownloadThresholdIsReadAndUnusableValuesFallBack() {
+        let key = CleanupSettings.largeDownloadMegabytesKey
+        #expect(CleanupSettings.load(from: MemoryStore([key: 1_000])).largeDownloadMegabytes == 1_000)
+        #expect(CleanupSettings.load(from: MemoryStore([key: "5000"])).largeDownloadMegabytes == 5_000)
+        for value: Any in [0, -1, 2.5, "big", true] {
+            #expect(CleanupSettings.load(from: MemoryStore([key: value])).largeDownloadMegabytes == 500, "\(value) should be ignored")
+        }
+        // Never so big that the byte count overflows.
+        #expect(CleanupSettings(largeDownloadMegabytes: .max).largeDownloadThreshold > 0)
+    }
+
     @Test func emptyStoreGivesDefaults() {
         #expect(CleanupSettings.load(from: MemoryStore()) == CleanupSettings())
     }
@@ -68,7 +86,7 @@ struct CleanupSettingsTests {
 
     @Test func saveThenLoadRoundTrips() {
         let store = MemoryStore()
-        let settings = CleanupSettings(unusedAfterDays: 10, oldAfterDays: 45)
+        let settings = CleanupSettings(unusedAfterDays: 10, oldAfterDays: 45, largeDownloadMegabytes: 1_000)
         settings.save(to: store)
         #expect(store.values[unusedKey] as? Int == 10)
         #expect(store.values[oldKey] as? Int == 45)

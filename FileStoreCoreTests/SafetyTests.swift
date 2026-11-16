@@ -82,6 +82,7 @@ struct SafetyTests {
         "FileStoreCore/CleanupExecutor+ArchivedCopies.swift",
         "FileStoreCore/CleanupExecutor+Duplicates.swift",
         "FileStoreCore/CleanupExecutor+FailedDownloads.swift",
+        "FileStoreCore/CleanupExecutor+LargeDownloads.swift",
         "FileStoreCore/CleanupExecutor+NearDuplicates.swift",
         "FileStoreCore/CleanupExecutor+Relocation.swift",
         "FileStoreCore/CleanupExecutor+Undo.swift",
@@ -312,11 +313,11 @@ struct SafetyTests {
             var proposed: [CleanupAction: Int] = [:]
             for action in PlannersRespectKeptTests.plannedActions {
                 let plan = try #require(
-                    try await CleanupPlanners.plan(action, records: records, in: fixture.url, eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: .testing(applications: [fixture.applicationsURL]))
+                    try await CleanupPlanners.plan(action, records: records, in: fixture.url, eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: .testing(applications: [fixture.applicationsURL]), settings: PlannersRespectKeptTests.settings)
                 )
                 proposed[action] = plan.changes.count
             }
-            #expect(proposed == [.findDuplicates: 6, .clearFailedDownloads: 3, .removeUnpackedZips: 2, .removeUsedInstallers: 2, .fixMessyNames: 9, .reviewNearDuplicates: 6, .archiveOldDownloads: 2])
+            #expect(proposed == [.findDuplicates: 6, .clearFailedDownloads: 3, .removeUnpackedZips: 2, .removeUsedInstallers: 2, .fixMessyNames: 9, .reviewNearDuplicates: 6, .archiveOldDownloads: 2, .reviewLargeDownloads: 1])
 
             let after = try Self.snapshot(of: fixture.url)
             #expect(after == before)

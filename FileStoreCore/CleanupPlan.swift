@@ -41,6 +41,11 @@ public struct CleanupPlan: Sendable, Hashable {
     /// nothing, and the preview says why. Nil for every other action.
     public let archiveProblem: ArchiveProblem?
 
+    /// For `reviewLargeDownloads`: the space on disk taken by every file and package at the top
+    /// level of the folder whose size is known, which the preview compares the list with. Nil for
+    /// every other action.
+    public let topLevelSizeOnDisk: Int64?
+
     /// For `removeUsedInstallers`: what was read from installers while planning and not cached yet,
     /// for the app to store in the activity log. The planner writes nothing itself.
     public let installerFactsRead: [InstallerFactsEntry]
@@ -53,7 +58,8 @@ public struct CleanupPlan: Sendable, Hashable {
         nearDuplicateGroups: [NearDuplicateGroup] = [],
         skippedItems: [SkippedItem] = [],
         installerFactsRead: [InstallerFactsEntry] = [],
-        archiveProblem: ArchiveProblem? = nil
+        archiveProblem: ArchiveProblem? = nil,
+        topLevelSizeOnDisk: Int64? = nil
     ) {
         self.action = action
         self.folderURL = folderURL
@@ -63,6 +69,7 @@ public struct CleanupPlan: Sendable, Hashable {
         self.skippedItems = skippedItems
         self.installerFactsRead = installerFactsRead
         self.archiveProblem = archiveProblem
+        self.topLevelSizeOnDisk = topLevelSizeOnDisk
     }
 
     /// A plan that proposes nothing.

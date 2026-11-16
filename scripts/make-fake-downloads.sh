@@ -176,7 +176,7 @@ printf 'unicode' > "résumé – final ✓.pdf"
 mkdir "Subfolder"; cp "report.pdf" "Subfolder/report.pdf"
 ln -s "report.pdf" "report-link.pdf"
 printf 'locked' > "locked.txt"
-mkfile -n 200m "big-video.mov"   # large enough that hashing it takes a moment
+mkfile 200m "big-video.mov"      # written, not sparse: large on disk, and hashing it takes a moment
 settled "LICENSE" ".hidden-file" "résumé – final ✓.pdf" "Subfolder" "Subfolder/report.pdf" \
   "report-link.pdf" "locked.txt" "big-video.mov"
 

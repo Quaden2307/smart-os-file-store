@@ -2,13 +2,15 @@ import FileStoreCore
 import SwiftUI
 
 /// The Settings window (⌘,): when files count as unused and as old, which the marks and Archive Old
-/// Downloads go by, and where the activity log is kept. The thresholds are the `CleanupSettings`
+/// Downloads go by, how big a download must be for Review Large Downloads, and where the activity
+/// log is kept. The thresholds are the `CleanupSettings`
 /// keys in the user's defaults; the main window watches them and marks again at once.
 struct SettingsView: View {
     @Environment(ActivityLogModel.self) private var activity
 
     @AppStorage(CleanupSettings.unusedAfterDaysKey) private var unusedAfterDays = CleanupSettings.defaultUnusedAfterDays
     @AppStorage(CleanupSettings.oldAfterDaysKey) private var oldAfterDays = CleanupSettings.defaultOldAfterDays
+    @AppStorage(CleanupSettings.largeDownloadMegabytesKey) private var largeDownloadMegabytes = CleanupSettings.defaultLargeDownloadMegabytes
 
     /// The database and its journal files, in bytes. Nil until read, or when there is no file.
     @State private var logSize: Int64?
@@ -28,6 +30,17 @@ struct SettingsView: View {
                 }
             } footer: {
                 Text("A file not opened for this long is marked Unused, or Never opened if it was never opened. Archive Old Downloads moves those files into Old downloads.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Picker("List downloads as large from", selection: $largeDownloadMegabytes) {
+                    ForEach(Self.choices([500, 1_000, 5_000], current: largeDownloadMegabytes), id: \.self) { megabytes in
+                        Text(CleanupSettings(largeDownloadMegabytes: megabytes).largeDownloadThreshold.formattedFileSize).tag(megabytes)
+                    }
+                }
+            } footer: {
+                Text("Review Large Downloads lists the files and apps taking at least this much space on disk.")
                     .foregroundStyle(.secondary)
             }
 

@@ -161,6 +161,21 @@ extension CleanupAction {
                     localized: "No file checked is marked Never opened or Unused. Change when files count as unused in Settings (⌘,). Files added or changed in the last hour are checked once they are an hour old."
                 )
             )
+        case .reviewLargeDownloads:
+            CleanupActionDisplay(
+                title: String(localized: "Large Downloads"),
+                commandTitle: String(localized: "Review Large Downloads"),
+                explanation: String(localized: "List the files taking the most space on disk, largest first, so you can decide what to keep. Nothing is ticked for you."),
+                symbol: "externaldrive",
+                shortcutKey: "l",
+                progressLabel: String(localized: "Looking for large downloads"),
+                cancelHelp: String(localized: "Stop looking for large downloads (Esc)"),
+                progressStyle: .spinner,
+                emptyTitle: String(localized: "No Large Downloads Found"),
+                emptyDescription: String(
+                    localized: "No file checked takes up as much space on disk as the size set in Settings (⌘,). Folders are not listed. Files added or changed in the last hour are checked once they are an hour old."
+                )
+            )
         }
     }
 

@@ -23,6 +23,9 @@ struct FileStatus: Sendable {
     let isSymbolicLink: Bool
     let isDirectory: Bool
     let sizeInBytes: Int64
+    /// The space the item takes on disk: its allocated blocks, so a sparse file or a cloud
+    /// placeholder counts what it really occupies, not its length.
+    let allocatedSizeInBytes: Int64
     let modificationDate: Date
     /// When anything about the item last changed, its attributes included. No tool can set it back,
     /// unlike the modification date, so a cache keyed on it notices a file rewritten in place.
@@ -118,6 +121,8 @@ extension FileStatus {
             isSymbolicLink: type == S_IFLNK,
             isDirectory: type == S_IFDIR,
             sizeInBytes: Int64(status.st_size),
+            // `st_blocks` counts 512-byte units, whatever the volume's block size.
+            allocatedSizeInBytes: Int64(status.st_blocks) * 512,
             modificationDate: Date(
                 timeIntervalSince1970: TimeInterval(status.st_mtimespec.tv_sec)
                     + TimeInterval(status.st_mtimespec.tv_nsec) / 1_000_000_000

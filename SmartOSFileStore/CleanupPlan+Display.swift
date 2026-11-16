@@ -94,7 +94,7 @@ extension ProposedChange.Reason {
             return fix.historyDescription
         case .alreadyArchived(let copyName):
             return String(localized: "An identical copy, \(copyName), was already in Old downloads")
-        case .sameContent, .notOpenedSince, .neverOpened, .failedDownload, .unpackedZip, .nearDuplicate:
+        case .sameContent, .notOpenedSince, .neverOpened, .failedDownload, .unpackedZip, .nearDuplicate, .largeDownload:
             return localizedDescription
         }
     }
@@ -126,6 +126,14 @@ extension ProposedChange.Reason {
             return evidence.localizedDescription
         case .nearDuplicate(let otherName):
             return String(localized: "Same name as \(otherName), different content")
+        case .largeDownload(let sizeOnDisk, let lastOpened, let opensRecorded):
+            let size = sizeOnDisk.formattedFileSize
+            if let lastOpened {
+                let date = lastOpened.formatted(.dateTime.day().month(.abbreviated).year())
+                return String(localized: "\(size), last opened \(date)")
+            }
+            // macOS records no open date for some kinds, such as apps: then nothing is said about it.
+            return opensRecorded ? String(localized: "\(size), never opened") : size
         }
     }
 }

@@ -33,6 +33,10 @@ public enum CleanupAction: String, Sendable, Codable, CaseIterable, Hashable {
     /// whose identical copy the archive already holds, the Trash (`ArchivePlanner`). Nothing is deleted.
     case archiveOldDownloads
 
+    /// Lists the files and packages taking at least the large-download setting on disk, largest
+    /// first, for review: nothing is ticked (`LargeFilePlanner`). The user may tick any for the Trash.
+    case reviewLargeDownloads
+
     /// True when a plan of this action may propose `operation`: the kind its definition states. The
     /// executor refuses every other operation, so a plan built elsewhere cannot make Find Duplicates
     /// rename a file, say.

@@ -125,6 +125,9 @@ struct CleanupPreviewSheet: View {
                 if model.isGroupedByNearDuplicates {
                     Text("^[\(plan.changes.count) file](inflect: true) in ^[\(plan.nearDuplicateGroups.count) group](inflect: true) share a name but not their content. Nothing is ticked: tick only what you want in the Trash.")
                         .foregroundStyle(.secondary)
+                } else if plan.action == .reviewLargeDownloads {
+                    Text("^[\(plan.changes.count) item](inflect: true), largest first. Nothing is ticked: tick only what you want in the Trash.")
+                        .foregroundStyle(.secondary)
                 } else if model.isGroupedByDuplicates {
                     Text("^[\(plan.changes.count) duplicate](inflect: true) in ^[\(plan.duplicateGroups.count) group](inflect: true) would free \(plan.bytesToFree.formattedFileSize)")
                         .foregroundStyle(.secondary)
@@ -211,6 +214,18 @@ struct CleanupPreviewSheet: View {
                             )
                             .tag(record.url)
                         }
+                    }
+                }
+            } else if plan.action == .reviewLargeDownloads {
+                Section {
+                    ForEach(plan.changes) { change in
+                        LargeDownloadRow(
+                            change: change,
+                            isTicked: tickedBinding(change.id),
+                            isEnabled: model.isReviewing,
+                            focusedCheckbox: $focusedCheckbox
+                        )
+                        .tag(change.id)
                     }
                 }
             } else {
@@ -328,8 +343,20 @@ struct CleanupPreviewSheet: View {
         preview(selection)
     }
 
-    @ViewBuilder
     private var footer: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if model.isReviewing, let share = plan.largeDownloadsShare {
+                Text("These take up \(share.listed.formattedFileSize) on disk, \(share.fraction.formatted(.percent.precision(.fractionLength(0)))) of the \(share.total.formattedFileSize) taken by the files at the top of this folder.")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            footerControls
+        }
+    }
+
+    @ViewBuilder
+    private var footerControls: some View {
         switch model.phase {
         case .reviewing where plan.isEmpty:
             HStack {
@@ -446,8 +473,9 @@ struct CleanupPreviewSheet: View {
     /// Select All and Select None, worded for duplicates or for changes.
     @ViewBuilder
     private var selectButtons: some View {
-        // Near-duplicates are ticked one by one, after looking: Select All would tick none of them.
-        if !model.isGroupedByNearDuplicates {
+        // Near-duplicates and large downloads are ticked one by one, after looking: Select All would
+        // tick none of them.
+        if !plan.changes.contains(where: \.reason.isReviewOnly) {
             Button("Select All") {
                 model.selectAll()
             }

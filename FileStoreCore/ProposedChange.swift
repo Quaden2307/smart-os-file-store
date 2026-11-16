@@ -56,14 +56,22 @@ public struct ProposedChange: Sendable, Hashable, Identifiable {
         /// review only.
         case nearDuplicate(sameNameAs: String)
 
-        /// True for a change that only the user may tick, by hand, after looking: a near-duplicate.
-        /// Nothing ticks it for them: not the preview, not Select All, and no automatic flow (Tidy
-        /// Now included).
+        /// The file or package takes `sizeOnDisk` bytes on disk, at least the large-download setting.
+        /// `lastOpened` is when it was last opened; when nil, `opensRecorded` tells whether that
+        /// means never opened (true) or that macOS records no date for it, as for an app (false).
+        /// Shown for review only.
+        case largeDownload(sizeOnDisk: Int64, lastOpened: Date?, opensRecorded: Bool)
+
+        /// True for a change that only the user may tick, by hand, after looking: a near-duplicate
+        /// or a large download. Nothing ticks it for them: not the preview, not Select All, and no
+        /// automatic flow (Tidy Now included).
         public var isReviewOnly: Bool {
-            if case .nearDuplicate = self {
-                return true
+            switch self {
+            case .nearDuplicate, .largeDownload:
+                true
+            case .sameContent, .messyName, .notOpenedSince, .neverOpened, .alreadyArchived, .failedDownload, .unpackedZip, .usedInstaller:
+                false
             }
-            return false
         }
 
         /// True for a change the preview leaves unticked: a possible match, which the user ticks

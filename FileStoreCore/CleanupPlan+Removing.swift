@@ -39,7 +39,8 @@ extension CleanupPlan {
             duplicateGroups: groups,
             nearDuplicateGroups: nearGroups,
             skippedItems: skippedItems,
-            archiveProblem: archiveProblem
+            archiveProblem: archiveProblem,
+            topLevelSizeOnDisk: topLevelSizeOnDisk
         )
     }
 }

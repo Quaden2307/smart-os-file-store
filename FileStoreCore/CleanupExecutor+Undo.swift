@@ -118,13 +118,15 @@ extension CleanupExecutor {
             }
         }
 
-        /// What is inside the folder there, as it is now. A link is never followed.
+        /// What is inside the folder there, as it is now. A link is never followed. Read with the
+        /// largest limits any action reads with, so a package reads back as it was read before it
+        /// moved, and a smaller folder reads the same under either.
         func contents() -> Result<PackageContents, PackageContents.Failure> {
             switch self {
             case .trash(let path):
-                PackageContents.read(atPath: path)
+                PackageContents.read(atPath: path, limits: .package)
             case .folder(let handle, let name, _):
-                PackageContents.read(named: name, in: handle)
+                PackageContents.read(named: name, in: handle, limits: .package)
             }
         }
     }
@@ -332,6 +334,8 @@ extension CleanupExecutor {
             return .notDownloaded
         case .failure(.tooManyItems):
             return .changed
+        case .failure(.cancelled):
+            return .cancelled
         case .failure(.unreadable):
             return .cannotBeChecked
         }

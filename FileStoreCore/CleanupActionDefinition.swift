@@ -47,6 +47,8 @@ extension CleanupAction {
             CleanupActionDefinition(identifier: "reviewNearDuplicates", operation: .moveToTrash)
         case .archiveOldDownloads:
             CleanupActionDefinition(identifier: "archiveOldDownloads", operation: .archive)
+        case .reviewLargeDownloads:
+            CleanupActionDefinition(identifier: "reviewLargeDownloads", operation: .moveToTrash)
         }
     }
 }

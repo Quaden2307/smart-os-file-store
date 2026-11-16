@@ -119,6 +119,12 @@ extension ProposedChange.Reason {
             ActivityLogCode(code: "usedInstaller", detail: evidence.logDetail)
         case .nearDuplicate(let otherName):
             ActivityLogCode(code: "nearDuplicate", detail: otherName)
+        case .largeDownload(let sizeOnDisk, let lastOpened, let opensRecorded):
+            // "<bytes on disk>;<last opened, in seconds since 1970 | never | unknown>"
+            ActivityLogCode(
+                code: "largeDownload",
+                detail: "\(sizeOnDisk);" + (lastOpened.map { String($0.timeIntervalSince1970) } ?? (opensRecorded ? "never" : "unknown"))
+            )
         }
     }
 
@@ -158,6 +164,23 @@ extension ProposedChange.Reason {
             self = .usedInstaller(evidence)
         case "nearDuplicate":
             self = .nearDuplicate(sameNameAs: logCode.detail ?? "")
+        case "largeDownload":
+            // Every row this version writes has both parts; one without reads as unknown.
+            let parts = (logCode.detail ?? "").split(separator: ";", omittingEmptySubsequences: false)
+            guard parts.count == 2, let sizeOnDisk = Int64(parts[0]) else {
+                return nil
+            }
+            switch parts[1] {
+            case "never":
+                self = .largeDownload(sizeOnDisk: sizeOnDisk, lastOpened: nil, opensRecorded: true)
+            case "unknown":
+                self = .largeDownload(sizeOnDisk: sizeOnDisk, lastOpened: nil, opensRecorded: false)
+            default:
+                guard let seconds = TimeInterval(parts[1]) else {
+                    return nil
+                }
+                self = .largeDownload(sizeOnDisk: sizeOnDisk, lastOpened: Date(timeIntervalSince1970: seconds), opensRecorded: true)
+            }
         default:
             return nil
         }

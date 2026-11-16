@@ -62,9 +62,14 @@ public struct FileRecord: Sendable, Identifiable, Hashable {
     public let persistentIdentity: PersistentFileIdentity?
 
     /// What is inside the item, for a folder whose name ends in `.download` (Safari's partial
-    /// download), or why it could not be read in full. Nil for everything else: the scan opens no
-    /// other folder or package.
+    /// download) or a package, or why it could not be read in full. Nil for everything else: the
+    /// scan opens no other folder.
     public let packageContents: Result<PackageContents, PackageContents.Failure>?
+
+    /// The space the item takes on disk, in bytes: a file's allocated blocks, or for a package whose
+    /// contents were read, theirs in total. A sparse file or a cloud placeholder counts what it
+    /// really occupies. Nil for folders and links, and for a package not read in full.
+    public let allocatedSizeInBytes: Int64?
 
     public init(
         url: URL,
@@ -80,7 +85,8 @@ public struct FileRecord: Sendable, Identifiable, Hashable {
         downloadSource: DownloadSource? = nil,
         canReadLastOpened: Bool = true,
         persistentIdentity: PersistentFileIdentity? = nil,
-        packageContents: Result<PackageContents, PackageContents.Failure>? = nil
+        packageContents: Result<PackageContents, PackageContents.Failure>? = nil,
+        allocatedSizeInBytes: Int64? = nil
     ) {
         self.url = url
         self.displayName = displayName
@@ -96,6 +102,7 @@ public struct FileRecord: Sendable, Identifiable, Hashable {
         self.canReadLastOpened = canReadLastOpened
         self.persistentIdentity = persistentIdentity
         self.packageContents = packageContents
+        self.allocatedSizeInBytes = allocatedSizeInBytes
     }
 
     /// The contents the scan read in full. Nil when it read none, or not all of them.
@@ -163,7 +170,8 @@ public struct FileRecord: Sendable, Identifiable, Hashable {
 
 extension FileRecord {
     /// Builds a record from resource values the scanner already fetched for `url`, the metadata it
-    /// read for it, its identity, and for a `.download` folder, what is inside it.
+    /// read for it, its identity, its status (for a file's space on disk), and for a `.download`
+    /// folder or a package, what is inside it.
     ///
     /// Resource values describe a symbolic link itself, not its target, so a link is never
     /// mistaken for a folder. A package is also a directory, so it is checked before `folder`.
@@ -172,6 +180,7 @@ extension FileRecord {
         values: URLResourceValues,
         metadata: FileMetadata,
         identity: PersistentFileIdentity?,
+        status: FileStatus?,
         packageContents: Result<PackageContents, PackageContents.Failure>?
     ) {
         let kind: Kind
@@ -186,11 +195,22 @@ extension FileRecord {
         }
 
         let sizeInBytes: Int64?
+        let allocatedSizeInBytes: Int64?
         switch kind {
         case .folder, .package:
             sizeInBytes = nil
-        case .file, .symlink:
+            if kind == .package, case .success(let contents) = packageContents {
+                allocatedSizeInBytes = contents.allocatedSizeInBytes
+            } else {
+                allocatedSizeInBytes = nil
+            }
+        case .file:
             sizeInBytes = values.fileSize.map(Int64.init)
+            // Only a status of a regular file: one read of something else at the name says nothing.
+            allocatedSizeInBytes = status?.isRegularFile == true ? status?.allocatedSizeInBytes : nil
+        case .symlink:
+            sizeInBytes = values.fileSize.map(Int64.init)
+            allocatedSizeInBytes = nil
         }
 
         self.init(
@@ -207,7 +227,8 @@ extension FileRecord {
             downloadSource: metadata.downloadSource,
             canReadLastOpened: metadata.canReadLastOpened,
             persistentIdentity: identity,
-            packageContents: packageContents
+            packageContents: packageContents,
+            allocatedSizeInBytes: allocatedSizeInBytes
         )
     }
 }

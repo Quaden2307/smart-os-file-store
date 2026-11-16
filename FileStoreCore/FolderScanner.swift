@@ -7,9 +7,11 @@ import os
 /// hidden items. It runs off the caller's actor and stops early when its task is cancelled.
 /// Each record carries the metadata its reader finds: by default, last opened and download source
 /// read from the item's extended attributes. It also carries the item's identity on its volume,
-/// read with `lstat` as the executor reads it, so the Kept list can follow the file. For a folder
-/// whose name ends in `.download` (Safari's partial download), and for no other folder, it reads
-/// what is inside (`PackageContents`), so Clear Failed Downloads can tell when it last changed.
+/// read with `lstat` as the executor reads it, so the Kept list can follow the file, and a file's
+/// space on disk from the same call. For a folder whose name ends in `.download` (Safari's partial
+/// download) it reads what is inside (`PackageContents`), so Clear Failed Downloads can tell when it
+/// last changed; for any other package, within `PackageContents.Limits.package`, so Review Large
+/// Downloads knows the space it takes. It opens no other folder.
 public struct FolderScanner: Sendable {
     /// The resource values fetched for every item in one call, so each record costs no extra
     /// file-system round trip.
@@ -97,13 +99,23 @@ public struct FolderScanner: Sendable {
                     continue
                 }
                 // A folder's URL ends in `/`, and `lstat` on that would follow a link put at the name.
-                let identity = (try? FileStatus.of(path: url.storedPath)).flatMap { volume?.identity(of: $0) }
+                let status = try? FileStatus.of(path: url.storedPath)
+                let identity = status.flatMap { volume?.identity(of: $0) }
                 var packageContents: Result<PackageContents, PackageContents.Failure>?
-                if values.isDirectory == true, values.isSymbolicLink != true,
-                   FailedDownloadPlanner.partialShape(ofName: url.lastPathComponent) == .folder {
-                    let handle = folderHandle ?? Self.openHandle(on: folderURL)
-                    folderHandle = handle
-                    packageContents = handle.flatMap { PackageContents.read(named: url.lastPathComponent, in: $0) }
+                if values.isDirectory == true, values.isSymbolicLink != true {
+                    let limits: PackageContents.Limits?
+                    if FailedDownloadPlanner.partialShape(ofName: url.lastPathComponent) == .folder {
+                        limits = .standard
+                    } else if values.isPackage == true {
+                        limits = .package
+                    } else {
+                        limits = nil
+                    }
+                    if let limits {
+                        let handle = folderHandle ?? Self.openHandle(on: folderURL)
+                        folderHandle = handle
+                        packageContents = handle.flatMap { PackageContents.read(named: url.lastPathComponent, in: $0, limits: limits) }
+                    }
                 }
                 records.append(
                     FileRecord(
@@ -111,6 +123,7 @@ public struct FolderScanner: Sendable {
                         values: values,
                         metadata: metadataReader.metadata(for: url),
                         identity: identity,
+                        status: status,
                         packageContents: packageContents
                     )
                 )

@@ -318,7 +318,7 @@ struct ArchiveOutOfBoundsTests {
             let records = try await RelocationPlans.records(in: fixture.url) + (try await RelocationPlans.records(in: archive))
 
             let plan = try #require(
-                try await CleanupPlanners.plan(action, records: records, in: fixture.url, eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: .testing(applications: [fixture.applicationsURL]))
+                try await CleanupPlanners.plan(action, records: records, in: fixture.url, eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: .testing(applications: [fixture.applicationsURL]), settings: PlannersRespectKeptTests.settings)
             )
             let named = plan.changes.map(\.id) + plan.skippedItems.map(\.url)
                 + plan.duplicateGroups.flatMap { [$0.kept.url] + $0.duplicates.map(\.url) }

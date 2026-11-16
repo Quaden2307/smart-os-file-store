@@ -88,7 +88,12 @@ public enum CleanupSkipReason: Sendable, Hashable {
     /// Reading failed for another reason. `reason` is the system's description.
     case unreadable(reason: String)
 
-    // The reasons below only arise while a plan is carried out.
+    /// The zip was read, and its list of contents cannot be: it is damaged, the list is encrypted,
+    /// it declares more than the reader accepts, or its names are not UTF-8.
+    case zipUnlistable(ZipListing.Problem)
+
+    // The reasons below arise while a plan is carried out. `folderUnavailable` also arises when Remove
+    // Unpacked Zips plans, since it reads the zips through the folder.
 
     /// The item is the copy the plan keeps, or the same file as it (a hard link). It is never moved.
     case keptFile
@@ -112,6 +117,18 @@ public enum CleanupSkipReason: Sendable, Hashable {
     /// The group's kept copy could not be confirmed to still hold the group's content, so the whole
     /// group was left alone. `name` is the kept file's name.
     case keptFileNotVerified(name: String)
+
+    /// The item a zip was unpacked to is no longer next to it, so the zip was left alone. `name` is
+    /// that item's name.
+    case unpackedCopyMissing(name: String)
+
+    /// The item a zip was unpacked to could not be confirmed to still hold everything in the zip,
+    /// so the zip was left alone. `name` is that item's name.
+    case unpackedCopyNotVerified(name: String)
+
+    /// The item a zip was unpacked to arrived, or something in it was written, within the grace
+    /// period, so it may still be being unpacked, and the zip was left alone. `name` is its name.
+    case unpackedCopyRecentlyChanged(name: String)
 
     /// Execution was stopped before this item was reached.
     case cancelled

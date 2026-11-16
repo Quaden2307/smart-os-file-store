@@ -21,6 +21,7 @@ Smart OS File Store is a native macOS file browser that will replace Finder, sta
 - **Activity**, in the main window's sidebar beside Downloads (also View > Activity, ⇧⌘A): every cleanup, newest first. Open one to see each file with what was to be done, why, what happened and when. Reveal in Finder works for a file that is still where the log says it went.
 - **Moved to the Trash**: the summary says how much a cleanup moved to the Trash, and the status line shows the total so far. The space is free once you empty the Trash.
 - **Undo**: Edit > Undo (⌘Z) undoes the newest cleanup; Activity undoes any cleanup or single file that can still be put back.
+- **A Clean Up menu**, in the toolbar and the menu bar, with two more cleanups. **Clear Failed Downloads** (⇧⌘F) proposes partial downloads that stopped more than an hour ago and never finished. **Remove Unpacked Zips** (⇧⌘U) proposes a zip whose every file already sits next to it, unpacked, at the same size, where Archive Utility puts it (one item beside the zip, several in a folder named after it, or a numbered name such as `project 2`). The unpacked copy is never touched, and zips are only ever read, never extracted.
 - **Keep This File** (⌘K, File menu and context menu): marks files and folders Kept, so no cleanup ever proposes them. Kept items show a Kept badge and a Kept choice in the filter; File > Stop Keeping All clears them, after asking. In the preview, Keep This File takes a file out of the plan and marks it Kept. Kept follows the file through renames and moves; editing it in an app that saves a new copy makes it a new, unkept file. When one copy of a duplicate is Kept, that copy is the one kept.
 
 The two thresholds live in the app's defaults. There is no settings window yet; to change them for good, or for one launch:
@@ -34,7 +35,7 @@ open build/Build/Products/Debug/SmartOSFileStore.app --args -CleanupUnusedAfterD
 ## What it does not do yet
 
 - Only the top level of Downloads. No other folders and no subfolders.
-- Only exact duplicates. No other cleanup actions.
+- Three cleanups so far: Find Duplicates, Clear Failed Downloads and Remove Unpacked Zips. The others arrive in their own segments.
 - An Activity entry cannot be opened for more detail yet. That is planned for later, perhaps with an Apple Intelligence summary.
 - No watching of the folder: the list refreshes on launch, with ⌘R, and after Move to Trash.
 - No Stop button while files move; each move is quick, and closing the window stops between files.
@@ -47,6 +48,8 @@ open build/Build/Products/Debug/SmartOSFileStore.app --args -CleanupUnusedAfterD
 | Where | Keys | Action |
 |---|---|---|
 | Main window | ⇧⌘D | Find Duplicates |
+| Main window | ⇧⌘F | Clear Failed Downloads |
+| Main window | ⇧⌘U | Remove Unpacked Zips |
 | Main window | ⌘R | Refresh the list |
 | Main window | Space, ⌘Y, double-click | Quick Look the selection (press again to close) |
 | Main window | ⌥⌘R | Reveal the selection in Finder |

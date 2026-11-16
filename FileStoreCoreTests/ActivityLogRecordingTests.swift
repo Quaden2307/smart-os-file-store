@@ -354,6 +354,10 @@ struct ActivityLogRecordingTests {
             .keptFileMissing(name: "kept – ✓.pdf"), .keptFileNotVerified(name: "kept.pdf"), .cancelled,
             .destinationExists(name: "taken.txt"), .invalidName, .destinationOutsideFolder, .destinationNotAFolder,
             .destinationHidden, .activityLogUnavailable,
+            .zipUnlistable(.damaged), .zipUnlistable(.encryptedListing), .zipUnlistable(.tooManyEntries),
+            .zipUnlistable(.nameTooLong), .zipUnlistable(.unreadableNames),
+            .unpackedCopyMissing(name: "project – ✓"), .unpackedCopyNotVerified(name: "contract.docx"),
+            .unpackedCopyRecentlyChanged(name: "photos 2"),
         ]
         let failures: [CleanupExecutionError] = [
             .fileIsLocked, .accessDenied, .volumeReadOnly, .trashUnavailable, .renameUnsupported,
@@ -373,6 +377,9 @@ struct ActivityLogRecordingTests {
                 outcome: .moved(from: LogSamples.folderURL.appending(path: "old.pdf"), to: archive.appending(path: "old.pdf")),
                 createdFolders: [archive]
             ),
+            LogSamples.trashed(
+                ProposedChange(record: LogSamples.record(named: "project.zip"), operation: .moveToTrash, reason: .unpackedZip(unpackedTo: "project 2"))
+            ),
         ]
         var items = done
         items += skips.enumerated().map { index, reason in
@@ -391,12 +398,12 @@ struct ActivityLogRecordingTests {
         let changes = try await log.changes(inRun: runID)
 
         #expect(changes.count == items.count)
-        let expectedOutcomes: [ActivityChange.Outcome] = [.trashed, .trashed, .renamed, .moved]
+        let expectedOutcomes: [ActivityChange.Outcome] = [.trashed, .trashed, .renamed, .moved, .trashed]
             + skips.map { .skipped($0) }
             + failures.map { .failed($0) }
         #expect(changes.map(\.outcome) == expectedOutcomes)
         #expect(changes.map(\.reason) == items.map { Optional($0.change.reason) })
-        let expectedOperations: [ActivityChange.Operation?] = [.moveToTrash, .moveToTrash, .rename, .move]
+        let expectedOperations: [ActivityChange.Operation?] = [.moveToTrash, .moveToTrash, .rename, .move, .moveToTrash]
             + Array(repeating: .moveToTrash, count: skips.count + failures.count)
         #expect(changes.map(\.operation) == expectedOperations)
         #expect(changes.map(\.originalPath) == items.map(\.change.originalPath))

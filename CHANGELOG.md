@@ -21,7 +21,15 @@ All notable changes to Smart OS File Store are recorded here. The format follows
   - a package counts as changed when anything inside it changes, and the space it frees is the size of what is inside;
   - right before the Trash each item is checked again, and one that changed at all is left alone, since the download may have resumed;
   - hidden items, links and Kept items are never proposed, and undo puts a package back with everything in it.
-- A **Clean Up** menu in the toolbar and in the menu bar lists every cleanup action: Find Duplicates (⇧⌘D, unchanged) and Clear Failed Downloads (⇧⌘F). Every action runs through the same steps: progress and Cancel, the preview, the confirmation, the summary with Undo.
+- **Remove Unpacked Zips.** It proposes, for the Trash, a zip whose every item already sits next to it, unpacked, at the same size. What it was unpacked to is never touched:
+  - it looks where Archive Utility unpacks: one item beside the zip, several in a folder named after it, or a numbered name such as `project 2` when the name was taken;
+  - every file is compared by its path and size, so a matching name alone never counts. Extra files in the unpacked folder are fine. The `__MACOSX`, `.DS_Store` and `._` entries Finder's Compress adds are left out;
+  - the reason names the unpacked item: "Already unpacked to project";
+  - a zip holding an app is left for the installers action. Empty zips, `.jar` and `.docx` files are never proposed;
+  - so are hidden, linked and Kept zips, and anything added or changed in the last hour. That includes an unpacked copy that arrived in the last hour or holds a file written in it; opening the copy in Finder does not count;
+  - a zip that can't be read is listed under Not checked with the reason: damaged or cut short, its list of contents encrypted, too large to check, or names in an old encoding. A password-protected zip whose list can be read is treated like any other;
+  - right before the Trash, the zip and its unpacked copy are both checked again, and one that changed is left alone. Undo puts the zips back.
+- A **Clean Up** menu in the toolbar and in the menu bar lists every cleanup action: Find Duplicates (⇧⌘D, unchanged), Clear Failed Downloads (⇧⌘F) and Remove Unpacked Zips (⇧⌘U). Every action runs through the same steps: progress and Cancel, the preview, the confirmation, the summary with Undo.
 - A **Failed download** mark and filter in the file list, for the partial downloads Clear Failed Downloads would propose.
 - A Last Opened column: the date macOS records when a file is opened, read from the file itself, so it shows at once in any folder. Files never opened show "Never" and sort as the oldest. Folders, apps, links and Finder aliases, which macOS does not date when they are opened, show a dash unless a date is recorded, and so does any item whose date could not be read.
 - Marks, shown as small labelled badges after the name: **Never opened** (no last-opened date, added more than 30 days ago), **Unused** (last opened more than 30 days ago) and **Old** (added more than 90 days ago, opened or not). Folders, apps, links, aliases, hidden items and downloads in progress get no age marks. The thresholds are kept in the app's defaults (`CleanupUnusedAfterDays`, `CleanupOldAfterDays`); there is no settings window yet.
@@ -56,6 +64,10 @@ All notable changes to Smart OS File Store are recorded here. The format follows
 - A file is never changed before the log says so. A row that says the change was started, with any folders a move is about to make, is written and synced first and completed right after, so if the app crashes or is force-quit at most one file's outcome is unknown, and the log shows it as interrupted. The compiler enforces the order: the calls that change a user's file need a permit only that row provides.
 - If the log cannot be written, the cleanup stops: the file being looked at is left untouched, the files after it are not touched, nothing is tried twice, and the summary says which file, if any, was changed without its row being completed.
 - Without a working log nothing can be cleaned up. A damaged or unreadable database is found when the app opens it, and the app offers to start a fresh log; the old file is renamed aside, never removed, and its folders are never reached through a link.
+- Zips are only ever read. The app reads a zip's list of contents and its headers, never the files inside: nothing is extracted, and no entry's path is ever used to open or write anything.
+  - It refuses an archive that declares more than 100,000 items or a list larger than 32 MiB before it allocates for it, and a name longer than 1,024 bytes before reading the name. It also refuses an archive whose paths imply more folders than it checks.
+  - It refuses a zip that different tools would read differently: bytes after its end, a second end record, Zip64 and classic end records that disagree, or local headers that differ from the list or hide an entry it leaves out. So a crafted zip cannot show one list of contents and unpack another.
+  - Every byte it reads is bounds-checked.
 - A Kept file is never changed, even if it was marked after its preview appeared: the Kept list is checked again right before each change, in the same step as the change's row is written, and a file without a row is never changed. If the list cannot be read, the cleanup stops with the file untouched, and Find Duplicates does not search without it. A fresh log starts with no Kept files, and its offer says so.
 
 ## [0.1.0] - 2026-11-13

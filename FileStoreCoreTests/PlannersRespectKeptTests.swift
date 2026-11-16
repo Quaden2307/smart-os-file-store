@@ -8,7 +8,7 @@ import Testing
 struct PlannersRespectKeptTests {
     /// The actions with a planner today, in declaration order. A new one must be added here too, so
     /// that this test is seen to cover it, and it must find something to propose in the fake folder.
-    static let plannedActions: [CleanupAction] = [.findDuplicates, .clearFailedDownloads]
+    static let plannedActions: [CleanupAction] = [.findDuplicates, .clearFailedDownloads, .removeUnpackedZips]
 
     private func plan(_ action: CleanupAction, _ records: [FileRecord], in folder: URL, keeping keptItems: KeptItems) async throws -> CleanupPlan? {
         try await CleanupPlanners.plan(action, records: records, in: folder, eligibility: CandidateEligibility(), keptItems: keptItems)

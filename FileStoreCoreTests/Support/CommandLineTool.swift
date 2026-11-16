@@ -1,7 +1,7 @@
 import Foundation
 
-/// Runs one of the system's command-line tools (`ditto`, `hdiutil`, `zipinfo`) for fixtures that
-/// Foundation cannot make itself, such as a zip archive or a disk image.
+/// Runs one of the system's command-line tools (`ditto`, `hdiutil`, `zip`, `zipinfo`) for fixtures
+/// that Foundation cannot make itself, such as a zip archive or a disk image.
 enum CommandLineTool {
     struct Failure: Error, CustomStringConvertible {
         let tool: String
@@ -12,11 +12,21 @@ enum CommandLineTool {
     }
 
     /// Runs `tool` with `arguments` and returns what it printed. Throws when it exits with a failure.
+    ///
+    /// - Parameters:
+    ///   - currentDirectory: Where it runs, for a tool that names what it reads relative to it.
+    ///   - input: A file it reads as its standard input.
     @discardableResult
-    static func run(_ tool: String, _ arguments: [String]) throws -> String {
+    static func run(_ tool: String, _ arguments: [String], currentDirectory: URL? = nil, input: URL? = nil) throws -> String {
         let process = Process()
         process.executableURL = URL(filePath: tool)
         process.arguments = arguments
+        if let currentDirectory {
+            process.currentDirectoryURL = currentDirectory
+        }
+        if let input {
+            process.standardInput = try FileHandle(forReadingFrom: input)
+        }
         let output = Pipe()
         process.standardOutput = output
         process.standardError = output

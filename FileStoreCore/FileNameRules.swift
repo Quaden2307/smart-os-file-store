@@ -13,11 +13,14 @@ enum FileNameRules {
     /// (which would make it a path) and no NUL (which would cut it short on the way to the
     /// system), and at most `maximumLength` UTF-16 code units. That is how APFS counts: 255 "a"
     /// or 255 "é" fit, 128 emoji (256 code units) do not.
+    ///
+    /// `/` and NUL are looked for among the Unicode scalars, as the system sees the name: a `/`
+    /// joined with a combining mark into one Swift `Character` (`"a/\u{301}b"`) is still a `/`.
     static func isSingleName(_ name: String, maximumLength: Int) -> Bool {
         !name.isEmpty
             && name != "."
             && name != ".."
-            && !name.contains("/")
+            && !name.unicodeScalars.contains("/")
             && !name.unicodeScalars.contains("\0")
             && name.utf16.count <= maximumLength
     }

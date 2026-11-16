@@ -39,3 +39,4 @@ One short record per segment for each decision a reader of the code would otherw
 - [0008. Undo, and how it proves it has the same file](0008-how-undo-proves-identity.md)
 - [0009. How Kept identifies a file](0009-how-kept-identifies-a-file.md)
 - [0010. Clear Failed Downloads, and how the app holds several actions](0010-clear-failed-downloads.md)
+- [0011. Remove Unpacked Zips: the matching rule and the zip reader](0011-remove-unpacked-zips.md)

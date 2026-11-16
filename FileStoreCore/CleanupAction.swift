@@ -11,6 +11,10 @@ public enum CleanupAction: String, Sendable, Codable, CaseIterable, Hashable {
     /// for the Trash: the one action that handles downloads in progress.
     case clearFailedDownloads
 
+    /// Proposes for the Trash the zips whose every entry already sits next to them, unpacked, at the
+    /// same size. What they were unpacked to is never touched.
+    case removeUnpackedZips
+
     /// Proposes cleaner names for files with copy numbers or leftover junk in their names. Its
     /// planner arrives in its own segment; until then no plan of this action is ever made.
     case fixMessyNames

@@ -9,7 +9,6 @@ import Testing
 @Suite("Safety")
 struct SafetyTests {
     private let scanner = FolderScanner()
-    private let planner = DuplicatePlanner()
 
     // MARK: - Source scan
 
@@ -70,15 +69,16 @@ struct SafetyTests {
     /// A whole `openat` call, its arguments included.
     private static let openatCall = #"\bopenat\s*\((?:[^()]|\([^()]*\))*\)"#
 
-    /// The files that may ask `DiskChange` for a change: the executor's four parts, for a user's
-    /// files (the Trash for duplicates and for failed downloads, renames and moves, and undo), and
-    /// the activity log's storage, for its own folder and database.
+    /// The files that may ask `DiskChange` for a change: the executor's five parts, for a user's
+    /// files (the Trash for duplicates, for failed downloads and for unpacked zips, renames and
+    /// moves, and undo), and the activity log's storage, for its own folder and database.
     private static let diskChangeCallers = [
         "FileStoreCore/ActivityLogStorage.swift",
         "FileStoreCore/CleanupExecutor+Duplicates.swift",
         "FileStoreCore/CleanupExecutor+FailedDownloads.swift",
         "FileStoreCore/CleanupExecutor+Relocation.swift",
         "FileStoreCore/CleanupExecutor+Undo.swift",
+        "FileStoreCore/CleanupExecutor+UnpackedZips.swift",
     ]
 
     /// Constructs that crash or bypass the type checker. Forbidden anywhere near user files.
@@ -248,7 +248,8 @@ struct SafetyTests {
         case statFailed(name: String)
     }
 
-    /// Every entry of `folder`, hidden ones included, plus the folder itself.
+    /// Every entry of `folder` at any depth, hidden ones included, plus the folder itself, by its
+    /// path inside the folder: planning Remove Unpacked Zips reads inside the unpacked folders.
     private static func snapshot(of folder: URL) throws -> Set<Entry> {
         var entries: Set<Entry> = []
         func add(_ name: String, at url: URL) throws {
@@ -271,8 +272,11 @@ struct SafetyTests {
             )
         }
         try add(".", at: folder)
-        for name in try FileManager.default.contentsOfDirectory(atPath: folder.path(percentEncoded: false)) {
-            try add(name, at: folder.appending(path: name))
+        guard let enumerator = FileManager.default.enumerator(atPath: folder.path(percentEncoded: false)) else {
+            throw SnapshotError.statFailed(name: ".")
+        }
+        for case let path as String in enumerator {
+            try add(path, at: folder.appending(path: path))
         }
         return entries
     }
@@ -280,12 +284,20 @@ struct SafetyTests {
     @Test func scanningAndPlanningChangeNothingOnDisk() async throws {
         try await withFakeDownloadsFolder { fixture in
             let before = try Self.snapshot(of: fixture.url)
-            // Every listed item, the hidden file and the folder itself.
-            #expect(before.count == FakeDownloadsFolder.expectedTopLevelNames.count + 2)
+            // Every listed item, the hidden file and the folder itself, and what is inside the folders.
+            #expect(before.filter { !$0.name.contains("/") }.count == FakeDownloadsFolder.expectedTopLevelNames.count + 2)
+            #expect(before.contains { $0.name == "\(FakeDownloadsFolder.Names.zipFolder)/\(FakeDownloadsFolder.Names.zipFolderFiles[0])" })
 
+            // Every planner the app offers, each with something to propose.
             let records = try await scanner.scan(ScanLocation(folderURL: fixture.url, source: .launchArgument)).records
-            let plan = try await planner.plan(records: records, in: fixture.url)
-            #expect(plan.changes.count == 6)
+            var proposed: [CleanupAction: Int] = [:]
+            for action in PlannersRespectKeptTests.plannedActions {
+                let plan = try #require(
+                    try await CleanupPlanners.plan(action, records: records, in: fixture.url, eligibility: CandidateEligibility(), keptItems: KeptItems())
+                )
+                proposed[action] = plan.changes.count
+            }
+            #expect(proposed == [.findDuplicates: 6, .clearFailedDownloads: 3, .removeUnpackedZips: 2])
 
             let after = try Self.snapshot(of: fixture.url)
             #expect(after == before)

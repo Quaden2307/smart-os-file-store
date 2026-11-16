@@ -70,13 +70,22 @@ final class SpyRecorder: CleanupRecording {
     private let state = Mutex(State())
     private let failure: Failure?
     private let log: ActivityLog?
+    private let whileRecordingIntent: (@Sendable (CleanupChangeIntent) -> Void)?
 
     /// - Parameters:
     ///   - failure: The one call to fail, if any. A failed call is not passed on.
     ///   - log: A real log that receives every call that did not fail.
-    init(failing failure: Failure? = nil, forwardingTo log: ActivityLog? = nil) {
+    ///   - whileRecordingIntent: Runs inside each started row's write, before the row reaches the
+    ///     log: after the executor's checks and before its last look, so a test can change the
+    ///     folder in that very gap.
+    init(
+        failing failure: Failure? = nil,
+        forwardingTo log: ActivityLog? = nil,
+        whileRecordingIntent: (@Sendable (CleanupChangeIntent) -> Void)? = nil
+    ) {
         self.failure = failure
         self.log = log
+        self.whileRecordingIntent = whileRecordingIntent
     }
 
     /// Every call that was let through, in order.
@@ -139,6 +148,7 @@ final class SpyRecorder: CleanupRecording {
     /// Without a real log, nothing is Kept.
     func recordIntent(_ intent: CleanupChangeIntent) throws(ActivityLogError) -> CleanupIntentDecision {
         try admit(.recordIntent)
+        whileRecordingIntent?(intent)
         guard let log else {
             return .recorded(rowID: remember(.recordIntent(intent)))
         }

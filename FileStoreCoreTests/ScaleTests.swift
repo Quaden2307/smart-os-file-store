@@ -180,6 +180,59 @@ struct ScaleTests {
         Self.report("hash of a \(Measured.mebibytes(UInt64(Self.bigSize))) file stopped \(Measured.milliseconds(latency).formatted(.number.precision(.fractionLength(2)))) ms after cancel, after \(chunks.withLock { $0 }) chunks")
     }
 
+    /// Remove Unpacked Zips on a real zip of 50,051 entries (50 folders of 1,000 files), made with
+    /// Info-ZIP, beside the folder it was made from: its listing is read and every entry found on
+    /// disk well within the budget, with memory that does not grow with what is read.
+    @Test func aZipOfFiftyThousandFilesIsCheckedWithinTheBudget() async throws {
+        let temp = try TemporaryFolder.make()
+        defer { temp.remove() }
+        let clock = ContinuousClock()
+        let setupStart = clock.now
+        let big = temp.url.appending(path: "big", directoryHint: .isDirectory)
+        // Every file dated two hours back, as an unpacked copy's files carry the zip's old dates:
+        // one written in the last hour could still be being unpacked.
+        let settled = Date(timeIntervalSinceNow: -FileDates.settledAge)
+        for folderIndex in 0..<50 {
+            let folder = big.appending(path: String(format: "d%02d", folderIndex), directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            for fileIndex in 0..<1_000 {
+                let file = folder.appending(path: String(format: "f%04d.txt", fileIndex))
+                try Data(repeating: 0x61, count: fileIndex % 7).write(to: file)
+                try FileDates.set(file, to: settled)
+            }
+        }
+        let zip = temp.url.appending(path: "big.zip")
+        try ZipTools.zip(["big"], in: temp.url, to: zip)
+        try FileDates.settle([big, zip])
+        let setupTime = clock.now - setupStart
+        let records = try await scanner.scan(ScanLocation(folderURL: temp.url, source: .launchArgument)).records
+        #expect(records.count == 2)
+
+        let before = try #require(physicalFootprintInBytes())
+        let listStart = clock.now
+        let listing = try await ZipListing.read(at: zip)
+        let listTime = clock.now - listStart
+        #expect(listing.entries.count == 50_051)
+
+        let planStart = clock.now
+        let plan = try #require(
+            try await CleanupPlanners.plan(.removeUnpackedZips, records: records, in: temp.url, eligibility: CandidateEligibility(), keptItems: KeptItems())
+        )
+        let planTime = clock.now - planStart
+        let after = try #require(physicalFootprintInBytes())
+
+        #expect(UnpackedZips.proposals(plan) == ["big.zip → big"])
+        #expect(planTime < .seconds(10), "planning took \(Measured.milliseconds(planTime)) ms")
+        let growth = after > before ? after - before : 0
+        #expect(growth < UInt64(256 * Self.mebibyte), "footprint grew by \(Measured.mebibytes(growth))")
+        Self.report(
+            "zip of \(listing.entries.count) entries: setup \(Measured.milliseconds(setupTime).formatted(.number.precision(.fractionLength(0)))) ms; "
+                + "listing \(Measured.milliseconds(listTime).formatted(.number.precision(.fractionLength(1)))) ms; "
+                + "plan with every entry found \(Measured.milliseconds(planTime).formatted(.number.precision(.fractionLength(1)))) ms; "
+                + "footprint before \(Measured.mebibytes(before)), after \(Measured.mebibytes(after))"
+        )
+    }
+
     /// The activity log stays small: ten thousand changes, written the way the executor writes them
     /// (a started row, then its result, each handed to the disk), take well under 10 MB. Paths are
     /// as long as real downloads' are, and every row carries a content hash, as a duplicate's does.

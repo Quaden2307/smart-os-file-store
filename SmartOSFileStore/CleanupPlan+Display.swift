@@ -74,7 +74,7 @@ extension ProposedChange.Reason {
         case .failedDownload(let stoppedOn, let finishedFileName?):
             let date = stoppedOn.formatted(.dateTime.day().month(.abbreviated).year())
             return String(localized: "Download stopped on \(date) and never finished. \(finishedFileName) was next to it.")
-        case .sameContent, .messyName, .oldDownload, .failedDownload:
+        case .sameContent, .messyName, .oldDownload, .failedDownload, .unpackedZip:
             return localizedDescription
         }
     }
@@ -94,6 +94,8 @@ extension ProposedChange.Reason {
                 return String(localized: "Download stopped on \(date) and never finished")
             }
             return String(localized: "Download stopped on \(date) and never finished. \(finishedFileName) is next to it.")
+        case .unpackedZip(let unpackedTo):
+            return String(localized: "Already unpacked to \(unpackedTo)")
         }
     }
 }
@@ -108,6 +110,9 @@ extension CleanupSkipReason {
         switch self {
         case .changedSinceScan where action == .clearFailedDownloads:
             return String(localized: "It changed since the folder was scanned, so the download may have resumed. It was left alone.")
+        case .changedSinceScan where action == .removeUnpackedZips:
+            // Starting a cleanup plans from the list as it is, so only a refresh sees the change.
+            return String(localized: "It changed since the folder was listed, so it was left alone. Refresh the list (⌘R), then run Remove Unpacked Zips again.")
         case .changedSinceScan:
             return String(localized: "Changed since the folder was scanned. \(runAgain)")
         case .notFound:
@@ -120,6 +125,8 @@ extension CleanupSkipReason {
             return String(localized: "Something else now has this name, so it was left alone.")
         case .unreadable:
             return String(localized: "Could not be read. Check that its disk is connected and try again.")
+        case .zipUnlistable(let problem):
+            return problem.localizedDescription
         case .keptFile:
             return String(localized: "This is the copy that is kept.")
         case .notInPlan:
@@ -134,6 +141,12 @@ extension CleanupSkipReason {
             return String(localized: "The kept copy, \(name), is no longer in the folder, so this group was left alone. \(runAgain)")
         case .keptFileNotVerified(let name):
             return String(localized: "The kept copy, \(name), could not be checked, so this group was left alone. \(runAgain)")
+        case .unpackedCopyMissing(let name):
+            return String(localized: "The unpacked copy, \(name), is no longer next to it, so the zip was left alone. \(runAgain)")
+        case .unpackedCopyNotVerified(let name):
+            return String(localized: "The unpacked copy, \(name), could not be confirmed to hold everything in the zip, so the zip was left alone. \(runAgain)")
+        case .unpackedCopyRecentlyChanged(let name):
+            return String(localized: "The unpacked copy, \(name), was added or changed in the last hour and may still be unpacking, so the zip was left alone. It can go once the copy has gone untouched for an hour.")
         case .cancelled:
             return String(localized: "Stopped before this file was reached.")
         case .destinationExists(let name):
@@ -148,6 +161,22 @@ extension CleanupSkipReason {
             return String(localized: "The destination folder is hidden, so the file was left where it is.")
         case .activityLogUnavailable:
             return String(localized: "Left alone because the activity log stopped working.")
+        }
+    }
+}
+
+extension ZipListing.Problem {
+    /// Why a zip's list of contents could not be read, in the user's words.
+    var localizedDescription: String {
+        switch self {
+        case .damaged:
+            String(localized: "It is damaged or incomplete, so what it holds could not be listed.")
+        case .encryptedListing:
+            String(localized: "Its list of contents is encrypted, so it could not be checked.")
+        case .tooManyEntries, .nameTooLong:
+            String(localized: "It holds too much to check.")
+        case .unreadableNames:
+            String(localized: "Its file names use an encoding this app can’t read.")
         }
     }
 }

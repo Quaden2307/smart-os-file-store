@@ -5,6 +5,16 @@ import SwiftUI
 /// Activity. Each action has exactly one, in `CleanupAction.display`, so adding an action means
 /// adding its entry there.
 struct CleanupActionDisplay {
+    /// What the progress line shows while the action looks for things to change.
+    enum ProgressStyle {
+        /// A bar by bytes read, and the counts: an action that reads whole files (Find Duplicates).
+        case bytesRead
+        /// A bar by zips checked, and the count.
+        case zipsChecked
+        /// A small spinner and the progress label: an action that reads no files.
+        case spinner
+    }
+
     /// The preview's title: "Duplicates".
     let title: String
 
@@ -27,8 +37,8 @@ struct CleanupActionDisplay {
     /// Cancel's help on the progress line: "Stop finding duplicates (Esc)".
     let cancelHelp: String
 
-    /// True when the action reads file content, and the progress line shows how much is read.
-    let showsReadingProgress: Bool
+    /// How the progress line shows how far the action has got.
+    let progressStyle: ProgressStyle
 
     /// What the preview says when the action found nothing to change.
     let emptyTitle: String
@@ -53,7 +63,7 @@ extension CleanupAction {
                 shortcutKey: "d",
                 progressLabel: String(localized: "Finding duplicates"),
                 cancelHelp: String(localized: "Stop finding duplicates (Esc)"),
-                showsReadingProgress: true,
+                progressStyle: .bytesRead,
                 emptyTitle: String(localized: "No Duplicates Found"),
                 emptyDescription: String(
                     localized: "No two of the files checked have the same content. Files added or changed in the last hour are checked once they are an hour old."
@@ -68,10 +78,25 @@ extension CleanupAction {
                 shortcutKey: "f",
                 progressLabel: String(localized: "Looking for failed downloads"),
                 cancelHelp: String(localized: "Stop looking for failed downloads (Esc)"),
-                showsReadingProgress: false,
+                progressStyle: .spinner,
                 emptyTitle: String(localized: "No Failed Downloads Found"),
                 emptyDescription: String(
                     localized: "No partial download has gone untouched for more than an hour. One that changed in the last hour may still be downloading, so it is left alone."
+                )
+            )
+        case .removeUnpackedZips:
+            CleanupActionDisplay(
+                title: String(localized: "Unpacked Zips"),
+                commandTitle: String(localized: "Remove Unpacked Zips"),
+                explanation: String(localized: "Move zips whose contents are already unpacked next to them to the Trash."),
+                symbol: "doc.zipper",
+                shortcutKey: "u",
+                progressLabel: String(localized: "Checking zips"),
+                cancelHelp: String(localized: "Stop checking zips (Esc)"),
+                progressStyle: .zipsChecked,
+                emptyTitle: String(localized: "No Unpacked Zips Found"),
+                emptyDescription: String(
+                    localized: "No zip checked has everything it holds next to it at the same size. Zips, and what they were unpacked to, are checked once they have gone untouched for an hour."
                 )
             )
         case .fixMessyNames:
@@ -83,7 +108,7 @@ extension CleanupAction {
                 shortcutKey: "m",
                 progressLabel: String(localized: "Looking for messy names"),
                 cancelHelp: String(localized: "Stop looking for messy names (Esc)"),
-                showsReadingProgress: false,
+                progressStyle: .spinner,
                 emptyTitle: String(localized: "No Messy Names Found"),
                 emptyDescription: String(
                     localized: "Every file checked already has a clean name. Files added or changed in the last hour are checked once they are an hour old."
@@ -98,7 +123,7 @@ extension CleanupAction {
                 shortcutKey: "o",
                 progressLabel: String(localized: "Looking for old downloads"),
                 cancelHelp: String(localized: "Stop looking for old downloads (Esc)"),
-                showsReadingProgress: false,
+                progressStyle: .spinner,
                 emptyTitle: String(localized: "No Old Downloads Found"),
                 emptyDescription: String(localized: "None of the files checked is old enough to archive.")
             )

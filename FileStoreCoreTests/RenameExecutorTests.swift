@@ -443,6 +443,7 @@ struct RenameExecutorTests {
         let allowed: [CleanupAction: [Bool]] = [
             .findDuplicates: [true, false, false],
             .clearFailedDownloads: [true, false, false],
+            .removeUnpackedZips: [true, false, false],
             .fixMessyNames: [false, true, false],
             .archiveOldDownloads: [false, false, true],
         ]

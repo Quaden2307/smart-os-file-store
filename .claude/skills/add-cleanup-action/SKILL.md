@@ -39,10 +39,10 @@ An action is one entry in each of these places, and the compiler points to each 
 1. **Engine definition:** a case in `CleanupAction` (its declaration order is the menus' order) and its entry in `CleanupAction.definition` (`CleanupActionDefinition.swift`). The entry holds a written-out `identifier`, which the activity log stores and must never change, and the `operation` its plans use.
 2. **Planner:** its planner in `CleanupPlanners.plan`, and `true` in `CleanupPlanners.hasPlanner`. Only then do the Clean Up menus offer it.
 3. **Executor:**
-   - An action that trashes adds its own checks to the `.moveToTrash` switch in `CleanupExecutor.process`, in a file of its own (`CleanupExecutor+Duplicates.swift`, `CleanupExecutor+FailedDownloads.swift`).
+   - An action that trashes adds its own checks to the `.moveToTrash` switch in `CleanupExecutor.process`, in a file of its own (`CleanupExecutor+Duplicates.swift`, `CleanupExecutor+FailedDownloads.swift`, `CleanupExecutor+UnpackedZips.swift`).
    - Add that file to `SafetyTests.diskChangeCallers`.
    - Renames and moves share `CleanupExecutor+Relocation.swift`.
-4. **App display:** its entry in `CleanupAction.display` (`SmartOSFileStore/CleanupAction+Display.swift`): titles, a one-sentence explanation, an SF Symbol, a free Shift-Command letter, progress words and empty-preview words. Shortcuts live only in the menu bar's Clean Up menu.
+4. **App display:** its entry in `CleanupAction.display` (`SmartOSFileStore/CleanupAction+Display.swift`): titles, a one-sentence explanation, an SF Symbol, a free Shift-Command letter, progress words, a `progressStyle` (`.spinner` for a planner that reads no files; for one that reports `CleanupPlanningProgress` through `CleanupPlanners`, `.bytesRead`, `.zipsChecked`, or a count style of its own) and empty-preview words. Shortcuts live only in the menu bar's Clean Up menu.
 5. **Reasons:** a new `ProposedChange.Reason` case needs a log code in `ActivityLogCodes.swift` and words in `CleanupPlan+Display.swift`. Skip reasons get their words, per action where it matters, from `CleanupSkipReason.localizedDescription(for:)`.
 6. **Tests:** a row in `RenameExecutorTests.actionsAllowExactlyTheirOwnOperation`, the identifier in `CleanupActionDefinitionTests`, and `PlannersRespectKeptTests.plannedActions`.
 

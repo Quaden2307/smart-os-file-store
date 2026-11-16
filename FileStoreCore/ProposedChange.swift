@@ -33,6 +33,11 @@ public struct ProposedChange: Sendable, Hashable, Identifiable {
         /// `finishedFileName` names a finished item beside it with the name the download would
         /// have had (`movie.mp4` beside `movie.mp4.crdownload`), when there is one.
         case failedDownload(stoppedOn: Date, finishedFileName: String?)
+
+        /// A zip whose every entry already sits next to it, unpacked, at the same size. `unpackedTo`
+        /// names the item beside it that holds them (`project` beside `project.zip`), which is never
+        /// touched.
+        case unpackedZip(unpackedTo: String)
     }
 
     public var id: URL { record.url }

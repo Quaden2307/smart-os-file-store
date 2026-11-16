@@ -10,8 +10,8 @@ import os
 final class CleanupSearchModel {
     enum Phase: Equatable {
         case idle
-        /// Looking, for `action`. Only an action that reads file content reports progress.
-        case running(CleanupAction, DuplicateScanProgress)
+        /// Looking, for `action`. Only an action that reads files reports progress.
+        case running(CleanupAction, CleanupPlanningProgress)
     }
 
     /// A finished plan with an identity, so the sheet showing it keeps its content while it
@@ -34,7 +34,7 @@ final class CleanupSearchModel {
     }
 
     /// The action looking now, and how far it has got.
-    var running: (action: CleanupAction, progress: DuplicateScanProgress)? {
+    var running: (action: CleanupAction, progress: CleanupPlanningProgress)? {
         if case .running(let action, let progress) = phase {
             return (action, progress)
         }
@@ -70,7 +70,7 @@ final class CleanupSearchModel {
         generation += 1
         let generation = generation
         presentedPlan = nil
-        phase = .running(action, DuplicateScanProgress(filesHashed: 0, filesToHash: 0, bytesHashed: 0, bytesToHash: 0))
+        phase = .running(action, CleanupPlanningProgress(itemsChecked: 0, itemsToCheck: 0))
         logger.info("Planning \(action.definition.identifier, privacy: .public) over \(records.count) records")
         let opening = activity.openings
 
@@ -135,7 +135,7 @@ final class CleanupSearchModel {
     }
     #endif
 
-    private func report(_ progress: DuplicateScanProgress, generation: Int) {
+    private func report(_ progress: CleanupPlanningProgress, generation: Int) {
         guard generation == self.generation, let running else { return }
         phase = .running(running.action, progress)
     }

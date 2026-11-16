@@ -73,6 +73,24 @@ final class DirectoryHandle {
         return DirectoryHandle(descriptor: child)
     }
 
+    /// Opens the folder at `relativePath` below this one, several levels down at once: no symbolic
+    /// link anywhere on the way is followed (ELOOP), and the path cannot lead out of this folder
+    /// (ENOTCAPABLE), which only a link or `..` could make it do. Both fail as `.symbolicLink`. Only
+    /// one descriptor is held, however deep the folder is.
+    func openFolder(atRelativePath relativePath: String) throws(OpenFailure) -> DirectoryHandle {
+        let child = openat(descriptor, relativePath, O_RDONLY | O_DIRECTORY | O_NOFOLLOW_ANY | O_RESOLVE_BENEATH | O_CLOEXEC)
+        guard child >= 0 else {
+            let code = errno
+            switch code {
+            case ELOOP, ENOTCAPABLE:
+                throw .symbolicLink
+            default:
+                throw Self.failure(code)
+            }
+        }
+        return DirectoryHandle(descriptor: child)
+    }
+
     /// The folder itself, as it is now.
     func status() throws(FileStatus.Failure) -> FileStatus {
         var status = stat()

@@ -109,6 +109,8 @@ extension ProposedChange.Reason {
         case .failedDownload(_, let finishedFileName):
             // The date is the change's `dateModified`, already in the row, so it is not stored twice.
             ActivityLogCode(code: "failedDownload", detail: finishedFileName)
+        case .unpackedZip(let unpackedTo):
+            ActivityLogCode(code: "unpackedZip", detail: unpackedTo)
         }
     }
 
@@ -127,6 +129,12 @@ extension ProposedChange.Reason {
                 return nil
             }
             self = .failedDownload(stoppedOn: dateModified, finishedFileName: logCode.detail)
+        case "unpackedZip":
+            // Every row this version writes names the copy; one without reads as unknown.
+            guard let unpackedTo = logCode.detail else {
+                return nil
+            }
+            self = .unpackedZip(unpackedTo: unpackedTo)
         default:
             return nil
         }
@@ -148,6 +156,8 @@ extension CleanupSkipReason {
             ActivityLogCode(code: "notARegularFile")
         case .unreadable(let reason):
             ActivityLogCode(code: "unreadable", detail: reason)
+        case .zipUnlistable(let problem):
+            ActivityLogCode(code: "zipUnlistable", detail: problem.logCode)
         case .keptFile:
             ActivityLogCode(code: "keptFile")
         case .notInPlan:
@@ -162,6 +172,12 @@ extension CleanupSkipReason {
             ActivityLogCode(code: "keptFileMissing", detail: name)
         case .keptFileNotVerified(let name):
             ActivityLogCode(code: "keptFileNotVerified", detail: name)
+        case .unpackedCopyMissing(let name):
+            ActivityLogCode(code: "unpackedCopyMissing", detail: name)
+        case .unpackedCopyNotVerified(let name):
+            ActivityLogCode(code: "unpackedCopyNotVerified", detail: name)
+        case .unpackedCopyRecentlyChanged(let name):
+            ActivityLogCode(code: "unpackedCopyRecentlyChanged", detail: name)
         case .cancelled:
             ActivityLogCode(code: "cancelled")
         case .destinationExists(let name):
@@ -194,6 +210,11 @@ extension CleanupSkipReason {
             self = .notARegularFile
         case "unreadable":
             self = .unreadable(reason: detail)
+        case "zipUnlistable":
+            guard let problem = ZipListing.Problem(logCode: detail) else {
+                return nil
+            }
+            self = .zipUnlistable(problem)
         case "keptFile":
             self = .keptFile
         case "notInPlan":
@@ -208,6 +229,12 @@ extension CleanupSkipReason {
             self = .keptFileMissing(name: detail)
         case "keptFileNotVerified":
             self = .keptFileNotVerified(name: detail)
+        case "unpackedCopyMissing":
+            self = .unpackedCopyMissing(name: detail)
+        case "unpackedCopyNotVerified":
+            self = .unpackedCopyNotVerified(name: detail)
+        case "unpackedCopyRecentlyChanged":
+            self = .unpackedCopyRecentlyChanged(name: detail)
         case "cancelled":
             self = .cancelled
         case "destinationExists":
@@ -222,6 +249,41 @@ extension CleanupSkipReason {
             self = .destinationHidden
         case "activityLogUnavailable":
             self = .activityLogUnavailable
+        default:
+            return nil
+        }
+    }
+}
+
+extension ZipListing.Problem {
+    /// The detail a `zipUnlistable` skip stores.
+    var logCode: String {
+        switch self {
+        case .damaged:
+            "damaged"
+        case .encryptedListing:
+            "encryptedListing"
+        case .tooManyEntries:
+            "tooManyEntries"
+        case .nameTooLong:
+            "nameTooLong"
+        case .unreadableNames:
+            "unreadableNames"
+        }
+    }
+
+    init?(logCode: String) {
+        switch logCode {
+        case "damaged":
+            self = .damaged
+        case "encryptedListing":
+            self = .encryptedListing
+        case "tooManyEntries":
+            self = .tooManyEntries
+        case "nameTooLong":
+            self = .nameTooLong
+        case "unreadableNames":
+            self = .unreadableNames
         default:
             return nil
         }

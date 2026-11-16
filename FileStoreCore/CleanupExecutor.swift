@@ -7,9 +7,10 @@ import os
 /// user's disk. Nothing is ever deleted permanently and nothing is ever overwritten. A plan may
 /// only use the operation its action allows (`CleanupAction.allows`), and each item is checked
 /// again right before it changes, by its action's and operation's rules: the duplicate checks
-/// (`CleanupExecutor+Duplicates`) and the failed-download checks (`CleanupExecutor+FailedDownloads`)
-/// for the Trash, the relocation checks for renames and moves (`CleanupExecutor+Relocation`). Items succeed, are skipped or fail one by one; the executor
-/// never throws.
+/// (`CleanupExecutor+Duplicates`), the failed-download checks (`CleanupExecutor+FailedDownloads`)
+/// and the unpacked-zip checks (`CleanupExecutor+UnpackedZips`) for the Trash, the relocation checks
+/// for renames and moves (`CleanupExecutor+Relocation`). Items succeed, are skipped or fail one by
+/// one; the executor never throws.
 ///
 /// Every run is written to the activity log as it happens, and there is no executor without one:
 /// a row that says a change was started goes in before the change, and is completed right after
@@ -196,6 +197,20 @@ public struct CleanupExecutor: Sendable {
                     return CleanupItemResult(change: change, outcome: .skipped(.folderUnavailable))
                 }
                 let outcome = trashFailedDownload(
+                    change,
+                    folder: folder,
+                    context: context,
+                    folderIdentity: folderIdentity,
+                    now: now,
+                    journal: &journal,
+                    beforeChange: beforeChange
+                )
+                return CleanupItemResult(change: change, outcome: outcome)
+            case .removeUnpackedZips:
+                guard let folder else {
+                    return CleanupItemResult(change: change, outcome: .skipped(.folderUnavailable))
+                }
+                let outcome = trashUnpackedZip(
                     change,
                     folder: folder,
                     context: context,
@@ -492,6 +507,8 @@ extension CleanupSkipReason {
             "not a regular file"
         case .unreadable(let reason):
             "unreadable: \(reason)"
+        case .zipUnlistable(let problem):
+            "zip not listed: \(problem.logCode)"
         case .keptFile:
             "is a kept file"
         case .notInPlan:
@@ -506,6 +523,12 @@ extension CleanupSkipReason {
             "kept file missing"
         case .keptFileNotVerified:
             "kept file not verified"
+        case .unpackedCopyMissing:
+            "unpacked copy missing"
+        case .unpackedCopyNotVerified:
+            "unpacked copy not verified"
+        case .unpackedCopyRecentlyChanged:
+            "unpacked copy changed recently"
         case .cancelled:
             "cancelled"
         case .destinationExists:

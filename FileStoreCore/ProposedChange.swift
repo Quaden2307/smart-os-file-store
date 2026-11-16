@@ -101,6 +101,12 @@ public struct ProposedChange: Sendable, Hashable, Identifiable {
             }
             return false
         }
+
+        /// True for a change code may tick: the preview's default, Select All and Tidy Now all tick
+        /// these and only these. Review-only changes and possible matches are ticked by hand.
+        public var isTickedByCode: Bool {
+            !isReviewOnly && !isPossibleMatch
+        }
     }
 
     public var id: URL { record.url }

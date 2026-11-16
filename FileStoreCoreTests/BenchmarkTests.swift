@@ -21,7 +21,9 @@ import Testing
     .enabled(if: ProcessInfo.processInfo.environment["SMARTOS_RUN_BENCHMARK"] == "1", "runs from the Benchmark test plan only")
 )
 struct BenchmarkTests {
-    private static let smallFileCount = 10_000
+    /// 10,000 unless `SMARTOS_BENCHMARK_FILES` says otherwise (`TEST_RUNNER_SMARTOS_BENCHMARK_FILES`
+    /// on the xcodebuild command line), so the same benchmark runs at 50,000 too.
+    private static let smallFileCount = ProcessInfo.processInfo.environment["SMARTOS_BENCHMARK_FILES"].flatMap { Int($0) } ?? 10_000
     private static let gibibyte: Int64 = 1 << 30
     private static let bigSize = 2 * gibibyte
     private static let uniqueBigSize = 3 * gibibyte
@@ -215,6 +217,32 @@ struct BenchmarkTests {
         let growth = highest > before ? highest - before : 0
         Self.report("Tidy Now over \(Self.smallFileCount + 3) records: \(Self.summary(times)), median (min–max) of \(Self.measuredRuns) runs")
         Self.report("Tidy Now memory: footprint before \(Measured.mebibytes(before)), sampled peak \(Measured.mebibytes(highest)), growth \(Measured.mebibytes(growth))")
+    }
+
+    /// Undo of a run that moved 1,000 files to a fake Trash, with the activity log in a file as the
+    /// app keeps it: the undo plan from the log and the disk, then every file put back. Three runs,
+    /// each trashed again first; only the undo is timed.
+    @Test func undoOfAThousandItemRun() async throws {
+        let folder = try TemporaryFolder.make()
+        defer { folder.remove() }
+        let trash = try FakeTrash.make()
+        defer { trash.remove() }
+        let names = (0..<1_000).map { String(format: "file-%04d.txt", $0) }
+        try UndoFixtures.write(Dictionary(uniqueKeysWithValues: names.map { ($0, "contents of \($0)") }), in: folder.url)
+        try await withLogSandbox { sandbox in
+            let log = try await ActivityLog.open(try sandbox.realLocation())
+            let clock = ContinuousClock()
+            var times: [Duration] = []
+            for _ in 0..<3 {
+                let (runID, _) = try await UndoFixtures.trashRun(names, in: folder.url, to: trash, log: log)
+                let start = clock.now
+                let result = try await UndoFixtures.undo(.run(runID), in: folder.url, trash: trash.locator, log: log)
+                times.append(clock.now - start)
+                #expect(result.undone.count == names.count)
+            }
+            try await log.close()
+            Self.report("undo of a 1,000-item run: \(Self.summary(times)), median (min–max) of 3 runs")
+        }
     }
 
     /// Remove Used Installers on 130 installers against 300 installed apps: the installed-apps

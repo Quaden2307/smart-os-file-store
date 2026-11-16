@@ -52,10 +52,14 @@ final class TidyNowModel {
     private(set) var failedActions: Set<CleanupAction> = []
 
     /// Each action's resolved plan, less what Keep This File took out of it in its preview.
-    private(set) var plans: [CleanupAction: CleanupPlan] = [:]
+    private(set) var plans: [CleanupAction: CleanupPlan] = [:] {
+        didSet { totals = TidyNowTotals(tickedChanges) }
+    }
 
     /// Each action's ticked changes, as its preview last left them.
-    private(set) var ticked: [CleanupAction: Set<ProposedChange.ID>] = [:]
+    private(set) var ticked: [CleanupAction: Set<ProposedChange.ID>] = [:] {
+        didSet { totals = TidyNowTotals(tickedChanges) }
+    }
 
     /// The action whose preview is shown in place of the overview, if any.
     private(set) var openAction: CleanupAction?
@@ -112,6 +116,7 @@ final class TidyNowModel {
         let activity = activity
         let opening = activity.openings
         logger.info("Tidy Now over \(records.count) records")
+        hashCache.keepOnly(records)
         task = Task { [weak self] in
             let keptItems: KeptItems
             do throws(ActivityLogError) {
@@ -190,7 +195,7 @@ final class TidyNowModel {
             case .planned(let resolved):
                 plans[action] = resolved
                 // As in each action's own preview: nothing review-only, and no possible match.
-                ticked[action] = Set(resolved.changes.filter { !$0.reason.isReviewOnly && !$0.reason.isPossibleMatch }.map(\.id))
+                ticked[action] = Set(resolved.changes.filter(\.reason.isTickedByCode).map(\.id))
             case .failed:
                 failedActions.insert(action)
             }
@@ -262,9 +267,9 @@ final class TidyNowModel {
         }
     }
 
-    var totals: TidyNowTotals {
-        TidyNowTotals(tickedChanges)
-    }
+    /// Kept up to date as plans and ticks change, so the sheet's many reads of it on every update
+    /// do not each go over every change on the main actor.
+    private(set) var totals = TidyNowTotals([])
 
     var canTidyUp: Bool { isReviewing && openAction == nil && !totals.isEmpty }
 

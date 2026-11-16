@@ -82,6 +82,42 @@ struct TidyNowResolveTests {
         #expect(Self.names(resolved[.fixMessyNames]) == ["notes (1).txt"])
     }
 
+    @Test func codeTicksNeitherReviewOnlyChangesNorPossibleMatches() {
+        let byHand: [ProposedChange.Reason] = [
+            .nearDuplicate(sameNameAs: "a.txt"),
+            .largeDownload(sizeOnDisk: 1, lastOpened: nil, opensRecorded: true),
+            .usedInstaller(Self.possibleEvidence),
+        ]
+        let byCode: [ProposedChange.Reason] = [
+            .sameContent(asFileNamed: "a.txt"), .usedInstaller(Self.strongEvidence), .unpackedZip(unpackedTo: "a"),
+            .emptyFolder, .failedDownload(stoppedOn: Self.old, finishedFileName: nil), .neverOpened(downloadedOn: Self.old),
+        ]
+        #expect(byHand.allSatisfy { !$0.isTickedByCode })
+        #expect(byCode.allSatisfy { $0.isTickedByCode })
+    }
+
+    @Test func aZipsOnlyUnpackedCopyIsNeverTrashedInTheSameRun() {
+        let zip = Self.record("report.zip")
+        let unpacked = Self.record("report.pdf")
+        let app = Self.record("App.app")
+        let appZip = Self.record("App.zip")
+        let other = Self.record("report (1).pdf")
+        let resolved = Self.resolve([
+            Self.plan(.reviewNearDuplicates, [
+                Self.trash(unpacked, .nearDuplicate(sameNameAs: other.displayName)),
+                Self.trash(other, .nearDuplicate(sameNameAs: unpacked.displayName)),
+            ]),
+            Self.plan(.reviewLargeDownloads, [Self.trash(app, .largeDownload(sizeOnDisk: 1_000, lastOpened: nil, opensRecorded: false))]),
+            Self.plan(.removeUnpackedZips, [
+                Self.trash(zip, .unpackedZip(unpackedTo: unpacked.displayName)),
+                Self.trash(appZip, .unpackedZip(unpackedTo: app.displayName)),
+            ]),
+        ])
+        #expect(Self.names(resolved[.removeUnpackedZips]) == ["report.zip", "App.zip"])
+        #expect(!Self.names(resolved[.reviewNearDuplicates]).contains("report.pdf"))
+        #expect(Self.names(resolved[.reviewLargeDownloads]).isEmpty)
+    }
+
     @Test func anOldInstallerGoesToTheTrashRatherThanTheArchive() {
         let installer = Self.record("App-1.0.dmg")
         let resolved = Self.resolve([

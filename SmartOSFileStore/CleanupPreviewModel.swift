@@ -75,7 +75,7 @@ final class CleanupPreviewModel {
         self.executor = CleanupExecutor(recorder: log, eligibility: eligibility, applicationFolders: applicationFolders)
         self.activity = activity
         self.onExecuted = onExecuted
-        let defaultTicks = Set(plan.changes.filter { !$0.reason.isPossibleMatch && !$0.reason.isReviewOnly }.map(\.id))
+        let defaultTicks = Set(plan.changes.filter(\.reason.isTickedByCode).map(\.id))
         self.ticked = initialTicked.map { $0.intersection(plan.changes.map(\.id)) } ?? defaultTicks
     }
 
@@ -144,10 +144,11 @@ final class CleanupPreviewModel {
         }
     }
 
-    /// Ticks every change except those only the user may tick, one by one (near-duplicates).
+    /// Ticks every change except those only the user may tick, one by one: review-only changes and
+    /// possible matches.
     func selectAll() {
         guard isReviewing else { return }
-        ticked.formUnion(plan.changes.filter { !$0.reason.isReviewOnly }.map(\.id))
+        ticked.formUnion(plan.changes.filter(\.reason.isTickedByCode).map(\.id))
     }
 
     func selectNone() {

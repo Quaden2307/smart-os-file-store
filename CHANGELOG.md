@@ -4,6 +4,18 @@ All notable changes to Smart OS File Store are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-16
+
+### Fixed
+
+- Tidy Now never moves a zip and its only unpacked copy to the Trash in the same run: once the zip is to go, the unpacked copy is kept out of every lower-priority Trash change (near-duplicates, large downloads, duplicates).
+- Select All no longer ticks a used installer that only matches by name (Possible match). The preview's default, Select All and Tidy Now now share one rule: review-only changes and possible matches are only ever ticked by hand.
+- Settings shows the threshold the app actually uses when the stored one is unusable (for example 0 days set with `defaults write`).
+- After a crash in the middle of undoing a rename that changed only letter case, the next launch records the rename as undone instead of leaving it undoable.
+- Find Duplicates checks each file and its kept copy through the folder's own handle, as every other cleanup does.
+- Activity no longer loses the undo state of a cleanup opened while the list was being read again.
+- The session's content-hash cache forgets files the latest scan no longer lists, and Tidy Now no longer re-adds every ticked change on each redraw.
+
 ### Changed
 
 - The main window is wider by default, to fit the sixth column.

@@ -36,6 +36,8 @@ A native macOS file browser that will replace Finder, starting with a self-clean
 - A folder named "Old downloads" at the top level of the scanned folder is the archive. No action treats it or its contents as a candidate.
 - Every executed change is recorded in the activity log with enough information to undo it.
 - Files the user marked Keep never appear as a proposed change in any plan.
+- Code ticks only changes whose reason is `isTickedByCode`: the preview's default, Select All and Tidy Now. Review-only changes (near-duplicates, large downloads) and possible installer matches are ticked by the user, one by one.
+- In one Tidy Now run, the item a trashed zip was unpacked to and the kept copy of a duplicate group are never trashed by a lower-priority action (`TidyNowPlan.resolve`).
 - Each segment adds a short decision record under `docs/decisions/` (what was decided, the alternatives, why).
 - The scanned folder is Downloads by default. Debug builds accept an override (launch argument `-ScanFolder <path>` or environment variable `SMARTOS_SCAN_FOLDER`) so hand testing uses a fake folder, `-GracePeriodSeconds <n>` so freshly made files can be candidates, and `-ApplicationsFolder <path>` so Remove Used Installers looks for installed apps in a fake Applications folder. Release builds ignore all four.
 

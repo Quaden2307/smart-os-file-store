@@ -102,8 +102,11 @@ final class ActivityListModel {
                 setChanges(kept.merging(changes) { _, fresh in fresh })
                 self.presence.merge(looked.presence) { _, new in new }
                 // Only open runs were looked at now; what was assessed before is out of date, so it
-                // goes, and a closed run goes by its counts until it is opened again.
-                self.assessments = looked.assessments
+                // goes, and a closed run goes by its counts until it is opened again. A run opened
+                // meanwhile keeps what its own read found: this read did not look at it.
+                let openedMeanwhile = Set(expanded.subtracting(openAtStart).flatMap { self.changes[$0]?.map(\.id) ?? [] })
+                self.assessments = self.assessments.filter { openedMeanwhile.contains($0.key) }
+                    .merging(looked.assessments) { _, new in new }
                 hasLoaded = true
             } catch {
                 guard generation == self.generation else { return }

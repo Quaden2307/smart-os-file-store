@@ -57,6 +57,29 @@ struct UndoReconcileTests {
         }
     }
 
+    @Test func aRenameBackOfTheLetterCaseOnlyIsRecordedAtTheNextLaunch() async throws {
+        try await withSetup { folder, trash, sandbox in
+            let location = try sandbox.realLocation()
+            let log = try await ActivityLog.open(location)
+            try Fixtures.write(["Report.txt": "report"], in: folder)
+            let plan = try await RelocationPlans.rename([("Report.txt", "report.txt")], in: folder)
+            let cleanup = await CleanupExecutor(recorder: log).execute(plan: plan, confirmedChangeIDs: Set(plan.changes.map(\.id)))
+            let runID = try #require(cleanup.runID)
+
+            // The name changes back, then the row that says so cannot be written.
+            let spy = SpyRecorder(failing: SpyRecorder.Failure(kind: .recordUndoResult, occurrence: 0), forwardingTo: log)
+            let crashed = try await Fixtures.undo(.run(runID), in: folder, trash: trash.locator, log: log, recorder: spy)
+            #expect(crashed.logFailure != nil)
+            #expect(DiskState.entryNames(in: folder) == ["Report.txt"])
+            try await log.close()
+
+            // Both spellings answer with the same file; the folder's listing tells which name it has.
+            let reopened = try await ActivityLog.open(location)
+            #expect(try await UndoReconciler().reconcile(reopened) == UndoReconciler.Result(undone: 1, notUndone: 0))
+            #expect(try await Fixtures.change(named: "Report.txt", inRun: runID, log: reopened).undoneAt != nil)
+        }
+    }
+
     @Test func aMoveBackThatNeverHappenedLeavesTheChangeUndoable() async throws {
         try await withSetup { folder, trash, sandbox in
             let location = try sandbox.realLocation()

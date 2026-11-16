@@ -162,14 +162,21 @@ struct ContentHasherTests {
         #expect(sizes.allSatisfy { $0 <= Self.mebibyte })
         #expect(sizes.reduce(0, +) == Int(size))
 
-        // Other suites run at the same time and allocate too, so the footprint is sampled over a
-        // few runs and the smallest growth counts: noise is transient, loading the file is not.
+        // The footprint is sampled on every chunk, so a hasher that loaded the file and let it go
+        // again would still show at its peak. Other suites run at the same time and allocate too, so
+        // a run's growth is its peak less the footprint before it, and the smallest over up to five
+        // runs counts: noise from elsewhere is transient, loading the file shows in every run.
         var smallestGrowth = UInt64.max
-        for _ in 0..<3 {
+        for _ in 0..<5 where smallestGrowth >= UInt64(32 * Self.mebibyte) {
             let before = try #require(physicalFootprintInBytes())
-            _ = try await hasher.hash(contentsOf: url, expectedSizeInBytes: size)
-            let after = try #require(physicalFootprintInBytes())
-            smallestGrowth = min(smallestGrowth, after > before ? after - before : 0)
+            let peak = ConcurrentLog<UInt64>()
+            _ = try await hasher.hash(contentsOf: url, expectedSizeInBytes: size) { _ in
+                if let footprint = physicalFootprintInBytes() {
+                    peak.append(footprint)
+                }
+            }
+            let highest = max(peak.values.max() ?? 0, try #require(physicalFootprintInBytes()))
+            smallestGrowth = min(smallestGrowth, highest > before ? highest - before : 0)
         }
         #expect(smallestGrowth < UInt64(32 * Self.mebibyte), "footprint grew by \(smallestGrowth) bytes while hashing \(size) bytes")
     }

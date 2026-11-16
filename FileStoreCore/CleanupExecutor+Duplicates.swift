@@ -12,6 +12,7 @@ extension CleanupExecutor {
     /// this run, so a kept file is read once per run rather than once per duplicate.
     func trashDuplicate(
         _ change: ProposedChange,
+        folder: DirectoryHandle,
         context: PlanContext,
         folderIdentity: FileIdentity,
         now: Date,
@@ -32,7 +33,8 @@ extension CleanupExecutor {
             return .skipped(.keptFile)
         }
 
-        // Containment: act on `<folder>/<name>`, never on the plan's spelling of the path.
+        // Containment: act on `<folder>/<name>`, never on the plan's spelling of the path, and look
+        // at both files only through the folder's handle from here on.
         guard let itemURL = Self.urlInsideFolder(recordURL.standardizedFileURL, folderURL: context.folderURL, folderIdentity: folderIdentity),
               let keptURL = Self.urlInsideFolder(
                   group.kept.url.standardizedFileURL,
@@ -42,11 +44,12 @@ extension CleanupExecutor {
             return .skipped(.outsideFolder)
         }
         let keptName = group.kept.displayName
+        let name = itemURL.lastPathComponent
 
         // The item as it is now.
         let status: FileStatus
         do throws(FileStatus.Failure) {
-            status = try FileStatus.of(path: itemURL.path(percentEncoded: false))
+            status = try folder.status(of: name)
         } catch {
             return .skipped(CleanupSkipReason(statusFailure: error))
         }
@@ -61,7 +64,7 @@ extension CleanupExecutor {
         }
 
         // The kept copy must be there, and must not be this very file under another name.
-        guard let keptStatus = try? FileStatus.of(path: keptURL.path(percentEncoded: false)),
+        guard let keptStatus = try? folder.status(of: keptURL.lastPathComponent),
               keptStatus.isRegularFile else {
             return .skipped(.keptFileMissing(name: keptName))
         }
@@ -71,7 +74,7 @@ extension CleanupExecutor {
 
         // The rules every action shares, on what the disk says now rather than the scan's record.
         let readDateAdded = { () throws(FileStatus.Failure) -> Date? in
-            try FileStatus.dateAdded(path: itemURL.path(percentEncoded: false))
+            try FileStatus.dateAdded(path: name, relativeTo: folder.descriptor)
         }
         if let refused = sharedRefusal(status, itemURL: itemURL, change: change, now: now, readDateAdded: readDateAdded) {
             return refused
@@ -136,7 +139,7 @@ extension CleanupExecutor {
         }
 
         // Last look, after the reads and right before the move.
-        if let refused = Self.lastLookRefusal(try? FileStatus.of(path: itemURL.path(percentEncoded: false)), checked: status) {
+        if let refused = Self.lastLookRefusal(try? folder.status(of: name), checked: status) {
             return refused
         }
         if Task.isCancelled {

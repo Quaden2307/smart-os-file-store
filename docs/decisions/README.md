@@ -47,3 +47,4 @@ One short record per segment for each decision a reader of the code would otherw
 - [0016. Archive Old Downloads and Settings](0016-archive-old-downloads.md)
 - [0017. Review Large Downloads and Remove Empty Folders](0017-large-downloads-and-empty-folders.md)
 - [0018. Tidy Now: the priority rule and one undo for the whole tidy](0018-tidy-now-priority-and-single-run-undo.md)
+- [0019. Hardening version 0.2](0019-hardening-version-0-2.md)

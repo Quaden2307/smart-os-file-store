@@ -96,6 +96,8 @@ public struct TidyNowPlan: Sendable, Hashable {
     ///   duplicates, which may then belong to a lower-ranked action, so one copy always stays. A
     ///   group that stays keeps its kept copy out of every lower-ranked Trash change; the kept copy
     ///   may still be archived or renamed.
+    /// - A zip that goes to the Trash because it sits unpacked beside it keeps its unpacked copy
+    ///   out of every lower-ranked Trash change, so the run never trashes both.
     /// - Two changes never share a destination; the lower-ranked one is dropped.
     /// - A near-duplicate group left with one file goes (`CleanupPlan.removing`).
     public static func resolve(_ plans: [CleanupPlan], eligibility: CandidateEligibility, now: Date) -> [CleanupPlan] {
@@ -119,6 +121,8 @@ public struct TidyNowPlan: Sendable, Hashable {
         var destinations: Set<String> = []
         // Kept copies of the duplicate groups that stay, once duplicates have been ranked.
         var protectedKept: Set<URL> = []
+        // The unpacked copies of the zips that go to the Trash, by `pathKey`.
+        var protectedUnpacked: Set<String> = []
         var duplicatesRanked = false
         // Each duplicate's kept copy, by the first group that lists it.
         var keptCopyOf: [URL: URL] = [:]
@@ -141,6 +145,7 @@ public struct TidyNowPlan: Sendable, Hashable {
             let keep = isAllowed(change, in: plan, eligibility: eligibility, now: now)
                 && !claimed.contains(url)
                 && !(change.operation == .moveToTrash && protectedKept.contains(url))
+                && !(change.operation == .moveToTrash && protectedUnpacked.contains(pathKey(url)))
                 && !(rank == .duplicate && keptCopyOf[url].map(trashedAbove.contains) == true)
                 && destination.map { !destinations.contains($0) } ?? true
             guard keep else {
@@ -155,6 +160,9 @@ public struct TidyNowPlan: Sendable, Hashable {
             }
             if change.operation == .moveToTrash {
                 trashedAbove.insert(url)
+            }
+            if case .unpackedZip(unpackedTo: let name) = change.reason {
+                protectedUnpacked.insert(pathKey(plan.folderURL.appending(path: name)))
             }
         }
         return plans.enumerated().map { index, plan in plan.removing(dropped[index]) }
@@ -196,7 +204,17 @@ public struct TidyNowPlan: Sendable, Hashable {
         case .move(to: let folder, name: let name):
             url = folder.appending(path: name)
         }
-        return url.standardizedFileURL.path(percentEncoded: false).precomposedStringWithCanonicalMapping.lowercased()
+        return pathKey(url)
+    }
+
+    /// A path compared without regard to case, Unicode form or a folder's trailing slash, as the
+    /// disk would compare it.
+    private static func pathKey(_ url: URL) -> String {
+        var path = url.standardizedFileURL.path(percentEncoded: false)
+        if path.count > 1, path.hasSuffix("/") {
+            path.removeLast()
+        }
+        return path.precomposedStringWithCanonicalMapping.lowercased()
     }
 
     /// The kept copies of the duplicate groups that keep at least one duplicate.

@@ -80,6 +80,7 @@ final class CleanupSearchModel {
         logger.info("Planning \(action.definition.identifier, privacy: .public) over \(records.count) records")
         let opening = activity.openings
         let hashCache = hashCache
+        hashCache.keepOnly(records)
         // The thresholds the file list marks with, read the same way, so the two never disagree.
         let settings = CleanupSettings.load(from: UserDefaults.standard)
 

@@ -250,8 +250,12 @@ public struct CleanupExecutor: Sendable {
             // its own before it may use this executor; the switch is exhaustive on purpose.
             switch context.action {
             case .findDuplicates:
+                guard let folder else {
+                    return CleanupItemResult(change: change, outcome: .skipped(.folderUnavailable))
+                }
                 let outcome = await trashDuplicate(
                     change,
+                    folder: folder,
                     context: context,
                     folderIdentity: folderIdentity,
                     now: now,

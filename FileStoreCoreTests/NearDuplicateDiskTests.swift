@@ -250,6 +250,22 @@ struct NearDuplicateDiskTests {
         }
     }
 
+    @Test func theCacheKeepsOnlyTheFilesOfTheLatestScan() async throws {
+        try await withTemporaryFolderAsync { folder in
+            try FileDates.writeSettled(Self.pair, in: folder)
+            let cache = ContentHashCache()
+            let records = try await RelocationPlans.records(in: folder)
+            let same = ContentHash(bytes: Array(repeating: 7, count: 32))
+            for record in records {
+                cache.store(same, for: record)
+            }
+            let remaining = try #require(records.first)
+            cache.keepOnly([remaining])
+            #expect(cache.count == 1)
+            #expect(cache.hash(for: remaining) == same)
+        }
+    }
+
     @Test func findDuplicatesLeavesItsHashesForTheSession() async throws {
         try await withFakeDownloadsFolder { fixture in
             let cache = ContentHashCache()

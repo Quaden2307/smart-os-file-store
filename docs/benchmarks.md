@@ -23,6 +23,9 @@ The benchmark is not part of the normal test run; README.md has the command. It 
 | 2026-11-13 | MacBook Pro 13-inch, M1, 2020 (MacBookPro17,1), 8 GB | 27.2.1 (26B131) | 27.2 (27B52) | Release | `ded25d2` + this segment (committed as *Prepare for version 0.2*) | 645.8 ms (593.5–665.5) | — | — | — | — | 2,204.0 ms (2,026.2–2,471.8) | 78.3 MiB (+56.0 MiB) | 78.3 MiB |
 | 2026-11-14 | MacBook Pro 13-inch, M1, 2020 (MacBookPro17,1), 8 GB | 27.2.1 (26B131) | 27.2 (27B52) | Release | `39977b4` + this segment (committed as *Add last opened, download source and marks*) | 571.7 ms (564.8–598.1) | 1,175.3 ms (1,079.8–1,190.8) | 11.6 ms (11.2–16.7) | 149.8 ms (145.4–151.1) | 22.2 ms (21.6–23.0) | 1,944.6 ms (1,928.4–1,969.1) | 108.0 MiB (+82.7 MiB) | 108.0 MiB |
 | 2026-11-15 | MacBook Pro 13-inch, M1, 2020 (MacBookPro17,1), 8 GB | 27.2.1 (26B131) | 27.2 (27B52) | Release | `0749095` + this segment (Clear Failed Downloads; marks now include Kept and Failed download) | 617.2 ms (599.2–677.9) | 1,095.9 ms (1,093.1–1,232.8) | 19.6 ms (19.1–54.3) | 160.7 ms (159.7–164.3) | 23.0 ms (22.7–24.5) | 1,998.5 ms (1,975.5–2,041.4) | 110.5 MiB (+84.5 MiB) | 110.7 MiB |
+| 2026-11-16 | MacBook Pro 13-inch, M1, 2020 (MacBookPro17,1), 8 GB | 27.2.1 (26B131) | 27.2 (27B52) | Release | `ac083fe` + segment 15 (committed as *Harden version 0.2*) | 672.2 ms (635.0–790.5) | 1,330.6 ms (1,180.3–1,461.7) | 21.5 ms (20.4–34.2) | 180.1 ms (168.4–302.0) | 25.8 ms (25.5–60.5) | 2,250.3 ms (2,043.9–2,953.1) | 126.0 MiB (+99.8 MiB) | 126.0 MiB |
+
+| 2026-11-16 | MacBook Pro 13-inch, M1, 2020 (MacBookPro17,1), 8 GB | 27.2.1 (26B131) | 27.2 (27B52) | Release | same, **50,000 files** (`TEST_RUNNER_SMARTOS_BENCHMARK_FILES=50000`) | 3,137.9 ms (3,046.7–3,667.5) | 5,775.0 ms (5,733.1–6,193.8) | 97.8 ms (96.4–120.7) | 999.0 ms (995.3–1,039.8) | 144.4 ms (143.6–149.1) | 4,766.9 ms (4,721.1–6,254.9) | 594.4 MiB (+508.1 MiB) | 594.4 MiB |
 
 A commit cannot record its own hash, so a row made before its commit names the commit it was built on. The first row's files carried no attributes and its scan read none, so its scan is listed as a scan without metadata.
 
@@ -63,3 +66,26 @@ Find Duplicates alone takes about 2 s on this folder (above); the rest is the ot
 | 2026-11-14 | MacBook Pro 13-inch, M1, 2020 (MacBookPro17,1), 8 GB | 27.2.1 (26B131) | Debug | `cf2b349` + this segment (committed as *Add database and activity log*) | 10,000 | 2.91 MB | 290 bytes | 6.56 MB | 2.9 s |
 
 "On disk" is the database after the run's last write, which empties the write-ahead file. "Largest while writing" includes that file, which grows to about 4 MB between checkpoints. Writing takes about 0.15 ms per logged row, two rows per change. Runs older than 90 days are pruned, so the log holds at most 90 days of cleanups.
+
+## Version 0.2 at 10,000 and 50,000 files
+
+Segment 15 ran the whole benchmark plan twice in Release on the Mac above, at the default 10,000 small files and at 50,000 (`TEST_RUNNER_SMARTOS_BENCHMARK_FILES=50000`, see README.md), on `ac083fe` plus that segment. Segment 1's baseline is the first row of the first table: a scan of 10,003 items in 645.8 ms, Find Duplicates in 2,204.0 ms, 78.3 MiB at the peak.
+
+| Files | Scan with metadata | Tidy Now scan | Peak footprint while planning Tidy Now (growth) | Undo of a 1,000-item run |
+|---|---|---|---|---|
+| 10,003 | 1,330.6 ms (1,180.3–1,461.7) | 4,238.9 ms (4,101.9–4,538.2) | 189.0 MiB (+100.3 MiB) | 464.3 ms (449.6–484.6) |
+| 50,003 | 5,775.0 ms (5,733.1–6,193.8) | 15,073.1 ms (14,557.4–15,152.4) | 764.6 MiB (+515.0 MiB) | 508.4 ms (493.6–531.8) |
+
+- **Database size after 10,000 logged changes:** 3.03 MB on disk (302 bytes per change), 6.63 MB at the largest while writing, written in 2.8 s (ScaleTests, Release, same day).
+- **Undo** (`BenchmarkTests.undoOfAThousandItemRun`): plan from the log and the disk, then every file put back from a fake Trash, with the log in a file; the median of three runs.
+- **The window.** Scanning, marks and every plan run off the main actor, so the window stays responsive at 50,000 files. The main actor's own work after a scan is the keyed sort, 25.8 ms at 10,000 and 144.4 ms at 50,000, a short pause once per refresh and per click on a column header. Tidy Now's totals are no longer recomputed over every change on each redraw (segment 15). Memory grows about linearly with the number of files, about 10 KiB per file while planning; the benchmark keeps several scans alive at once, the app one.
+
+## Tests and coverage
+
+On 2026-11-16 (segment 15, Debug, the Mac above): **638 tests in 62 suites** pass, the scale suite included and the benchmark left out, and **FileStoreCore has 91.11% line coverage** (11,393 of 12,504 lines). The app target has no tests (0%); it only calls the engine and shows results. The command:
+
+```bash
+xcodebuild -scheme SmartOSFileStore -destination 'platform=macOS' -derivedDataPath build test -enableCodeCoverage YES -resultBundlePath /tmp/coverage.xcresult
+xcrun xccov view --report --only-targets /tmp/coverage.xcresult
+```
+

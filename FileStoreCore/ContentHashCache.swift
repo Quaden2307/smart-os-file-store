@@ -5,11 +5,13 @@ import Synchronization
 ///
 /// A hash is handed back only for a record with the size, modification date and disk identity
 /// (volume and file number) it was read at; any other record misses, so a file replaced under the
-/// same name, even at the same size and date, is read again. Find Duplicates only stores hashes here and never reads them, since its
-/// hashes decide what goes to the Trash on their own; Review Near-Duplicates, Fix Messy Names and
-/// Archive Old Downloads read them, since the executor hashes again every file whose change they
-/// decide before it moves. Tidy Now runs Find Duplicates first and those three after it, with one
-/// cache, so no file is read twice in one Tidy Now scan.
+/// /// same name, even at the same size and date, is read again. Find Duplicates only stores hashes here
+/// and never reads them, since its hashes decide what goes to the Trash on their own; Review
+/// Near-Duplicates, Fix Messy Names and Archive Old Downloads read them. A stale hash cannot do harm
+/// there: the executor reads again the content of a copy the archive holds before trashing it, a
+/// near-duplicate is trashed only by the user's own tick, and a rename never overwrites. Tidy Now
+/// runs Find Duplicates first and those three after it, with one cache, so no file is read twice in
+/// one Tidy Now scan. Each search drops the hashes of files its scan no longer lists (`keepOnly`).
 public final class ContentHashCache: Sendable {
     private struct Entry {
         let sizeInBytes: Int64
@@ -44,6 +46,13 @@ public final class ContentHashCache: Sendable {
             return
         }
         entries.withLock { $0[record.url] = Entry(sizeInBytes: size, dateModified: date, identity: identity, hash: hash) }
+    }
+
+    /// Forgets the hash of every file `records` does not list, so the cache never holds more than
+    /// one scan's files.
+    public func keepOnly(_ records: [FileRecord]) {
+        let listed = Set(records.map(\.url))
+        entries.withLock { entries in entries = entries.filter { listed.contains($0.key) } }
     }
 
     /// How many hashes are remembered.

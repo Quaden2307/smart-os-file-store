@@ -15,16 +15,22 @@ struct SettingsView: View {
     /// The database and its journal files, in bytes. Nil until read, or when there is no file.
     @State private var logSize: Int64?
 
+    /// What the app goes by: a stored value `CleanupSettings` refuses (below 1, set with
+    /// `defaults write`) shows as the default it uses instead.
+    private var effective: CleanupSettings {
+        CleanupSettings(unusedAfterDays: unusedAfterDays, oldAfterDays: oldAfterDays, largeDownloadMegabytes: largeDownloadMegabytes)
+    }
+
     var body: some View {
         Form {
             Section {
-                Picker("Treat files as unused after", selection: $unusedAfterDays) {
-                    ForEach(Self.choices([30, 60, 90], current: unusedAfterDays), id: \.self) { days in
+                Picker("Treat files as unused after", selection: Binding(get: { effective.unusedAfterDays }, set: { unusedAfterDays = $0 })) {
+                    ForEach(Self.choices([30, 60, 90], current: effective.unusedAfterDays), id: \.self) { days in
                         Text("^[\(days) day](inflect: true)").tag(days)
                     }
                 }
-                Picker("Mark files as old after", selection: $oldAfterDays) {
-                    ForEach(Self.choices([90, 180, 365], current: oldAfterDays), id: \.self) { days in
+                Picker("Mark files as old after", selection: Binding(get: { effective.oldAfterDays }, set: { oldAfterDays = $0 })) {
+                    ForEach(Self.choices([90, 180, 365], current: effective.oldAfterDays), id: \.self) { days in
                         Text("^[\(days) day](inflect: true)").tag(days)
                     }
                 }
@@ -34,8 +40,8 @@ struct SettingsView: View {
             }
 
             Section {
-                Picker("List downloads as large from", selection: $largeDownloadMegabytes) {
-                    ForEach(Self.choices([500, 1_000, 5_000], current: largeDownloadMegabytes), id: \.self) { megabytes in
+                Picker("List downloads as large from", selection: Binding(get: { effective.largeDownloadMegabytes }, set: { largeDownloadMegabytes = $0 })) {
+                    ForEach(Self.choices([500, 1_000, 5_000], current: effective.largeDownloadMegabytes), id: \.self) { megabytes in
                         Text(CleanupSettings(largeDownloadMegabytes: megabytes).largeDownloadThreshold.formattedFileSize).tag(megabytes)
                     }
                 }

@@ -78,7 +78,8 @@ public struct UndoReconciler: Sendable {
         guard case .item(let facts) = UndoObservation.place(at: originalPath), evidence.refusal(for: facts) == nil else {
             return false
         }
-        if case .item(let facts) = UndoObservation.place(at: row.originalPath), evidence.refusal(for: facts) == nil {
+        if case .item(let facts) = UndoObservation.place(at: row.originalPath), evidence.refusal(for: facts) == nil,
+           !Self.folderListsOnly(originalPath, notTheOtherSpellingOf: row.originalPath) {
             // The same file in both places: a second link to it. Nothing can be told for sure.
             return false
         }
@@ -87,5 +88,25 @@ public struct UndoReconciler: Sendable {
         }
         let hash = try? await hasher.hash(contentsOf: URL(filePath: originalPath), expectedSizeInBytes: evidence.sizeInBytes)
         return hash == expected
+    }
+
+    /// True when `path` and `other` are one name in two letter cases or Unicode forms in the same
+    /// folder, which a disk that ignores them answers at both, and the folder lists the name exactly
+    /// as `path` spells it and not as `other` does: a rename back of the case or form only, done.
+    private static func folderListsOnly(_ path: String, notTheOtherSpellingOf other: String) -> Bool {
+        let url = URL(filePath: path)
+        let otherURL = URL(filePath: other)
+        let folder = url.deletingLastPathComponent()
+        let name = url.lastPathComponent
+        let otherName = otherURL.lastPathComponent
+        let folded = { (name: String) in name.precomposedStringWithCanonicalMapping.lowercased() }
+        guard folder.standardizedFileURL.pathComponents == otherURL.deletingLastPathComponent().standardizedFileURL.pathComponents,
+              folded(name) == folded(otherName),
+              let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path(percentEncoded: false)) else {
+            return false
+        }
+        // Scalar by scalar: Swift's `==` would call two Unicode forms of one name equal.
+        let listed = Set(names.map { Array($0.unicodeScalars) })
+        return listed.contains(Array(name.unicodeScalars)) && !listed.contains(Array(otherName.unicodeScalars))
     }
 }

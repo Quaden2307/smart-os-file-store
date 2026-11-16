@@ -3,16 +3,20 @@ import QuickLook
 import SwiftUI
 
 /// The preview of a cleanup plan: what stays, what would change and why. A plan of duplicates is
-/// shown by group with its kept copy; any other plan one change per row, with the new name or
-/// folder for a rename or a move. Every proposed change has a checkbox, which Space toggles for the
-/// selected row; Command-Y opens Quick Look. Keep This File, in the context menu or with Command-K,
+/// shown by group with its kept copy, a plan of near-duplicates by group with nothing ticked; any
+/// other plan one change per row, with the new name or folder for a rename or a move. Every
+/// proposed change has a checkbox, which Space toggles for the selected row; Command-Y opens Quick
+/// Look, and Space with two rows selected shows them side by side. Keep This File, in the context menu or with Command-K,
 /// takes the selected change out of the plan and marks its file Kept. Move to Trash or Rename asks for confirmation, carries
 /// out the ticked changes and then shows what happened; moves are shown but not applied yet.
 /// Every cleanup action shares this screen.
 struct CleanupPreviewSheet: View {
     @State private var model: CleanupPreviewModel
-    @State private var selectedRow: URL?
+    @State private var selection: Set<URL> = []
     @State private var previewItem: URL?
+
+    /// The two files shown side by side, while they are.
+    @State private var comparing: [FileRecord]?
 
     /// The checkbox with keyboard focus, if any. It owns Space itself; the list's handler stands back.
     @FocusState private var focusedCheckbox: URL?
@@ -65,6 +69,12 @@ struct CleanupPreviewSheet: View {
                 .padding(12)
         }
         .frame(minWidth: 620, idealWidth: 700, minHeight: 420, idealHeight: 540)
+        .sheet(item: Binding(
+            get: { comparing.map(ComparedFiles.init) },
+            set: { comparing = $0?.records }
+        )) { compared in
+            CompareFilesSheet(records: compared.records)
+        }
         .sheet(isPresented: $model.isConfirming) {
             CleanupConfirmationSheet(operation: model.operation, fileCount: model.tickedCount, bytes: model.tickedBytes) {
                 model.execute()
@@ -80,7 +90,7 @@ struct CleanupPreviewSheet: View {
         .onAppear {
             selectAllMonitor = SelectAllKeyMonitor { [model] in
                 // Only while reviewing, and not while the confirmation or Quick Look is in front.
-                guard model.isReviewing, !model.isConfirming, previewItem == nil else { return false }
+                guard model.isReviewing, !model.isConfirming, previewItem == nil, comparing == nil else { return false }
                 model.selectAll()
                 return true
             }
@@ -103,7 +113,10 @@ struct CleanupPreviewSheet: View {
                     .foregroundStyle(.secondary)
             } else if model.result == nil {
                 // Once files have moved, the summary below says what happened instead.
-                if model.isGroupedByDuplicates {
+                if model.isGroupedByNearDuplicates {
+                    Text("^[\(plan.changes.count) file](inflect: true) in ^[\(plan.nearDuplicateGroups.count) group](inflect: true) share a name but not their content. Nothing is ticked: tick only what you want in the Trash.")
+                        .foregroundStyle(.secondary)
+                } else if model.isGroupedByDuplicates {
                     Text("^[\(plan.changes.count) duplicate](inflect: true) in ^[\(plan.duplicateGroups.count) group](inflect: true) would free \(plan.bytesToFree.formattedFileSize)")
                         .foregroundStyle(.secondary)
                 } else if plan.bytesToFree > 0 {
@@ -144,8 +157,34 @@ struct CleanupPreviewSheet: View {
     }
 
     private var changeList: some View {
-        List(selection: $selectedRow) {
-            if model.isGroupedByDuplicates {
+        List(selection: $selection) {
+            if model.isGroupedByNearDuplicates {
+                ForEach(plan.nearDuplicateGroups) { group in
+                    let newest = group.newestIDs
+                    let largest = group.largestIDs
+                    Section {
+                        ForEach(group.members) { member in
+                            NearDuplicateRow(
+                                member: member,
+                                reason: reason(for: member.id),
+                                isNewest: newest.contains(member.id),
+                                isLargest: largest.contains(member.id),
+                                isTicked: tickedBinding(member.id),
+                                canTick: model.canTick(member.id),
+                                isEnabled: model.isReviewing,
+                                focusedCheckbox: $focusedCheckbox
+                            )
+                            .tag(member.id)
+                        }
+                    } header: {
+                        Text(group.cleanedName)
+                    } footer: {
+                        Text("One file of each group always stays, so the last one can’t be ticked.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else if model.isGroupedByDuplicates {
                 ForEach(plan.duplicateGroups) { group in
                     Section {
                         KeptFileRow(record: group.kept)
@@ -199,9 +238,18 @@ struct CleanupPreviewSheet: View {
             preview(urls)
         }
         .onKeyPress(.space) {
-            // A focused checkbox owns Space. Otherwise Space ticks or unticks the selected duplicate;
-            // kept and unchecked rows have no checkbox, so Space does nothing on them.
-            guard focusedCheckbox == nil, model.isReviewing, let selectedRow,
+            // A focused checkbox owns Space. With two rows selected, Space shows them side by side.
+            // Otherwise Space ticks or unticks the selected change; kept and unchecked rows have no
+            // checkbox, so Space does nothing on them.
+            guard focusedCheckbox == nil else { return .ignored }
+            if selection.count == 2 {
+                let records = rowRecords.filter { selection.contains($0.id) }
+                guard records.count == 2 else { return .ignored }
+                previewItem = nil
+                comparing = records
+                return .handled
+            }
+            guard model.isReviewing, let selectedRow,
                   let id = changeID(for: selectedRow) else { return .ignored }
             model.setTicked(id, !model.isTicked(id))
             return .handled
@@ -211,13 +259,13 @@ struct CleanupPreviewSheet: View {
             switch press.key {
             case "y":
                 // Command-Y, as in Finder, handled by the list itself.
-                guard selectedRow != nil || previewItem != nil else { return .ignored }
+                guard !selection.isEmpty || previewItem != nil else { return .ignored }
                 toggleQuickLook()
                 return .handled
             case "k":
-                // Command-K, as in the main window: Keep This File for the selected row.
-                guard let selectedRow, model.canKeep([selectedRow]) else { return .ignored }
-                model.keep([selectedRow])
+                // Command-K, as in the main window: Keep This File for the selected rows.
+                guard model.canKeep(selection) else { return .ignored }
+                model.keep(selection)
                 return .handled
             default:
                 return .ignored
@@ -236,7 +284,21 @@ struct CleanupPreviewSheet: View {
             return .handled
         }
         .quickLookPreview($previewItem, in: rowURLs)
-        .accessibilityLabel(model.isGroupedByDuplicates ? Text("Duplicate groups") : Text("Proposed changes"))
+        .accessibilityLabel(
+            model.isGroupedByNearDuplicates
+                ? Text("Near-duplicate groups")
+                : model.isGroupedByDuplicates ? Text("Duplicate groups") : Text("Proposed changes")
+        )
+    }
+
+    /// The one selected row, if exactly one is selected.
+    private var selectedRow: URL? {
+        selection.count == 1 ? selection.first : nil
+    }
+
+    /// The reason the plan gives for the change on row `id`.
+    private func reason(for id: ProposedChange.ID) -> ProposedChange.Reason {
+        plan.changes.first { $0.id == id }?.reason ?? .nearDuplicate(sameNameAs: "")
     }
 
     /// The proposed change shown in the row tagged `row`, if that row is one.
@@ -251,8 +313,8 @@ struct CleanupPreviewSheet: View {
             previewItem = nil
             return
         }
-        guard let selectedRow else { return }
-        preview([selectedRow])
+        guard !selection.isEmpty else { return }
+        preview(selection)
     }
 
     @ViewBuilder
@@ -342,11 +404,14 @@ struct CleanupPreviewSheet: View {
     /// Select All and Select None, worded for duplicates or for changes.
     @ViewBuilder
     private var selectButtons: some View {
-        Button("Select All") {
-            model.selectAll()
+        // Near-duplicates are ticked one by one, after looking: Select All would tick none of them.
+        if !model.isGroupedByNearDuplicates {
+            Button("Select All") {
+                model.selectAll()
+            }
+            .keyboardShortcut("a", modifiers: .command)
+            .help(model.isGroupedByDuplicates ? Text("Tick every duplicate (⌘A)") : Text("Tick every change (⌘A)"))
         }
-        .keyboardShortcut("a", modifiers: .command)
-        .help(model.isGroupedByDuplicates ? Text("Tick every duplicate (⌘A)") : Text("Tick every change (⌘A)"))
         Button("Select None") {
             model.selectNone()
         }
@@ -376,11 +441,19 @@ struct CleanupPreviewSheet: View {
 
     /// Every row's URL in display order, so the Quick Look panel's arrows move through the list.
     private var rowURLs: [URL] {
+        rowRecords.map(\.url)
+    }
+
+    /// Every row's file in display order.
+    private var rowRecords: [FileRecord] {
+        if model.isGroupedByNearDuplicates {
+            return plan.nearDuplicateGroups.flatMap { $0.members.map(\.record) }
+        }
         guard model.isGroupedByDuplicates else {
-            return plan.changes.map(\.record.url)
+            return plan.changes.map(\.record)
         }
         return plan.duplicateGroups.flatMap { group in
-            [group.kept.url] + group.duplicates.map(\.url)
+            [group.kept] + group.duplicates
         }
     }
 
@@ -408,4 +481,11 @@ struct CleanupPreviewSheet: View {
         previewItem = nil
         dismiss()
     }
+}
+
+/// The files of a side-by-side comparison, as a sheet's item.
+private struct ComparedFiles: Identifiable {
+    let records: [FileRecord]
+
+    var id: [URL] { records.map(\.id) }
 }

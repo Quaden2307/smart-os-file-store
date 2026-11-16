@@ -113,6 +113,8 @@ extension ProposedChange.Reason {
             ActivityLogCode(code: "unpackedZip", detail: unpackedTo)
         case .usedInstaller(let evidence):
             ActivityLogCode(code: "usedInstaller", detail: evidence.logDetail)
+        case .nearDuplicate(let otherName):
+            ActivityLogCode(code: "nearDuplicate", detail: otherName)
         }
     }
 
@@ -143,6 +145,8 @@ extension ProposedChange.Reason {
                 return nil
             }
             self = .usedInstaller(evidence)
+        case "nearDuplicate":
+            self = .nearDuplicate(sameNameAs: logCode.detail ?? "")
         default:
             return nil
         }
@@ -294,6 +298,8 @@ extension CleanupSkipReason {
             ActivityLogCode(code: "installedAppMissing", detail: name)
         case .installedAppChanged(let name):
             ActivityLogCode(code: "installedAppChanged", detail: name)
+        case .lastInGroup:
+            ActivityLogCode(code: "lastInGroup")
         case .cancelled:
             ActivityLogCode(code: "cancelled")
         case .destinationExists(let name):
@@ -362,6 +368,8 @@ extension CleanupSkipReason {
             self = .installedAppMissing(name: detail)
         case "installedAppChanged":
             self = .installedAppChanged(name: detail)
+        case "lastInGroup":
+            self = .lastInGroup
         case "cancelled":
             self = .cancelled
         case "destinationExists":

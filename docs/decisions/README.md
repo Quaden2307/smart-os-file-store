@@ -43,3 +43,4 @@ One short record per segment for each decision a reader of the code would otherw
 - [0012. Remove Used Installers: what counts as used](0012-used-installer-evidence.md)
 - [0013. Reading installers without running or changing them](0013-reading-installers.md)
 - [0014. Fix Messy Names: the cleaning rules and name clashes](0014-fix-messy-names.md)
+- [0015. Review Near-Duplicates: a review list that always leaves a file](0015-review-near-duplicates.md)

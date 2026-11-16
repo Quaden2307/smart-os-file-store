@@ -351,7 +351,7 @@ struct ActivityLogRecordingTests {
         let skips: [CleanupSkipReason] = [
             .changedSinceScan, .notFound, .accessDenied, .notDownloaded, .notARegularFile,
             .unreadable(reason: "Input/output error"), .keptFile, .notInPlan, .markedKept, .outsideFolder, .folderUnavailable,
-            .keptFileMissing(name: "kept – ✓.pdf"), .keptFileNotVerified(name: "kept.pdf"), .cancelled,
+            .keptFileMissing(name: "kept – ✓.pdf"), .keptFileNotVerified(name: "kept.pdf"), .lastInGroup, .cancelled,
             .destinationExists(name: "taken.txt"), .invalidName, .destinationOutsideFolder, .destinationNotAFolder,
             .destinationHidden, .activityLogUnavailable,
             .zipUnlistable(.damaged), .zipUnlistable(.encryptedListing), .zipUnlistable(.tooManyEntries),
@@ -380,6 +380,9 @@ struct ActivityLogRecordingTests {
             ),
             LogSamples.trashed(
                 ProposedChange(record: LogSamples.record(named: "project.zip"), operation: .moveToTrash, reason: .unpackedZip(unpackedTo: "project 2"))
+            ),
+            LogSamples.trashed(
+                ProposedChange(record: LogSamples.record(named: "notes (1).txt"), operation: .moveToTrash, reason: .nearDuplicate(sameNameAs: "notes – ✓.txt"))
             ),
             // Every value the evidence carries, with a name and path that JSON must escape.
             LogSamples.trashed(
@@ -428,12 +431,12 @@ struct ActivityLogRecordingTests {
         let changes = try await log.changes(inRun: runID)
 
         #expect(changes.count == items.count)
-        let expectedOutcomes: [ActivityChange.Outcome] = [.trashed, .trashed, .renamed, .moved, .trashed, .trashed, .trashed]
+        let expectedOutcomes: [ActivityChange.Outcome] = [.trashed, .trashed, .renamed, .moved, .trashed, .trashed, .trashed, .trashed]
             + skips.map { .skipped($0) }
             + failures.map { .failed($0) }
         #expect(changes.map(\.outcome) == expectedOutcomes)
         #expect(changes.map(\.reason) == items.map { Optional($0.change.reason) })
-        let expectedOperations: [ActivityChange.Operation?] = [.moveToTrash, .moveToTrash, .rename, .move, .moveToTrash, .moveToTrash, .moveToTrash]
+        let expectedOperations: [ActivityChange.Operation?] = [.moveToTrash, .moveToTrash, .rename, .move, .moveToTrash, .moveToTrash, .moveToTrash, .moveToTrash]
             + Array(repeating: .moveToTrash, count: skips.count + failures.count)
         #expect(changes.map(\.operation) == expectedOperations)
         #expect(changes.map(\.originalPath) == items.map(\.change.originalPath))

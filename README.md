@@ -24,6 +24,7 @@ Smart OS File Store is a native macOS file browser that will replace Finder, sta
 - **A Clean Up menu**, in the toolbar and the menu bar, with two more cleanups. **Clear Failed Downloads** (⇧⌘F) proposes partial downloads that stopped more than an hour ago and never finished. **Remove Unpacked Zips** (⇧⌘U) proposes a zip whose every file already sits next to it, unpacked, at the same size, where Archive Utility puts it (one item beside the zip, several in a folder named after it, or a numbered name such as `project 2`). The unpacked copy is never touched, and zips are only ever read, never extracted.
 - **Remove Used Installers** (⇧⌘I, in the Clean Up menu) proposes a disk image (`.dmg`), installer package (`.pkg`) or zip holding an app at its top level once that app is in `/Applications` or `~/Applications`. It is ticked when the app's identifier matches and the installed version is the same or newer; it is proposed unticked, as a **Possible match**, when only the name matches (the file name without version numbers and words like `arm64`). An installed version older than the installer's is never proposed, and neither is a disk image someone has open. Installers are only read: a zip's `Info.plist` in memory, a package's own description without its payload, and a disk image attached read-only and hidden, checked by macOS's checker, and always ejected. Nothing is run, nothing is written into them, and an image that asks for a password or a licence is never opened. What was read is kept in the activity log, so the next search reads none of them again, and the file list marks strong matches **Installed**.
 - **Fix Messy Names** (⇧⌘M, in the Clean Up menu) proposes clean names for files with copy numbers or leftover junk in their names: it decodes `%20` and the like, removes a web address's leftover such as `_dl=1` or `@download` after the extension, a doubled extension (`slides.pdf.pdf`) and copy suffixes (` (1)`, ` copy`, ` copy 2`), then tidies the spaces, dots and underscores that leaves. Nothing else about a name changes: not its letter case, dates, version numbers or words, and never its extension. When the clean name belongs to a file with the same content, nothing is proposed (that is a duplicate); when it belongs to a different file, the file's date is added (`invoice 2026-11-13.pdf`, then ` v2`). The preview strikes out what each name loses and shows what it gains in bold; Rename asks first, and Undo gives the old names back.
+- **Review Near-Duplicates** (⇧⌘R, in the Clean Up menu) lists files whose cleaned names match, extension included, but whose content differs ("Similar names, different content"). Nothing is ticked and nothing is chosen to stay; each row shows size, Date Added, Date Modified and Last Opened, with Newest and Largest as facts. One file of each group always stays. Space with two rows selected shows them side by side in Quick Look.
 - **Keep This File** (⌘K, File menu and context menu): marks files and folders Kept, so no cleanup ever proposes them. Kept items show a Kept badge and a Kept choice in the filter; File > Stop Keeping All clears them, after asking. In the preview, Keep This File takes a file out of the plan and marks it Kept. Kept follows the file through renames and moves; editing it in an app that saves a new copy makes it a new, unkept file. When one copy of a duplicate is Kept, that copy is the one kept.
 
 The two thresholds live in the app's defaults. There is no settings window yet; to change them for good, or for one launch:
@@ -37,7 +38,7 @@ open build/Build/Products/Debug/SmartOSFileStore.app --args -CleanupUnusedAfterD
 ## What it does not do yet
 
 - Only the top level of Downloads. No other folders and no subfolders.
-- Five cleanups so far: Find Duplicates, Clear Failed Downloads, Remove Unpacked Zips, Remove Used Installers and Fix Messy Names. The others arrive in their own segments.
+- Six cleanups so far: Find Duplicates, Clear Failed Downloads, Remove Unpacked Zips, Remove Used Installers, Fix Messy Names and Review Near-Duplicates. The others arrive in their own segments.
 - An Activity entry cannot be opened for more detail yet. That is planned for later, perhaps with an Apple Intelligence summary.
 - No watching of the folder: the list refreshes on launch, with ⌘R, and after Move to Trash.
 - No Stop button while files move; each move is quick, and closing the window stops between files.
@@ -54,6 +55,7 @@ open build/Build/Products/Debug/SmartOSFileStore.app --args -CleanupUnusedAfterD
 | Main window | ⇧⌘U | Remove Unpacked Zips |
 | Main window | ⇧⌘I | Remove Used Installers |
 | Main window | ⇧⌘M | Fix Messy Names |
+| Main window | ⇧⌘R | Review Near-Duplicates |
 | Main window | ⌘R | Refresh the list |
 | Main window | Space, ⌘Y, double-click | Quick Look the selection (press again to close) |
 | Main window | ⌥⌘R | Reveal the selection in Finder |

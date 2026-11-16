@@ -40,6 +40,8 @@ extension CleanupAction {
             CleanupActionDefinition(identifier: "removeUsedInstallers", operation: .moveToTrash)
         case .fixMessyNames:
             CleanupActionDefinition(identifier: "fixMessyNames", operation: .rename)
+        case .reviewNearDuplicates:
+            CleanupActionDefinition(identifier: "reviewNearDuplicates", operation: .moveToTrash)
         case .archiveOldDownloads:
             CleanupActionDefinition(identifier: "archiveOldDownloads", operation: .move)
         }

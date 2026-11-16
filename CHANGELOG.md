@@ -46,6 +46,13 @@ All notable changes to Smart OS File Store are recorded here. The format follows
 - The preview can now carry out renames: Rename asks "Rename N files?", where Return renames and Escape cancels.
 - An **Installed** mark and filter for installers whose app is installed, from what Remove Used Installers has read; drawing the list opens no installer.
 - A debug-only launch argument, `-ApplicationsFolder <path>`, for hand testing against a fake Applications folder. Release builds ignore it.
+- **Review Near-Duplicates** (⇧⌘R). It lists files whose names are the same once cleaned, such as `report.pdf` and `report (1).pdf`, but whose content differs, under the title "Similar names, different content":
+  - nothing is ticked and no file is chosen to stay; tick only what you want in the Trash, and the confirmation asks first;
+  - each row shows the size, Date Added, Date Modified and Last Opened, with "Newest" and "Largest" as facts, and the reason "Same name as notes.txt, different content";
+  - one file of each group always stays: the last one can't be ticked, and the engine refuses a run that would move them all;
+  - files with identical content are left to Find Duplicates: a group shows one of each and says how many identical copies it has. Different extensions never match;
+  - Quick Look works on any row, and Space with two rows selected shows them side by side (in every preview);
+  - files read by Find Duplicates earlier in the session are not read again.
 - A **Clean Up** menu in the toolbar and in the menu bar lists every cleanup action: Find Duplicates (⇧⌘D, unchanged), Clear Failed Downloads (⇧⌘F), Remove Unpacked Zips (⇧⌘U), Remove Used Installers (⇧⌘I) and Fix Messy Names (⇧⌘M). Every action runs through the same steps: progress and Cancel, the preview, the confirmation, the summary with Undo.
 - A **Failed download** mark and filter in the file list, for the partial downloads Clear Failed Downloads would propose.
 - A Last Opened column: the date macOS records when a file is opened, read from the file itself, so it shows at once in any folder. Files never opened show "Never" and sort as the oldest. Folders, apps, links and Finder aliases, which macOS does not date when they are opened, show a dash unless a date is recorded, and so does any item whose date could not be read.

@@ -30,6 +30,10 @@ public struct CleanupPlan: Sendable, Hashable {
     /// groups, such as renames and moves, which the preview then lists one change per row.
     public let duplicateGroups: [DuplicateGroup]
 
+    /// For `reviewNearDuplicates`: the files with the same cleaned name and different content, by
+    /// group. Every change belongs to one. Empty for every other action.
+    public let nearDuplicateGroups: [NearDuplicateGroup]
+
     /// Files the action saw but could not check.
     public let skippedItems: [SkippedItem]
 
@@ -42,6 +46,7 @@ public struct CleanupPlan: Sendable, Hashable {
         folderURL: URL,
         changes: [ProposedChange],
         duplicateGroups: [DuplicateGroup] = [],
+        nearDuplicateGroups: [NearDuplicateGroup] = [],
         skippedItems: [SkippedItem] = [],
         installerFactsRead: [InstallerFactsEntry] = []
     ) {
@@ -49,6 +54,7 @@ public struct CleanupPlan: Sendable, Hashable {
         self.folderURL = folderURL
         self.changes = changes
         self.duplicateGroups = duplicateGroups
+        self.nearDuplicateGroups = nearDuplicateGroups
         self.skippedItems = skippedItems
         self.installerFactsRead = installerFactsRead
     }
@@ -150,6 +156,10 @@ public enum CleanupSkipReason: Sendable, Hashable {
     /// The installed app an installer was matched with is no longer the one matched: another
     /// identifier, an older version, or not a real app any more. `name` is the app's name.
     case installedAppChanged(name: String)
+
+    /// Every other file of its near-duplicate group is gone, or is being moved to the Trash in this
+    /// same run, so this one stays: a near-duplicate group always keeps at least one file.
+    case lastInGroup
 
     /// Execution was stopped before this item was reached.
     case cancelled

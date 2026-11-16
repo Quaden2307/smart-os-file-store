@@ -43,6 +43,20 @@ public struct ProposedChange: Sendable, Hashable, Identifiable {
         /// possible match when only the name matches.
         case usedInstaller(UsedInstallerEvidence)
 
+        /// The file has the same cleaned name as the named file, and different content. Shown for
+        /// review only.
+        case nearDuplicate(sameNameAs: String)
+
+        /// True for a change that only the user may tick, by hand, after looking: a near-duplicate.
+        /// Nothing ticks it for them: not the preview, not Select All, and no automatic flow (Tidy
+        /// Now included).
+        public var isReviewOnly: Bool {
+            if case .nearDuplicate = self {
+                return true
+            }
+            return false
+        }
+
         /// True for a change the preview leaves unticked: a possible match, which the user ticks
         /// only after looking.
         public var isPossibleMatch: Bool {

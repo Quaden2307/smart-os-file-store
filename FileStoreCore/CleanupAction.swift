@@ -24,6 +24,11 @@ public enum CleanupAction: String, Sendable, Codable, CaseIterable, Hashable {
     /// name that is taken (`MessyNamePlanner`).
     case fixMessyNames
 
+    /// Lists files with the same cleaned name and different content, for review: nothing is ticked
+    /// and nothing is chosen to stay (`NearDuplicatePlanner`). The user may tick files for the
+    /// Trash, never every file of a group.
+    case reviewNearDuplicates
+
     /// Proposes moving old downloads into the archive folder. Its planner arrives in its own
     /// segment; until then no plan of this action is ever made.
     case archiveOldDownloads

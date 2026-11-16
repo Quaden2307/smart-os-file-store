@@ -48,6 +48,10 @@ final class CleanupSearchModel {
 
     private let logger = Logger(subsystem: "com.quaden2307.SmartOSFileStore", category: "Cleanup")
 
+    /// Content hashes read by searches in this session, so Review Near-Duplicates reads no file
+    /// that an earlier search already read, unchanged.
+    private let hashCache = ContentHashCache()
+
     // Isolated, so it may touch main-actor state: the window is gone, stop reading files for a
     // preview nobody will see.
     isolated deinit {
@@ -75,6 +79,7 @@ final class CleanupSearchModel {
         phase = .running(action, CleanupPlanningProgress(itemsChecked: 0, itemsToCheck: 0))
         logger.info("Planning \(action.definition.identifier, privacy: .public) over \(records.count) records")
         let opening = activity.openings
+        let hashCache = hashCache
 
         // Weak throughout: the task must not keep the model alive, and `deinit` cancels the task.
         searchTask = Task { [weak self] in
@@ -88,7 +93,8 @@ final class CleanupSearchModel {
                         in: folderURL,
                         eligibility: eligibility,
                         keptItems: keptItems,
-                        installers: .standard(applicationFolders: applicationFolders, cache: log)
+                        installers: .standard(applicationFolders: applicationFolders, cache: log),
+                        hashCache: hashCache
                     ) { progress in
                         Task { @MainActor in
                             self?.report(progress, generation: generation)

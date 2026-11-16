@@ -20,8 +20,11 @@ final class CleanupPreviewModel {
     /// Whether the preview shows duplicate groups or one change per row, worked out once.
     let isGroupedByDuplicates: Bool
 
+    /// Whether the preview shows near-duplicate groups, worked out once.
+    let isGroupedByNearDuplicates: Bool
 
-    /// Changes the user has left ticked. Everything but a possible match is ticked to begin with.
+    /// Changes the user has left ticked. Everything but a possible match and a near-duplicate is
+    /// ticked to begin with.
     private(set) var ticked: Set<ProposedChange.ID>
 
     /// True while the confirmation sheet is up, so it is never shown twice.
@@ -65,10 +68,11 @@ final class CleanupPreviewModel {
         self.plan = plan
         self.markKept = markKept
         self.isGroupedByDuplicates = plan.isGroupedByDuplicates
+        self.isGroupedByNearDuplicates = plan.isGroupedByNearDuplicates
         self.executor = CleanupExecutor(recorder: log, eligibility: eligibility, applicationFolders: applicationFolders)
         self.activity = activity
         self.onExecuted = onExecuted
-        self.ticked = Set(plan.changes.filter { !$0.reason.isPossibleMatch }.map(\.id))
+        self.ticked = Set(plan.changes.filter { !$0.reason.isPossibleMatch && !$0.reason.isReviewOnly }.map(\.id))
     }
 
     // Isolated, so it may touch main-actor state: the sheet is gone, stop between items.
@@ -118,18 +122,29 @@ final class CleanupPreviewModel {
         ticked.contains(id)
     }
 
+    /// False for the last unticked file of a near-duplicate group: one file of each group always
+    /// stays, and the executor refuses a run that would move them all.
+    func canTick(_ id: ProposedChange.ID) -> Bool {
+        guard let group = plan.nearDuplicateGroups.first(where: { $0.members.contains { $0.id == id } }) else {
+            return true
+        }
+        return group.members.contains { $0.id != id && !ticked.contains($0.id) }
+    }
+
     func setTicked(_ id: ProposedChange.ID, _ isTicked: Bool) {
         guard isReviewing else { return }
         if isTicked {
+            guard canTick(id) else { return }
             ticked.insert(id)
         } else {
             ticked.remove(id)
         }
     }
 
+    /// Ticks every change except those only the user may tick, one by one (near-duplicates).
     func selectAll() {
         guard isReviewing else { return }
-        ticked = Set(plan.changes.map(\.id))
+        ticked.formUnion(plan.changes.filter { !$0.reason.isReviewOnly }.map(\.id))
     }
 
     func selectNone() {
@@ -152,6 +167,13 @@ final class CleanupPreviewModel {
         let removed = Set(records.map(\.id))
         ticked.subtract(removed)
         plan = plan.removing(removed)
+        // A near-duplicate left alone in its group leaves the plan with the kept file.
+        ticked.formIntersection(plan.changes.map(\.id))
+        // A group now ticked in full, its Kept file gone from the list: untick it, so that the user
+        // decides again with one file left unticked rather than the executor keeping one back.
+        for group in plan.nearDuplicateGroups where group.members.allSatisfy({ ticked.contains($0.id) }) {
+            ticked.subtract(group.members.map(\.id))
+        }
         keptCount += records.count
         logger.info("Took \(records.count) files out of the plan to keep them")
         markKept(records) { [weak self] succeeded in

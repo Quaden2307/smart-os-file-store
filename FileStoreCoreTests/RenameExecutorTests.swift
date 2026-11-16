@@ -446,6 +446,7 @@ struct RenameExecutorTests {
             .removeUnpackedZips: [true, false, false],
             .removeUsedInstallers: [true, false, false],
             .fixMessyNames: [false, true, false],
+            .reviewNearDuplicates: [true, false, false],
             .archiveOldDownloads: [false, false, true],
         ]
         #expect(Set(allowed.keys) == Set(CleanupAction.allCases))

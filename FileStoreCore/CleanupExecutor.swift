@@ -86,7 +86,7 @@ public struct CleanupExecutor: Sendable {
         if !unknown.isEmpty {
             Self.logger.error("Ignoring \(unknown.count) confirmed items that are not in the plan")
         }
-        let context = PlanContext(plan: plan)
+        let context = PlanContext(plan: plan, confirmed: Set(confirmed.map(\.id)))
         // Checks that look up names do it through one handle on the folder, opened only if it is the
         // folder the plan names. Opening it costs one call, so it is opened for every plan.
         let folder = context.openFolder()
@@ -237,6 +237,20 @@ public struct CleanupExecutor: Sendable {
                     return CleanupItemResult(change: change, outcome: .skipped(.folderUnavailable))
                 }
                 let outcome = await trashUsedInstaller(
+                    change,
+                    folder: folder,
+                    context: context,
+                    folderIdentity: folderIdentity,
+                    now: now,
+                    journal: &journal,
+                    beforeChange: beforeChange
+                )
+                return CleanupItemResult(change: change, outcome: outcome)
+            case .reviewNearDuplicates:
+                guard let folder else {
+                    return CleanupItemResult(change: change, outcome: .skipped(.folderUnavailable))
+                }
+                let outcome = trashNearDuplicate(
                     change,
                     folder: folder,
                     context: context,
@@ -464,7 +478,14 @@ struct PlanContext: Sendable {
     /// Each duplicate's group, by the plan's own URL value.
     let groupsByDuplicateURL: [URL: DuplicateGroup]
 
-    init(plan: CleanupPlan) {
+    /// Each near-duplicate's group, by the plan's own URL value.
+    let nearDuplicateGroupsByURL: [URL: NearDuplicateGroup]
+
+    /// The near-duplicates this run will try to move: those confirmed, less one file of any group
+    /// whose every file was confirmed. That file stays (`trashNearDuplicate`).
+    let nearDuplicatesToTrash: Set<URL>
+
+    init(plan: CleanupPlan, confirmed: Set<ProposedChange.ID>) {
         action = plan.action
         folderURL = plan.folderURL
         let folderStatus = try? FileStatus.of(path: plan.folderURL.path(percentEncoded: false), followingLinks: true)
@@ -490,6 +511,22 @@ struct PlanContext: Sendable {
         self.keptURLs = keptURLs
         self.keptIdentities = keptIdentities
         self.groupsByDuplicateURL = groups
+
+        var nearGroups: [URL: NearDuplicateGroup] = [:]
+        var toTrash: Set<URL> = []
+        for group in plan.nearDuplicateGroups {
+            let urls = group.members.map(\.record.url)
+            for url in urls where nearGroups[url] == nil {
+                nearGroups[url] = group
+            }
+            var confirmedHere = Set(urls).intersection(confirmed)
+            if confirmedHere.count == Set(urls).count, let spared = NearDuplicateGroup.spared(among: group.members.map(\.record)) {
+                confirmedHere.remove(spared.url)
+            }
+            toTrash.formUnion(confirmedHere)
+        }
+        self.nearDuplicateGroupsByURL = nearGroups
+        self.nearDuplicatesToTrash = toTrash
     }
 
     /// A handle on the plan's folder, or nil when it cannot be opened or is no longer the folder
@@ -563,6 +600,8 @@ extension CleanupSkipReason {
             "installed app missing"
         case .installedAppChanged:
             "installed app changed"
+        case .lastInGroup:
+            "last of its group"
         case .cancelled:
             "cancelled"
         case .destinationExists:

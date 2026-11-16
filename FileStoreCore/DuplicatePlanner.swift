@@ -23,16 +23,22 @@ public struct DuplicatePlanner: Sendable {
     /// The rules every action shares, the grace period among them.
     public let eligibility: CandidateEligibility
 
+    /// Where the hashes read are left for other planners. Never read here: these hashes decide
+    /// what goes to the Trash, so each is read from the file itself.
+    public let hashCache: ContentHashCache?
+
     private static let logger = Logger(subsystem: "com.quaden2307.FileStoreCore", category: "DuplicatePlanner")
 
     public init(
         hasher: ContentHasher = ContentHasher(),
         maxConcurrentHashes: Int = Self.defaultMaxConcurrentHashes,
-        eligibility: CandidateEligibility = CandidateEligibility()
+        eligibility: CandidateEligibility = CandidateEligibility(),
+        hashCache: ContentHashCache? = nil
     ) {
         self.hasher = hasher
         self.maxConcurrentHashes = max(1, maxConcurrentHashes)
         self.eligibility = eligibility
+        self.hashCache = hashCache
     }
 
     // MARK: - Pure functions
@@ -220,6 +226,14 @@ public struct DuplicatePlanner: Sendable {
         }
         try Self.throwIfCancelled()
         tracker.emitNow()
+
+        if let hashCache {
+            for record in toHash {
+                if let hash = hashes[record.id] {
+                    hashCache.store(hash, for: record)
+                }
+            }
+        }
 
         // A Kept file that could not be read is left out of the plan altogether, not listed as
         // unchecked: no plan ever names a Kept file except as the copy a group keeps.

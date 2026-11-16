@@ -13,6 +13,16 @@ extension CleanupPlan {
         return changes.allSatisfy { groupedURLs.contains($0.id) }
     }
 
+    /// True when there are near-duplicate groups and every change belongs to one, so the preview
+    /// can show the groups.
+    var isGroupedByNearDuplicates: Bool {
+        guard !nearDuplicateGroups.isEmpty else {
+            return false
+        }
+        let groupedURLs = Set(nearDuplicateGroups.flatMap { $0.members.map(\.id) })
+        return changes.allSatisfy { groupedURLs.contains($0.id) }
+    }
+
     /// What every change in the plan does: its action's one operation.
     var operation: CleanupActionDefinition.OperationKind {
         action.definition.operation
@@ -83,7 +93,7 @@ extension ProposedChange.Reason {
             return evidence.historyDescription
         case .messyName(let fix):
             return fix.historyDescription
-        case .sameContent, .oldDownload, .failedDownload, .unpackedZip:
+        case .sameContent, .oldDownload, .failedDownload, .unpackedZip, .nearDuplicate:
             return localizedDescription
         }
     }
@@ -107,6 +117,8 @@ extension ProposedChange.Reason {
             return String(localized: "Already unpacked to \(unpackedTo)")
         case .usedInstaller(let evidence):
             return evidence.localizedDescription
+        case .nearDuplicate(let otherName):
+            return String(localized: "Same name as \(otherName), different content")
         }
     }
 }
@@ -245,6 +257,8 @@ extension CleanupSkipReason {
             return String(localized: "\(name) is no longer installed, so the installer was left alone.")
         case .installedAppChanged(let name):
             return String(localized: "\(name) has changed since the check, so the installer was left alone. \(runAgain)")
+        case .lastInGroup:
+            return String(localized: "It was the last file of its group left in the folder, so it stays. At least one file of each group always stays.")
         case .cancelled:
             return String(localized: "Stopped before this file was reached.")
         case .destinationExists(let name):

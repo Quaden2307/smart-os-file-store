@@ -131,6 +131,21 @@ extension CleanupAction {
                     localized: "Every file checked already has a clean name. Files added or changed in the last hour are checked once they are an hour old."
                 )
             )
+        case .reviewNearDuplicates:
+            CleanupActionDisplay(
+                title: String(localized: "Similar names, different content"),
+                commandTitle: String(localized: "Review Near-Duplicates"),
+                explanation: String(localized: "List files with the same name and different content, so you can compare them. Nothing is ticked for you."),
+                symbol: "square.on.square.dashed",
+                shortcutKey: "r",
+                progressLabel: String(localized: "Looking for files with the same name"),
+                cancelHelp: String(localized: "Stop looking for files with the same name (Esc)"),
+                progressStyle: .spinner,
+                emptyTitle: String(localized: "No Near-Duplicates Found"),
+                emptyDescription: String(
+                    localized: "No two files checked share a name with different content. Files with identical content are duplicates: Find Duplicates handles those. Files added or changed in the last hour are checked once they are an hour old."
+                )
+            )
         case .archiveOldDownloads:
             CleanupActionDisplay(
                 title: String(localized: "Old Downloads"),

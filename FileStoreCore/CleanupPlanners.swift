@@ -23,6 +23,7 @@ public enum CleanupPlanners {
     ///   - onProgress: Called from planning threads while files are read, quickly and not too often.
     ///     Only an action that reads files reports any: Find Duplicates the files it hashes and their
     ///     bytes, Remove Unpacked Zips the zips it checks, Remove Used Installers the installers.
+    ///     Fix Messy Names reads only files that might be duplicates of each other, and reports none.
     /// - Returns: The plan, or nil while the action has no planner yet.
     /// - Throws: `.cancelled` when the task is cancelled.
     @concurrent
@@ -63,6 +64,8 @@ public enum CleanupPlanners {
         case .usedInstallers:
             return try await InstallerPlanner(eligibility: eligibility)
                 .plan(records: records, in: folderURL, sources: installers, now: now, onProgress: onProgress)
+        case .messyNames:
+            return try await MessyNamePlanner(eligibility: eligibility).plan(records: records, in: folderURL, now: now)
         }
     }
 
@@ -78,6 +81,7 @@ public enum CleanupPlanners {
         case failedDownloads
         case unpackedZips
         case usedInstallers
+        case messyNames
     }
 
     /// Each action's planner, in one list that both `plan` and `hasPlanner` read. Nil while the
@@ -92,7 +96,9 @@ public enum CleanupPlanners {
             .unpackedZips
         case .removeUsedInstallers:
             .usedInstallers
-        case .fixMessyNames, .archiveOldDownloads:
+        case .fixMessyNames:
+            .messyNames
+        case .archiveOldDownloads:
             nil
         }
     }

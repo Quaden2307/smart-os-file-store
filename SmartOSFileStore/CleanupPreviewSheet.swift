@@ -6,8 +6,8 @@ import SwiftUI
 /// shown by group with its kept copy; any other plan one change per row, with the new name or
 /// folder for a rename or a move. Every proposed change has a checkbox, which Space toggles for the
 /// selected row; Command-Y opens Quick Look. Keep This File, in the context menu or with Command-K,
-/// takes the selected change out of the plan and marks its file Kept. Move to Trash asks for confirmation, carries out the
-/// ticked changes and then shows what happened; renames and moves are shown but not applied yet.
+/// takes the selected change out of the plan and marks its file Kept. Move to Trash or Rename asks for confirmation, carries
+/// out the ticked changes and then shows what happened; moves are shown but not applied yet.
 /// Every cleanup action shares this screen.
 struct CleanupPreviewSheet: View {
     @State private var model: CleanupPreviewModel
@@ -66,7 +66,7 @@ struct CleanupPreviewSheet: View {
         }
         .frame(minWidth: 620, idealWidth: 700, minHeight: 420, idealHeight: 540)
         .sheet(isPresented: $model.isConfirming) {
-            TrashConfirmationSheet(fileCount: model.tickedCount, bytes: model.tickedBytes) {
+            CleanupConfirmationSheet(operation: model.operation, fileCount: model.tickedCount, bytes: model.tickedBytes) {
                 model.execute()
             }
         }
@@ -113,8 +113,8 @@ struct CleanupPreviewSheet: View {
                     Text("^[\(plan.changes.count) change](inflect: true)")
                         .foregroundStyle(.secondary)
                 }
-                if !model.isTrashOnly {
-                    Text("Renames and moves can’t be applied yet.")
+                if !model.canBeApplied {
+                    Text("Moves can’t be applied yet.")
                         .foregroundStyle(.secondary)
                 }
             }
@@ -225,9 +225,9 @@ struct CleanupPreviewSheet: View {
         }
         .onKeyPress(.return) {
             // A list answers Return with its primary action (Quick Look) before the default button
-            // is considered; here Return means the default button. That is Move to Trash, which
-            // only opens the confirmation, or Done for a plan that is previewed only.
-            if model.isReviewing, !model.isTrashOnly {
+            // is considered; here Return means the default button. That is Move to Trash or Rename,
+            // which only opens the confirmation, or Done for a plan that is previewed only.
+            if model.isReviewing, !model.canBeApplied {
                 close()
                 return .handled
             }
@@ -264,26 +264,34 @@ struct CleanupPreviewSheet: View {
                 Spacer()
                 doneButton
             }
-        case .reviewing where model.isTrashOnly:
+        case .reviewing where model.canBeApplied:
             HStack(spacing: 12) {
                 selectButtons
-                Text("^[\(model.tickedCount) file](inflect: true) (\(model.tickedBytes.formattedFileSize)) selected")
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
+                Group {
+                    if model.operation == .rename {
+                        Text("^[\(model.tickedCount) file](inflect: true) selected")
+                    } else {
+                        Text("^[\(model.tickedCount) file](inflect: true) (\(model.tickedBytes.formattedFileSize)) selected")
+                    }
+                }
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
                 skippedNote
                 Spacer()
                 Button("Cancel") {
                     close()
                 }
                 .keyboardShortcut(.cancelAction)
-                Button("Move to Trash") {
+                Button {
                     confirm()
+                } label: {
+                    model.operation == .rename ? Text("Rename") : Text("Move to Trash")
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(!model.canExecute || model.isConfirming)
             }
         case .reviewing:
-            // Renames and moves: previewed only, so there is nothing to apply and Done closes.
+            // Moves: previewed only, so there is nothing to apply and Done closes.
             HStack(spacing: 12) {
                 selectButtons
                 Text("^[\(model.tickedCount) change](inflect: true) selected")
@@ -295,18 +303,28 @@ struct CleanupPreviewSheet: View {
             }
         case .executing(let progress):
             HStack(spacing: 12) {
+                let current = min(progress.itemsCompleted + 1, progress.itemsTotal)
+                let isRename = model.operation == .rename
                 ProgressView(value: progress.fractionCompleted)
                     .frame(maxWidth: 240)
-                    .accessibilityLabel("Progress moving files to the Trash")
-                Text("Moving file \(min(progress.itemsCompleted + 1, progress.itemsTotal)) of \(progress.itemsTotal) to the Trash…")
+                    .accessibilityLabel(isRename ? Text("Progress renaming files") : Text("Progress moving files to the Trash"))
+                (isRename
+                    ? Text("Renaming file \(current) of \(progress.itemsTotal)…")
+                    : Text("Moving file \(current) of \(progress.itemsTotal) to the Trash…"))
                     .monospacedDigit()
                 Spacer()
             }
         case .finished(let result):
             HStack {
                 if !result.leftAlone.isEmpty {
-                    Text("^[\(result.leftAlone.count) file](inflect: true) not moved")
-                        .foregroundStyle(.secondary)
+                    Group {
+                        if model.operation == .rename {
+                            Text("^[\(result.leftAlone.count) file](inflect: true) not renamed")
+                        } else {
+                            Text("^[\(result.leftAlone.count) file](inflect: true) not moved")
+                        }
+                    }
+                    .foregroundStyle(.secondary)
                 }
                 Spacer()
                 if let onUndo, let runID = result.runID, result.hasDoneItems, result.logFailure == nil {
@@ -314,7 +332,7 @@ struct CleanupPreviewSheet: View {
                         onUndo(runID)
                         close()
                     }
-                    .help("Put the files back where they were")
+                    .help(model.operation == .rename ? Text("Give the files their old names back") : Text("Put the files back where they were"))
                 }
                 doneButton
             }
@@ -378,8 +396,8 @@ struct CleanupPreviewSheet: View {
         )
     }
 
-    /// Asks before anything moves; `TrashConfirmationSheet` calls `execute` only from its
-    /// Move to Trash button. Quick Look closes first so its panel does not float over the question.
+    /// Asks before anything changes; `CleanupConfirmationSheet` calls `execute` only from its
+    /// Move to Trash or Rename button. Quick Look closes first so its panel does not float over the question.
     private func confirm() {
         guard model.canExecute, !model.isConfirming else { return }
         previewItem = nil

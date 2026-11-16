@@ -24,4 +24,17 @@ struct FileNameCopySuffixTests {
             #expect(!FileNameCopySuffix.hasCopySuffix(name), "\(name) should be a clean name")
         }
     }
+
+    private func removed(_ stem: String) -> [String]? {
+        FileNameCopySuffix.removingCopySuffix(fromStem: stem).map { [$0.stem, $0.removed] }
+    }
+
+    @Test func removingASuffixKeepsHowItWasWritten() {
+        #expect(removed("report (12)") == ["report", " (12)"])
+        #expect(removed("Report COPY") == ["Report", " COPY"])
+        #expect(removed("Report Copy 2") == ["Report", " Copy 2"])
+        #expect(removed("Chapter (2) notes") == nil)
+        #expect(removed("copy") == nil)
+        #expect(removed("") == nil)
+    }
 }

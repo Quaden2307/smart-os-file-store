@@ -102,8 +102,8 @@ extension ProposedChange.Reason {
         switch self {
         case .sameContent(let keptName):
             ActivityLogCode(code: "sameContent", detail: keptName)
-        case .messyName:
-            ActivityLogCode(code: "messyName")
+        case .messyName(let fix):
+            ActivityLogCode(code: "messyName", detail: fix.logDetail)
         case .oldDownload:
             ActivityLogCode(code: "oldDownload")
         case .failedDownload(_, let finishedFileName):
@@ -123,7 +123,8 @@ extension ProposedChange.Reason {
         case "sameContent":
             self = .sameContent(asFileNamed: logCode.detail ?? "")
         case "messyName":
-            self = .messyName
+            // A row without a detail, or with one this version cannot read, still says it was a messy name.
+            self = .messyName(logCode.detail.flatMap(MessyNameFix.init(logDetail:)) ?? MessyNameFix(fixes: []))
         case "oldDownload":
             self = .oldDownload
         case "failedDownload":
@@ -142,6 +143,67 @@ extension ProposedChange.Reason {
                 return nil
             }
             self = .usedInstaller(evidence)
+        default:
+            return nil
+        }
+    }
+}
+
+extension MessyNameFix {
+    /// The detail a `messyName` reason stores: JSON with written-out keys, as for an installer.
+    /// A fix of a kind this version does not know is left out when read.
+    var logDetail: String {
+        var object: [String: Any] = ["fixes": fixes.map(\.logObject)]
+        object["taken"] = takenName
+        guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) else {
+            return ""
+        }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    init?(logDetail: String) {
+        guard let object = (try? JSONSerialization.jsonObject(with: Data(logDetail.utf8))) as? [String: Any],
+              let fixes = object["fixes"] as? [[String: Any]] else {
+            return nil
+        }
+        self.init(fixes: fixes.compactMap(NameFix.init(logObject:)), takenName: object["taken"] as? String)
+    }
+}
+
+extension NameFix {
+    fileprivate var logObject: [String: Any] {
+        switch self {
+        case .decodedPercentEncoding(let escapes):
+            ["rule": "decoded", "escapes": escapes]
+        case .removedWebLeftover(let text):
+            ["rule": "webLeftover", "text": text]
+        case .removedDoubledExtension(let text):
+            ["rule": "doubledExtension", "text": text]
+        case .removedCopySuffix(let text):
+            ["rule": "copySuffix", "text": text]
+        case .collapsedSpaces:
+            ["rule": "collapsedSpaces"]
+        case .trimmedEnds:
+            ["rule": "trimmedEnds"]
+        }
+    }
+
+    fileprivate init?(logObject: [String: Any]) {
+        let text = logObject["text"] as? String
+        switch (logObject["rule"] as? String, text) {
+        case ("decoded", _):
+            guard let escapes = logObject["escapes"] as? [String] else { return nil }
+            self = .decodedPercentEncoding(escapes: escapes)
+        case ("webLeftover", let text?):
+            self = .removedWebLeftover(text)
+        case ("doubledExtension", let text?):
+            self = .removedDoubledExtension(text)
+        case ("copySuffix", let text?):
+            self = .removedCopySuffix(text)
+        case ("collapsedSpaces", _):
+            self = .collapsedSpaces
+        case ("trimmedEnds", _):
+            self = .trimmedEnds
         default:
             return nil
         }

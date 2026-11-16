@@ -148,7 +148,7 @@ struct RenameExecutorTests {
         let plan = CleanupPlan(
             action: .fixMessyNames,
             folderURL: temp.url,
-            changes: [ProposedChange(record: record, operation: .rename(to: record.url.lastPathComponent), reason: .messyName)]
+            changes: [ProposedChange(record: record, operation: .rename(to: record.url.lastPathComponent), reason: .messyName(MessyNameFix(fixes: [])))]
         )
         let before = DiskState.snapshot(of: temp.url)
 
@@ -297,7 +297,7 @@ struct RenameExecutorTests {
         let plan = CleanupPlan(
             action: .fixMessyNames,
             folderURL: temp.url,
-            changes: [ProposedChange(record: template, operation: .rename(to: "outer.txt"), reason: .messyName)]
+            changes: [ProposedChange(record: template, operation: .rename(to: "outer.txt"), reason: .messyName(MessyNameFix(fixes: [])))]
         )
 
         let result = await executeAll(plan)
@@ -429,7 +429,7 @@ struct RenameExecutorTests {
         let before = DiskState.snapshot(of: temp.url)
 
         for (action, name, operation) in crafted {
-            let change = ProposedChange(record: try RelocationPlans.record(named: name, in: records), operation: operation, reason: .messyName)
+            let change = ProposedChange(record: try RelocationPlans.record(named: name, in: records), operation: operation, reason: .messyName(MessyNameFix(fixes: [])))
             let plan = CleanupPlan(action: action, folderURL: temp.url, changes: [change])
             let result = await executeAll(plan)
             #expect(try outcome(for: name, in: result) == .skipped(.notInPlan), "\(action)")

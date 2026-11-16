@@ -20,8 +20,6 @@ final class CleanupPreviewModel {
     /// Whether the preview shows duplicate groups or one change per row, worked out once.
     let isGroupedByDuplicates: Bool
 
-    /// Whether the plan can be carried out from here: so far only moves to the Trash can be.
-    let isTrashOnly: Bool
 
     /// Changes the user has left ticked. Everything but a possible match is ticked to begin with.
     private(set) var ticked: Set<ProposedChange.ID>
@@ -67,7 +65,6 @@ final class CleanupPreviewModel {
         self.plan = plan
         self.markKept = markKept
         self.isGroupedByDuplicates = plan.isGroupedByDuplicates
-        self.isTrashOnly = plan.isTrashOnly
         self.executor = CleanupExecutor(recorder: log, eligibility: eligibility, applicationFolders: applicationFolders)
         self.activity = activity
         self.onExecuted = onExecuted
@@ -80,6 +77,12 @@ final class CleanupPreviewModel {
     }
 
     var isReviewing: Bool { phase == .reviewing }
+
+    /// What every change in the plan does, for the words on the buttons, progress and summary.
+    var operation: CleanupActionDefinition.OperationKind { plan.operation }
+
+    /// Whether the plan can be carried out from here: moves to the Trash and renames can be.
+    var canBeApplied: Bool { plan.canBeApplied }
 
     var isExecuting: Bool {
         if case .executing = phase {
@@ -106,10 +109,10 @@ final class CleanupPreviewModel {
         tickedChanges.reduce(0) { $0 + $1.sizeInBytes }
     }
 
-    /// True when Move to Trash may be offered: still reviewing, with at least one change ticked, in
-    /// a plan of moves to the Trash. Renames and moves are previewed only, until an action that
+    /// True when Move to Trash or Rename may be offered: still reviewing, with at least one change
+    /// ticked, in a plan that can be applied. Moves are previewed only, until an action that
     /// proposes them brings its own confirmation.
-    var canExecute: Bool { isReviewing && tickedCount > 0 && isTrashOnly }
+    var canExecute: Bool { isReviewing && tickedCount > 0 && canBeApplied }
 
     func isTicked(_ id: ProposedChange.ID) -> Bool {
         ticked.contains(id)
@@ -158,14 +161,14 @@ final class CleanupPreviewModel {
         }
     }
 
-    /// Moves the ticked files to the Trash. The sheet calls this from the confirmation's
-    /// Move to Trash button and from nowhere else.
+    /// Carries out the ticked changes. The sheet calls this from the confirmation's Move to Trash or
+    /// Rename button and from nowhere else.
     func execute() {
         guard canExecute else { return }
         let confirmed = ticked
         let total = tickedCount
         phase = .executing(CleanupExecutionProgress(itemsCompleted: 0, itemsTotal: total, bytesFreed: 0))
-        logger.info("Moving \(total) files to the Trash")
+        logger.info("Carrying out \(total) changes")
 
         let executor = executor
         let plan = plan
@@ -193,7 +196,7 @@ final class CleanupPreviewModel {
         phase = .finished(result)
         executionTask = nil
         logger.info(
-            "Moved \(result.trashedCount) files to the Trash (\(result.bytesFreed) bytes); \(result.skipped.count) skipped, \(result.failed.count) failed"
+            "Trashed \(result.trashedCount) files (\(result.bytesFreed) bytes), renamed \(result.renamed.count); \(result.skipped.count) skipped, \(result.failed.count) failed"
         )
         onExecuted(result)
     }

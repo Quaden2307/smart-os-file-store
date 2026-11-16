@@ -13,10 +13,15 @@ extension CleanupPlan {
         return changes.allSatisfy { groupedURLs.contains($0.id) }
     }
 
-    /// True when every change is a move to the Trash: the only kind the preview can confirm and
-    /// carry out so far. Renames and moves are shown but not applied until an action uses them.
-    var isTrashOnly: Bool {
-        changes.allSatisfy { $0.operation == .moveToTrash }
+    /// What every change in the plan does: its action's one operation.
+    var operation: CleanupActionDefinition.OperationKind {
+        action.definition.operation
+    }
+
+    /// True when the preview can confirm and carry out the plan: moves to the Trash and renames, with
+    /// every change of its action's operation. Moves are shown but not applied until an action uses them.
+    var canBeApplied: Bool {
+        operation != .move && changes.allSatisfy { action.allows($0.operation) }
     }
 }
 
@@ -76,7 +81,9 @@ extension ProposedChange.Reason {
             return String(localized: "Download stopped on \(date) and never finished. \(finishedFileName) was next to it.")
         case .usedInstaller(let evidence):
             return evidence.historyDescription
-        case .sameContent, .messyName, .oldDownload, .failedDownload, .unpackedZip:
+        case .messyName(let fix):
+            return fix.historyDescription
+        case .sameContent, .oldDownload, .failedDownload, .unpackedZip:
             return localizedDescription
         }
     }
@@ -86,8 +93,8 @@ extension ProposedChange.Reason {
         switch self {
         case .sameContent(let fileName):
             return String(localized: "Same content as \(fileName)")
-        case .messyName:
-            return String(localized: "Messy name")
+        case .messyName(let fix):
+            return fix.localizedDescription
         case .oldDownload:
             return String(localized: "Old download")
         case .failedDownload(let stoppedOn, let finishedFileName):
@@ -100,6 +107,48 @@ extension ProposedChange.Reason {
             return String(localized: "Already unpacked to \(unpackedTo)")
         case .usedInstaller(let evidence):
             return evidence.localizedDescription
+        }
+    }
+}
+
+extension MessyNameFix {
+    /// What was removed, and why the date was added if it was: "Removed (1) · invoice.pdf is taken,
+    /// so the date was added", for the preview.
+    var localizedDescription: String {
+        described(taken: takenName.map { String(localized: "\($0) is taken, so the date was added") })
+    }
+
+    /// The same, in the past tense, for Activity.
+    var historyDescription: String {
+        described(taken: takenName.map { String(localized: "\($0) was taken, so the date was added") })
+    }
+
+    private func described(taken: String?) -> String {
+        let parts = fixes.map(\.localizedDescription) + [taken].compactMap { $0 }
+        // A row from a later version may name no fix this version knows.
+        guard !parts.isEmpty else {
+            return String(localized: "Messy name")
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
+extension NameFix {
+    /// One rule's work in the user's words: "Decoded %20", "Removed (2)".
+    var localizedDescription: String {
+        switch self {
+        case .decodedPercentEncoding(let escapes):
+            String(localized: "Decoded \(escapes.formatted(.list(type: .and)))")
+        case .removedWebLeftover(let text):
+            String(localized: "Removed \(text)")
+        case .removedDoubledExtension(let text):
+            String(localized: "Removed doubled \(text)")
+        case .removedCopySuffix(let text):
+            String(localized: "Removed \(text.trimmingCharacters(in: .whitespaces))")
+        case .collapsedSpaces:
+            String(localized: "Removed extra spaces")
+        case .trimmedEnds:
+            String(localized: "Trimmed the ends of the name")
         }
     }
 }

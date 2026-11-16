@@ -20,8 +20,8 @@ public enum CleanupAction: String, Sendable, Codable, CaseIterable, Hashable {
     /// only the name does.
     case removeUsedInstallers
 
-    /// Proposes cleaner names for files with copy numbers or leftover junk in their names. Its
-    /// planner arrives in its own segment; until then no plan of this action is ever made.
+    /// Proposes cleaner names for files with copy numbers or leftover junk in their names, never a
+    /// name that is taken (`MessyNamePlanner`).
     case fixMessyNames
 
     /// Proposes moving old downloads into the archive folder. Its planner arrives in its own

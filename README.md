@@ -16,13 +16,14 @@ Smart OS File Store is a native macOS file browser that will replace Finder, sta
 - **Marks**, as small badges after the name: Never opened (no last-opened date, added more than 30 days ago), Unused (last opened more than 30 days ago) and Old (added more than 90 days ago, opened or not). Folders, apps, links, aliases, hidden items and downloads in progress get none.
 - **A filter** above the table and in the View menu (All, Kept, Failed download, Installed, Never opened, Unused, Old). The status line shows how many items match and their total size.
 - **Download source**: hover over a row to see the site a file was downloaded from and the app that downloaded it. Copy Download Source, in the context menu and the Edit menu, copies the file's address.
-- **Rename and move in the engine**, for Fix messy names and Archive old downloads to use: exclusive, so nothing is ever replaced, through a handle on the folder, so no link is followed. Nothing proposes them yet.
+- **Rename and move in the engine**: exclusive, so nothing is ever replaced, through a handle on the folder, so no link is followed. Fix Messy Names renames; nothing moves files yet.
 - **An activity log**: every confirmed cleanup is recorded as it happens, one row per file, in a local database. A row that says a change was started is written before the file changes and completed right after, so if the app crashes or is force-quit, no moved file is missing from the log. If the log cannot be written, the cleanup stops with the file untouched.
 - **Activity**, in the main window's sidebar beside Downloads (also View > Activity, ⇧⌘A): every cleanup, newest first. Open one to see each file with what was to be done, why, what happened and when. Reveal in Finder works for a file that is still where the log says it went.
 - **Moved to the Trash**: the summary says how much a cleanup moved to the Trash, and the status line shows the total so far. The space is free once you empty the Trash.
 - **Undo**: Edit > Undo (⌘Z) undoes the newest cleanup; Activity undoes any cleanup or single file that can still be put back.
 - **A Clean Up menu**, in the toolbar and the menu bar, with two more cleanups. **Clear Failed Downloads** (⇧⌘F) proposes partial downloads that stopped more than an hour ago and never finished. **Remove Unpacked Zips** (⇧⌘U) proposes a zip whose every file already sits next to it, unpacked, at the same size, where Archive Utility puts it (one item beside the zip, several in a folder named after it, or a numbered name such as `project 2`). The unpacked copy is never touched, and zips are only ever read, never extracted.
 - **Remove Used Installers** (⇧⌘I, in the Clean Up menu) proposes a disk image (`.dmg`), installer package (`.pkg`) or zip holding an app at its top level once that app is in `/Applications` or `~/Applications`. It is ticked when the app's identifier matches and the installed version is the same or newer; it is proposed unticked, as a **Possible match**, when only the name matches (the file name without version numbers and words like `arm64`). An installed version older than the installer's is never proposed, and neither is a disk image someone has open. Installers are only read: a zip's `Info.plist` in memory, a package's own description without its payload, and a disk image attached read-only and hidden, checked by macOS's checker, and always ejected. Nothing is run, nothing is written into them, and an image that asks for a password or a licence is never opened. What was read is kept in the activity log, so the next search reads none of them again, and the file list marks strong matches **Installed**.
+- **Fix Messy Names** (⇧⌘M, in the Clean Up menu) proposes clean names for files with copy numbers or leftover junk in their names: it decodes `%20` and the like, removes a web address's leftover such as `_dl=1` or `@download` after the extension, a doubled extension (`slides.pdf.pdf`) and copy suffixes (` (1)`, ` copy`, ` copy 2`), then tidies the spaces, dots and underscores that leaves. Nothing else about a name changes: not its letter case, dates, version numbers or words, and never its extension. When the clean name belongs to a file with the same content, nothing is proposed (that is a duplicate); when it belongs to a different file, the file's date is added (`invoice 2026-11-13.pdf`, then ` v2`). The preview strikes out what each name loses and shows what it gains in bold; Rename asks first, and Undo gives the old names back.
 - **Keep This File** (⌘K, File menu and context menu): marks files and folders Kept, so no cleanup ever proposes them. Kept items show a Kept badge and a Kept choice in the filter; File > Stop Keeping All clears them, after asking. In the preview, Keep This File takes a file out of the plan and marks it Kept. Kept follows the file through renames and moves; editing it in an app that saves a new copy makes it a new, unkept file. When one copy of a duplicate is Kept, that copy is the one kept.
 
 The two thresholds live in the app's defaults. There is no settings window yet; to change them for good, or for one launch:
@@ -36,7 +37,7 @@ open build/Build/Products/Debug/SmartOSFileStore.app --args -CleanupUnusedAfterD
 ## What it does not do yet
 
 - Only the top level of Downloads. No other folders and no subfolders.
-- Four cleanups so far: Find Duplicates, Clear Failed Downloads, Remove Unpacked Zips and Remove Used Installers. The others arrive in their own segments.
+- Five cleanups so far: Find Duplicates, Clear Failed Downloads, Remove Unpacked Zips, Remove Used Installers and Fix Messy Names. The others arrive in their own segments.
 - An Activity entry cannot be opened for more detail yet. That is planned for later, perhaps with an Apple Intelligence summary.
 - No watching of the folder: the list refreshes on launch, with ⌘R, and after Move to Trash.
 - No Stop button while files move; each move is quick, and closing the window stops between files.
@@ -52,6 +53,7 @@ open build/Build/Products/Debug/SmartOSFileStore.app --args -CleanupUnusedAfterD
 | Main window | ⇧⌘F | Clear Failed Downloads |
 | Main window | ⇧⌘U | Remove Unpacked Zips |
 | Main window | ⇧⌘I | Remove Used Installers |
+| Main window | ⇧⌘M | Fix Messy Names |
 | Main window | ⌘R | Refresh the list |
 | Main window | Space, ⌘Y, double-click | Quick Look the selection (press again to close) |
 | Main window | ⌥⌘R | Reveal the selection in Finder |
@@ -61,10 +63,12 @@ open build/Build/Products/Debug/SmartOSFileStore.app --args -CleanupUnusedAfterD
 | Preview | ⌘Y, double-click | Quick Look the selected row |
 | Preview | ⌘A, ⌥⌘A | Select all, select none |
 | Preview | ⌘K | Keep the selected file: take it out of the plan and mark it Kept |
-| Preview | Return | Move to Trash (opens the confirmation) |
+| Preview | Return | Move to Trash or Rename (opens the confirmation) |
 | Preview | Esc | Close the preview |
-| Confirmation | Return, Esc | Cancel |
-| Confirmation | ⌘⌫ | Move to Trash |
+| Trash confirmation | Return, Esc | Cancel |
+| Trash confirmation | ⌘⌫ | Move to Trash |
+| Rename confirmation | Return | Rename |
+| Rename confirmation | Esc | Cancel |
 | Summary | Return, Esc | Done |
 | Main window | ⇧⌘A | Show Activity |
 | Sidebar | ↑ ↓ | Move between Downloads and Activity (Tab moves into the sidebar) |
@@ -140,7 +144,7 @@ open build/Build/Products/Debug/SmartOSFileStore.app --args -ScanFolder /path/to
 
 While the scan folder is overridden, the activity log is a separate database under the temporary directory, one per fake folder, so hand testing never opens or writes the real log. The status line of a debug build shows its path. To see how the app handles a damaged log, quit the app, overwrite that file (`head -c 8192 /dev/urandom > "<path>"`) and launch again.
 
-Debug builds also have a **Debug** menu. Show Sample Messy Names Plan and Show Sample Old Downloads Plan open the cleanup preview with made-up files, so the preview of renames and moves can be looked at before any action proposes them. The files do not exist, and renames and moves cannot be applied from the preview yet.
+Debug builds also have a **Debug** menu. Show Sample Old Downloads Plan opens the cleanup preview with made-up files, so the preview of moves can be looked at before any action proposes them. The files do not exist, and moves cannot be applied from the preview yet.
 
 Design decisions are recorded in [docs/decisions/](docs/decisions/).
 

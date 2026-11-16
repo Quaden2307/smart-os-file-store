@@ -140,18 +140,29 @@ struct ChangeRow: View {
         }
     }
 
-    /// The name, then an arrow and where the file would go, for a rename or a move.
+    /// The name, then an arrow and where the file would go, for a rename or a move. For a rename,
+    /// what the old name loses is struck through and what the new name gains is in semibold.
     @ViewBuilder
     private var names: some View {
-        if let destination = change.destinationDisplayName(in: folderURL) {
+        if case .rename(to: let newName) = change.operation {
+            let difference = NameDifference(from: change.record.displayName, to: newName)
+            // Two lines each before truncating, so the marked part is rarely cut out of view.
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(Self.marked(difference, old: true))
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                arrow
+                Text(Self.marked(difference, old: false))
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+            }
+            .layoutPriority(1)
+        } else if let destination = change.destinationDisplayName(in: folderURL) {
             HStack(spacing: 4) {
                 Text(change.record.displayName)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Image(systemName: "arrow.right")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel(Text("to", comment: "Read by VoiceOver between a file’s current name and where a rename or a move would put it"))
+                arrow
                 Text(destination)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -161,6 +172,26 @@ struct ChangeRow: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
+    }
+
+    private var arrow: some View {
+        Image(systemName: "arrow.right")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .accessibilityLabel(Text("to", comment: "Read by VoiceOver between a file’s current name and where a rename or a move would put it"))
+    }
+
+    /// The old name with the part it loses struck through, or the new name with the part it gains
+    /// in semibold. File names, so never looked up in the String Catalog.
+    private static func marked(_ difference: NameDifference, old: Bool) -> AttributedString {
+        var changed = AttributedString(old ? difference.removed : difference.added)
+        if old {
+            changed.strikethroughStyle = .single
+            changed.foregroundColor = .secondary
+        } else {
+            changed.font = .body.weight(.semibold)
+        }
+        return AttributedString(difference.commonPrefix) + changed + AttributedString(difference.commonSuffix)
     }
 }
 

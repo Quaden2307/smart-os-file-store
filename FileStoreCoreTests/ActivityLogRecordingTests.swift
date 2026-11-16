@@ -125,7 +125,7 @@ struct ActivityLogRecordingTests {
             return
         }
         #expect(renamed.operation == .rename)
-        #expect(renamed.reason == .messyName)
+        #expect(renamed.reason == .messyName(MessyNameFix(fixes: [])))
         #expect(renamed.outcome == .renamed)
         #expect(renamed.resultingPath == newURL.path(percentEncoded: false))
         #expect(renamed.contentHash == nil)
@@ -370,7 +370,7 @@ struct ActivityLogRecordingTests {
             // The Trash does not always say where a file went.
             CleanupItemResult(change: LogSamples.trashChange("trashed-nowhere.pdf"), outcome: .trashed(trashURL: nil)),
             CleanupItemResult(
-                change: ProposedChange(record: LogSamples.record(named: "messy (1).pdf"), operation: .rename(to: "messy.pdf"), reason: .messyName),
+                change: ProposedChange(record: LogSamples.record(named: "messy (1).pdf"), operation: .rename(to: "messy.pdf"), reason: .messyName(MessyNameFix(fixes: []))),
                 outcome: .renamed(from: LogSamples.folderURL.appending(path: "messy (1).pdf"), to: LogSamples.folderURL.appending(path: "messy.pdf"))
             ),
             CleanupItemResult(

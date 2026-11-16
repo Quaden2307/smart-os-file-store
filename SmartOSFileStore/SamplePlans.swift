@@ -3,44 +3,11 @@ import FileStoreCore
 import Foundation
 import UniformTypeIdentifiers
 
-/// Made-up plans for the Debug menu (debug builds only), so the preview of renames and moves can
-/// be looked at before any action proposes them. Their files live in a folder that does not exist,
-/// at the top of the startup disk where nothing can create it, and the preview offers no way to
-/// apply renames or moves.
+/// A made-up plan for the Debug menu (debug builds only), so the preview of moves can be looked at
+/// before any action proposes them. Its files live in a folder that does not exist, at the top of
+/// the startup disk where nothing can create it, and the preview offers no way to apply moves.
 enum SamplePlans {
     static let folderURL = URL(filePath: "/Smart OS File Store Sample", directoryHint: .isDirectory)
-
-    /// Renames of the kinds Fix messy names will propose, a long and a Unicode name among them,
-    /// and one file it could not check.
-    static var messyNames: CleanupPlan {
-        let renames: [(name: String, newName: String, size: Int64)] = [
-            ("invoice (1).pdf", "invoice.pdf", 48_213),
-            ("budget copy.xlsx", "budget.xlsx", 19_874),
-            ("file%20name%20with%20junk.txt", "file name with junk.txt", 1_024),
-            ("brochure.pdf_dl=1", "brochure.pdf", 2_381_902),
-            ("slides.pdf.pdf", "slides.pdf", 5_120_331),
-            ("résumé – final ✓ (2).pdf", "résumé – final ✓.pdf", 88_410),
-            (
-                "Quarterly report for the regional sales team, with every appendix and the speaker notes (3).docx",
-                "Quarterly report for the regional sales team, with every appendix and the speaker notes.docx",
-                734_002
-            ),
-        ]
-        return CleanupPlan(
-            action: .fixMessyNames,
-            folderURL: folderURL,
-            changes: renames.enumerated().map { index, rename in
-                ProposedChange(
-                    record: record(rename.name, size: rename.size, daysAgo: Double(3 + index * 4)),
-                    operation: .rename(to: rename.newName),
-                    reason: .messyName
-                )
-            },
-            skippedItems: [
-                CleanupPlan.SkippedItem(url: folderURL.appending(path: "manual (2).pdf"), reason: .accessDenied),
-            ]
-        )
-    }
 
     /// Moves into the archive folder, as Archive old downloads will propose them.
     static var oldDownloads: CleanupPlan {

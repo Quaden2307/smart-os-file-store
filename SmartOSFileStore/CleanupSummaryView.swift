@@ -1,20 +1,34 @@
 import FileStoreCore
 import SwiftUI
 
-/// What carrying out a plan did: how many files went to the Trash and how much space that freed,
-/// then every file that was not moved, with the reason.
+/// What carrying out a plan did: how many files went to the Trash and how much space that freed, or
+/// how many were renamed, then every file that was left as it was, with the reason.
 struct CleanupSummaryView: View {
     let result: CleanupResult
+
+    private var isRename: Bool { result.action.definition.operation == .rename }
 
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 6) {
-                Image(systemName: "trash")
+                Image(systemName: isRename ? "pencil" : "trash")
                     .font(.largeTitle)
                     .imageScale(.large)
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
-                if result.trashedCount > 0 {
+                if isRename, !result.renamed.isEmpty {
+                    Text("^[\(result.renamed.count) file](inflect: true) renamed")
+                        .font(.title2.weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
+                    Text("Undo gives the files their old names back.")
+                        .foregroundStyle(.secondary)
+                } else if isRename {
+                    Text("No Files Were Renamed")
+                        .font(.title2.weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
+                    Text("Nothing in the folder was changed.")
+                        .foregroundStyle(.secondary)
+                } else if result.trashedCount > 0 {
                     Text("^[\(result.trashedCount) file](inflect: true) moved to the Trash")
                         .font(.title2.weight(.semibold))
                         .accessibilityAddTraits(.isHeader)
@@ -43,13 +57,15 @@ struct CleanupSummaryView: View {
                 Spacer(minLength: 0)
             } else {
                 List {
-                    Section("Not Moved") {
+                    Section {
                         ForEach(result.leftAlone) { item in
                             NotMovedRow(item: item, action: result.action)
                         }
+                    } header: {
+                        isRename ? Text("Not Renamed") : Text("Not Moved")
                     }
                 }
-                .accessibilityLabel("Files not moved")
+                .accessibilityLabel(isRename ? Text("Files not renamed") : Text("Files not moved"))
             }
         }
     }

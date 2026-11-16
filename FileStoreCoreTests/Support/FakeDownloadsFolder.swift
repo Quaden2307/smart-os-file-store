@@ -98,6 +98,13 @@ struct FakeDownloadsFolder {
         static let invoice = "invoice.pdf"
         /// Its clean name belongs to `invoice`, a different file.
         static let invoiceCopy = "invoice (1).pdf"
+        /// Made first, so it is the older of two different files that both want `agenda.docx`.
+        static let agendaNumbered = "agenda (1).docx"
+        /// Wants `agenda.docx` too, which goes to the older `agendaNumbered`.
+        static let agendaCopyWord = "agenda copy.docx"
+        static let agendaClean = "agenda.docx"
+        /// A number in brackets that is not at the very end: not a copy suffix, never renamed.
+        static let chapterNotes = "Chapter (2) notes.pdf"
 
         // Near-duplicates with different extensions
         static let todoText = "todo.txt"
@@ -144,6 +151,7 @@ struct FakeDownloadsFolder {
         Names.appZip, Names.installer, Names.usedAppZip, Names.package,
         Names.numberedName, Names.copyWordName, Names.percentEncodedName, Names.queryLeftoverName,
         Names.doubledExtensionName, Names.invoice, Names.invoiceCopy,
+        Names.agendaNumbered, Names.agendaCopyWord, Names.chapterNotes,
         Names.todoText, Names.todoMarkdown,
         Names.oldReceipt, Names.oldManual, Names.taxForm, Names.statement,
         Names.emptyFolder, Names.dsStoreFolder, Names.largeFile,
@@ -394,6 +402,9 @@ struct FakeDownloadsFolder {
         try write("team slides", to: Names.doubledExtensionName)
         try write("invoice 1041 total", to: Names.invoice)
         try write("invoice 1041 draft", to: Names.invoiceCopy)
+        try write("agenda for the monday team meeting", to: Names.agendaNumbered)
+        try write("agenda, second draft, unsent", to: Names.agendaCopyWord)
+        try write("chapter two, with margin notes", to: Names.chapterNotes)
 
         // Near-duplicates with different extensions: nearly the same text, never identical
         try write("buy milk, eggs and bread\n", to: Names.todoText)

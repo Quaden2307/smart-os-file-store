@@ -143,8 +143,11 @@ printf 'spring brochure' > "brochure.pdf_dl=1"
 printf 'team slides' > "slides.pdf.pdf"
 printf 'invoice 1041 total' > "invoice.pdf"
 printf 'invoice 1041 draft' > "invoice (1).pdf"   # its clean name belongs to a different file
+printf 'agenda for the monday team meeting' > "agenda (1).docx"   # older: gets agenda.docx
+printf 'agenda, second draft, unsent' > "agenda copy.docx"        # wants it too: gets the date
+printf 'chapter two, with margin notes' > "Chapter (2) notes.pdf" # not a copy suffix: never renamed
 settled "manual (2).pdf" "budget copy.xlsx" "file%20name%20with%20junk.txt" "brochure.pdf_dl=1" \
-  "slides.pdf.pdf" "invoice.pdf" "invoice (1).pdf"
+  "slides.pdf.pdf" "invoice.pdf" "invoice (1).pdf" "agenda (1).docx" "agenda copy.docx" "Chapter (2) notes.pdf"
 
 # Near-duplicates with different extensions: nearly the same text, never identical
 printf 'buy milk, eggs and bread\n' > "todo.txt"; printf 'buy milk, eggs and bread.\n' > "todo.md"

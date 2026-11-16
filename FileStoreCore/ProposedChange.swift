@@ -23,8 +23,8 @@ public struct ProposedChange: Sendable, Hashable, Identifiable {
         /// The file has exactly the same bytes as the named file, which is kept.
         case sameContent(asFileNamed: String)
 
-        /// The name has copy numbers or leftover junk that the new name drops.
-        case messyName
+        /// The name has copy numbers or leftover junk that the new name drops, as `fix` says.
+        case messyName(MessyNameFix)
 
         /// The file is an old download, filed into the archive.
         case oldDownload

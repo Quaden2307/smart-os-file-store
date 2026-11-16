@@ -18,7 +18,7 @@ enum RelocationPlans {
     static func rename(_ renames: [(name: String, newName: String)], in folder: URL) async throws -> CleanupPlan {
         let records = try await records(in: folder)
         let changes = try renames.map { rename in
-            ProposedChange(record: try record(named: rename.name, in: records), operation: .rename(to: rename.newName), reason: .messyName)
+            ProposedChange(record: try record(named: rename.name, in: records), operation: .rename(to: rename.newName), reason: .messyName(MessyNameFix(fixes: [])))
         }
         return CleanupPlan(action: .fixMessyNames, folderURL: folder, changes: changes)
     }

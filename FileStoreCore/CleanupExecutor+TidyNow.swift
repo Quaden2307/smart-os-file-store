@@ -31,12 +31,15 @@ extension CleanupExecutor {
     /// (`TidyNowPlan.executionSegments`). Each item is checked by its own action's rules, as
     /// `execute(plan:)` checks it, against the disk as the earlier items left it.
     ///
-    /// - Parameter confirmedChangeIDs: The ticked changes of every plan. A file listed by two plans is
-    ///   tried once, for the first.
+    /// - Parameters:
+    ///   - confirmedChangeIDs: The ticked changes of every plan. A file listed by two plans is
+    ///     tried once, for the first.
+    ///   - origin: Where the user confirmed it, which the activity log records.
     @concurrent
     public func executeTidyNow(
         plans: [CleanupPlan],
         confirmedChangeIDs: Set<ProposedChange.ID>,
+        origin: RunOrigin = .app,
         now: Date = .now,
         onProgress: (@Sendable (CleanupExecutionProgress) -> Void)? = nil,
         beforeChange: (@Sendable (ProposedChange) -> Void)? = nil
@@ -51,7 +54,7 @@ extension CleanupExecutor {
             usable,
             confirmedChangeIDs: confirmedChangeIDs,
             start: { count in
-                CleanupRunStart.tidyNow(folderURL: folderURL, confirmedCount: count, startedAt: .now)
+                CleanupRunStart.tidyNow(folderURL: folderURL, confirmedCount: count, startedAt: .now, origin: origin)
             },
             now: now,
             onProgress: onProgress,

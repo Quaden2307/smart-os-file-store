@@ -8,6 +8,7 @@ struct ChatSection: View {
     let files: FileListModel
     var isFocused: FocusState<Bool>.Binding
     let showInList: @MainActor (URL) -> Void
+    let cardActions: ChatCardActions
 
     @AppStorage(IntelligenceAvailability.enabledKey) private var usesAppleIntelligence = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -23,7 +24,7 @@ struct ChatSection: View {
         let availability = IntelligenceAvailability.current(enabledInSettings: usesAppleIntelligence)
         VStack(spacing: 0) {
             if chat.isPanelOpen, !chat.messages.isEmpty {
-                ConversationPanel(chat: chat, files: files, maxHeight: chat.panelRoom, showInList: showInList)
+                ConversationPanel(chat: chat, files: files, maxHeight: chat.panelRoom, showInList: showInList, cardActions: cardActions)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             if availability == .available {

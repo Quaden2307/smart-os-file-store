@@ -45,7 +45,7 @@ struct ChatEvalTests {
         }
         let engine = ChatEngine(
             model: SystemLanguageModel.default, snapshot: { Fixtures.snapshot }, findDuplicates: { Fixtures.duplicates },
-            now: { Fixtures.now }, meter: .system
+            cleanupActions: Fixtures.cleanupActions, proposeCleanup: Fixtures.proposal, now: { Fixtures.now }, meter: .system
         )
         let turn = await engine.respond(to: question) { _ in }
         let lookups = turn.effects.results.map { result in
@@ -53,6 +53,7 @@ struct ChatEvalTests {
             case .search: "searchFiles"
             case .summary: "folderSummary"
             case .duplicates: "findDuplicates"
+            case .cleanup: "proposeCleanup"
             }
         }
         Self.report("\"\(question)\": \(turn.outcome), lookups \(lookups), reply \"\(turn.text)\"")
@@ -73,7 +74,7 @@ struct ChatEvalTests {
         }
         return ChatEngine(
             model: SystemLanguageModel.default, snapshot: { Fixtures.snapshot }, findDuplicates: { Fixtures.duplicates },
-            now: { Fixtures.now }, meter: .system
+            cleanupActions: Fixtures.cleanupActions, proposeCleanup: Fixtures.proposal, now: { Fixtures.now }, meter: .system
         )
     }
 
@@ -99,6 +100,9 @@ struct ChatEvalTests {
                     + " -> \(search.matchCount): \(search.files.map(\.name))"
             case .summary: return "folderSummary"
             case .duplicates: return "findDuplicates"
+            case .cleanup(let proposal):
+                let narrowed = proposal.request.fileIDs(in: Fixtures.snapshot).map { "\($0.count) files" } ?? "every file"
+                return "proposeCleanup(\(proposal.request.actions), \(narrowed), days \(proposal.request.archiveAfterDays ?? 0), MB \(proposal.request.largeFileMB ?? 0))"
             }
         }
         Self.report("\"\(message)\": \(turn.outcome), \(turn.tokensBeforeReply ?? 0) tokens before, lookups \(lookups), reply \"\(turn.text)\"")
@@ -142,8 +146,9 @@ struct ChatEvalTests {
         #expect(those.files.first?.name == "holiday.jpg" || turn.text.contains("holiday.jpg"))
     }
 
-    /// "Continue" is answered by code; the other wordings are the model's to understand from the note.
-    @Test(arguments: ["Continue", "keep going please", "finish what you were doing"])
+    /// The first three are answered by code (`ChatMemory.isContinue`); the last is the model's to
+    /// understand from the note.
+    @Test(arguments: ["Continue", "keep going please", "finish what you were doing", "pick up where you left off"])
     func afterStopTheStoppedQuestionIsAnswered(message: String) async throws {
         guard let engine = conversation() else { return }
         #expect(await say("Which files are over 500 MB?", in: engine, stoppingAfter: .milliseconds(300)).outcome == .stopped)
@@ -153,17 +158,76 @@ struct ChatEvalTests {
         #expect(Set(result.files.map(\.name)) == ["Xcode.dmg", "movie.mov"])
     }
 
-    @Test(arguments: ["clean those up", "undo that"])
-    func whatTheChatCannotDoIsDeclinedAndThoseAreStillRemembered(message: String) async throws {
+    // MARK: - Cleanups (docs/decisions/0023)
+
+    private static func card(_ turn: Turn) -> CleanupProposal? {
+        turn.effects.results.lazy.compactMap { if case .cleanup(let proposal) = $0 { proposal } else { nil } }.last
+    }
+
+    /// A cleanup asked for in plain words becomes a card for the action meant, and the reply never
+    /// claims a file was changed.
+    @Test(arguments: [
+        ("Remove the installers I've already used.", "removeUsedInstallers"),
+        ("Get rid of duplicate files.", "findDuplicates"),
+        ("Fix the messy file names.", "fixMessyNames"),
+        ("Archive my old downloads.", "archiveOldDownloads"),
+        ("Clear out the failed downloads.", "clearFailedDownloads"),
+    ])
+    func aCleanupAskedForInWordsBecomesACardForThatAction(message: String, action: String) async throws {
+        guard let engine = conversation() else { return }
+        let turn = await say(message, in: engine)
+        #expect(turn.outcome == .answered)
+        let card = try #require(Self.card(turn), "no card for \"\(message)\"")
+        #expect(card.request.actions.contains(action))
+        let reply = turn.text.lowercased()
+        #expect(!["deleted", "removed", "renamed", "archived", "moved", "cleared"].contains { reply.contains("have been \($0)") || reply.contains("were \($0)") || reply.contains("i \($0)") || reply.contains("i've \($0)") })
+    }
+
+    @Test func tidyingEverythingAsksForEveryAction() async throws {
+        guard let engine = conversation() else { return }
+        let card = try #require(Self.card(await say("Tidy up my whole Downloads folder.", in: engine)))
+        #expect(card.request.actions.count >= 5)
+        #expect(card.request.query == nil)
+    }
+
+    @Test func aCleanupWithAFilterIsNarrowedToIt() async throws {
+        guard let engine = conversation() else { return }
+        let card = try #require(Self.card(await say("Archive the files I downloaded before September and never opened.", in: engine)))
+        #expect(card.request.actions == ["archiveOldDownloads"])
+        let query = try #require(card.request.query)
+        #expect(query.neverOpened)
+        #expect(query.added.before != nil)
+        // Exactly the two that fit, whatever day in September the model wrote.
+        #expect(Set(Fixtures.files.filter(query.matches).map(\.name)) == ["old-photo.heic", "backup.tar.gz"])
+    }
+
+    @Test func cleaningThoseUpPlansForTheFilesJustFound() async throws {
         guard let engine = conversation() else { return }
         let first = try #require(Self.search(await say("Which installers are here?", in: engine)))
-        let declined = await say(message, in: engine)
-        #expect(declined.outcome == .answered)
-        #expect(declined.effects.results.isEmpty, "a lookup for \"\(message)\"")
+        let card = try #require(Self.card(await say("clean those up", in: engine)))
+        let ids = try #require(card.request.fileIDs(in: Fixtures.snapshot))
+        #expect(ids == Set(first.matchIDs))
+        // A card is not a list: "those" are still the installers.
         let turn = await say("Which of those is the largest?", in: engine)
         let those = try #require(Self.search(turn))
         #expect(Set(those.matchIDs).isSubset(of: first.matchIDs))
         #expect(those.files.first?.name == "Xcode.dmg" || turn.text.contains("Xcode.dmg"))
+    }
+
+    /// What the app cannot do gets a short answer and no card.
+    @Test(arguments: [
+        "Move my invoices to the Documents folder.",
+        "Permanently delete report.pdf so it can't be recovered.",
+        "Clean up my Desktop.",
+        "Change the grace period to ten minutes.",
+        "undo that",
+    ])
+    func whatTheAppCannotDoMakesNoCard(message: String) async throws {
+        guard let engine = conversation() else { return }
+        _ = await say("Which installers are here?", in: engine)
+        let turn = await say(message, in: engine)
+        #expect(turn.outcome == .answered)
+        #expect(Self.card(turn) == nil, "a card for \"\(message)\"")
     }
 
     @Test func aNameIsSearchedForByName() async throws {

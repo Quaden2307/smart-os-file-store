@@ -51,7 +51,8 @@ public struct ContextMeter: Sendable {
 }
 
 /// One chat conversation with the on-device model. It can look things up through three read-only
-/// tools and nothing else: this module imports no code that changes files (docs/decisions/0020).
+/// tools and ask the app to plan a cleanup through a fourth, and nothing else: this module imports
+/// no code that changes files (docs/decisions/0020, 0023).
 /// The conversation lives in memory only, and nothing the user types is logged.
 public actor ChatEngine {
     public static let toolCallLimit = 4
@@ -60,6 +61,9 @@ public actor ChatEngine {
     /// may take before a turn starts. The rest is for the turn's lookups and reply: four lookups at
     /// the output cap and a reply come to about a third of 4,096 tokens (docs/decisions/0021).
     public static let historyShare = 0.6
+    /// The most of the context the instructions and the tool definitions may take, which the model
+    /// reads again in every turn (docs/decisions/0023; a quarter before `proposeCleanup`).
+    public static let fixedPromptShare = 0.42
     /// The earlier turns a fresh conversation keeps when the old one is too full to go on.
     static let turnsKeptOnStartingOver = 2
 
@@ -83,10 +87,20 @@ public actor ChatEngine {
     /// What is remembered whatever becomes of the session (docs/decisions/0022).
     private var memory = ChatMemory()
 
-    /// What the app hands the tools: its view of the folder, and a way to run Find Duplicates.
+    /// What the app hands the tools: its view of the folder, a way to run Find Duplicates, and
+    /// its cleanup actions with a way to plan them.
     private struct Tools {
         let snapshot: @Sendable () async -> FolderSnapshot
         let findDuplicates: @Sendable () async -> DuplicateScan?
+        let cleanupActions: [String]
+        let proposeCleanup: ProposeCleanup
+
+        func context(_ recorder: TurnRecorder) -> ToolContext {
+            ToolContext(
+                snapshot: snapshot, findDuplicates: findDuplicates, cleanupActions: cleanupActions,
+                proposeCleanup: proposeCleanup, recorder: recorder
+            )
+        }
     }
 
     /// The size from which the app calls a file large: what "big" means in a follow-up, so the
@@ -94,15 +108,23 @@ public actor ChatEngine {
     private let largeFileMegabytes: @Sendable () -> Int
 
     /// The engine the app uses: the on-device system model, and never any other.
+    ///
+    /// - Parameters:
+    ///   - cleanupActions: The names of the app's cleanup actions, which `proposeCleanup` offers.
+    ///   - proposeCleanup: Plans a cleanup in the app, which keeps the plan.
     public init(
         snapshot: @escaping @Sendable () async -> FolderSnapshot,
         findDuplicates: @escaping @Sendable () async -> DuplicateScan?,
+        cleanupActions: [String],
+        proposeCleanup: @escaping ProposeCleanup,
         largeFileMegabytes: @escaping @Sendable () -> Int
     ) {
         self.init(
             model: SystemLanguageModel.default,
             snapshot: snapshot,
             findDuplicates: findDuplicates,
+            cleanupActions: cleanupActions,
+            proposeCleanup: proposeCleanup,
             largeFileMegabytes: largeFileMegabytes,
             availability: {
                 // Unset counts as on, as in Settings.
@@ -118,6 +140,8 @@ public actor ChatEngine {
         model: some LanguageModel,
         snapshot: @escaping @Sendable () async -> FolderSnapshot,
         findDuplicates: @escaping @Sendable () async -> DuplicateScan? = { nil },
+        cleanupActions: [String] = [],
+        proposeCleanup: @escaping ProposeCleanup = { _, _ in nil },
         largeFileMegabytes: @escaping @Sendable () -> Int = { 500 },
         availability: @escaping @Sendable () -> IntelligenceAvailability = { .available },
         turnLimit: Duration = ChatEngine.turnLimit,
@@ -125,7 +149,9 @@ public actor ChatEngine {
         meter: ContextMeter? = nil
     ) {
         self.model = model
-        self.tools = Tools(snapshot: snapshot, findDuplicates: findDuplicates)
+        self.tools = Tools(
+            snapshot: snapshot, findDuplicates: findDuplicates, cleanupActions: cleanupActions, proposeCleanup: proposeCleanup
+        )
         self.largeFileMegabytes = largeFileMegabytes
         self.availability = availability
         self.turnLimit = turnLimit
@@ -299,11 +325,14 @@ public actor ChatEngine {
     }
 
     /// What the on-device model must read before any question, in tokens: the instructions and the
-    /// tool definitions. Together they should stay under a quarter of `contextSize`; the numbers are
-    /// recorded in docs/decisions/0020 and measured again whenever a template or a tool changes.
-    public static func fixedPromptTokens() async throws -> (instructions: Int, tools: Int, contextSize: Int) {
+    /// tool definitions, with `cleanupActions` as the actions `proposeCleanup` offers. Together they
+    /// should stay under `fixedPromptShare` of `contextSize`; the numbers are recorded in
+    /// docs/decisions/0023 and measured again whenever a template or a tool changes.
+    public static func fixedPromptTokens(cleanupActions: [String]) async throws -> (instructions: Int, tools: Int, contextSize: Int) {
         let model = SystemLanguageModel.default
-        let tools = tools(ToolContext(snapshot: { FolderSnapshot(files: []) }, findDuplicates: { nil }, recorder: TurnRecorder()))
+        let tools = tools(ToolContext(
+            snapshot: { FolderSnapshot(files: []) }, findDuplicates: { nil }, cleanupActions: cleanupActions, recorder: TurnRecorder()
+        ))
         return (
             try await model.tokenCount(for: Instructions(PromptLibrary.chatInstructions(today: .now))),
             try await model.tokenCount(for: tools),
@@ -325,9 +354,15 @@ public actor ChatEngine {
         Self.makeConversation(model: model, tools: tools, history: history, today: now())
     }
 
-    /// Every tool the model may call. All of them only read.
+    /// Every tool the model may call. Three only read; the fourth asks the app for a plan, which
+    /// only the user's Confirm carries out.
     private static func tools(_ context: ToolContext) -> [any Tool] {
-        [SearchFilesTool(context: context), FolderSummaryTool(context: context), FindDuplicatesTool(context: context)]
+        let lookups: [any Tool] = [SearchFilesTool(context: context), FolderSummaryTool(context: context), FindDuplicatesTool(context: context)]
+        guard let cleanup = ProposeCleanupTool(context: context) else {
+            if !context.cleanupActions.isEmpty { logger.error("proposeCleanup is not offered: its actions made no schema") }
+            return lookups
+        }
+        return lookups + [cleanup]
     }
 
     /// Static, so the tool-call hook does not inherit the engine's isolation and wait for it.
@@ -337,7 +372,7 @@ public actor ChatEngine {
             if case .instructions = entry { false } else { true }
         }
         let recorder = TurnRecorder()
-        let tools = tools(ToolContext(snapshot: app.snapshot, findDuplicates: app.findDuplicates, recorder: recorder))
+        let tools = tools(app.context(recorder))
         let registered = Set(tools.map(\.name))
         let instructions = PromptLibrary.chatInstructions(today: today)
         let profile = LanguageModelSession.Profile {

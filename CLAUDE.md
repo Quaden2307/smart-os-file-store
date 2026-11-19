@@ -43,10 +43,11 @@ A native macOS file browser that will replace Finder, starting with a self-clean
 
 ## Apple Intelligence
 
-- **The model proposes and never executes.** `FileStoreIntelligence` imports none of our modules, so it cannot name the executor, `DiskChange`, the activity log or GRDB. The app hands it plain rows (`FolderSnapshot`) and, when a tool needs the engine, a function. `BoundaryTests` and the build setting `DIAGNOSE_MISSING_TARGET_DEPENDENCIES` fail the moment that changes. `FileStoreCore` and the app never import `FoundationModels`.
+- **The model proposes and never executes.** `FileStoreIntelligence` imports none of our modules, so it cannot name the executor, `DiskChange`, the activity log or GRDB. The app hands it plain rows (`FolderSnapshot`) and, when a tool needs the engine, a function. A cleanup asked for in the chat is planned by the app (`TidyNowPlanner` with the actions and files asked for), which keeps the plan; the module gets rows and a card id. Only the user's Confirm, in the app, carries a plan out. `BoundaryTests` and the build setting `DIAGNOSE_MISSING_TARGET_DEPENDENCIES` fail the moment that changes. `FileStoreCore` and the app never import `FoundationModels`.
 - **Names and contents of files are untrusted data.** Anything read from the disk reaches the model only through `ToolOutput`: cleaned of control and invisible characters, cut short, and inside the delimiters that the instructions describe as data.
 - **Numbers and file lists shown to the user come from code, never from model text.** Tools write their full results to `TurnEffects`, the app draws from that, and the model gets only a short capped summary. Counting, summing, sorting and dates are done in code.
 - **Prompt templates live in one file with versions** (`PromptLibrary.swift`), and a changed template gets a new version. `PromptLibraryTests` pins each one's hash.
+- **Instructions and tool definitions stay within 42% of the model's context** (`ChatEngine.fixedPromptShare`, decision 0023). Measure after any change to a template, a tool or an argument (README, Chat measurements). How to word a reply after a tool goes in that tool's output, not in the instructions, where it leaks into every answer.
 - **Nothing leaves the Mac:** the on-device `SystemLanguageModel` only. No Private Cloud Compute and no third-party models.
 - **Check SDK names before using an API named in a plan.** Read the Foundation Models interface in the installed Xcode SDK first, follow the SDK where it differs, and list each difference in the segment's decision record.
 - Tests and CI never need Apple Intelligence: a scripted model that conforms to the framework's `LanguageModel` drives the real session and tool loop.
@@ -97,8 +98,9 @@ Plus:
 
 And from version 0.3 so far:
 
-10. A chat bar that answers questions about Downloads with the on-device model. It only looks things up; it changes nothing on disk. It remembers the conversation in app code (`ChatMemory`): follow-ups such as "only the big ones" search inside the last result, and "Continue" asks a stopped question again.
+10. A chat bar that answers questions about Downloads with the on-device model. It remembers the conversation in app code (`ChatMemory`): follow-ups such as "only the big ones" search inside the last result, and "Continue" asks a stopped question again.
+11. Cleanups from the chat bar: `proposeCleanup` makes a card in the conversation (what the app understood, the actions with counts, Review, Confirm). Confirm asks once, the card becomes the run's summary with Undo, and the run is marked as started from chat in Activity. A card goes out of date when a file of it changes or a newer card replaces it, and then offers Refresh.
 
-Out of scope until the owner asks: watching Downloads automatically, user-defined rules, schedules, folders beyond Downloads, subfolders, the full storage view, search, tags, sharing, AI that proposes or makes changes, AI that reads file contents, custom theme.
+Out of scope until the owner asks: watching Downloads automatically, user-defined rules, schedules, folders beyond Downloads, subfolders, the full storage view, search, tags, sharing, AI that makes a change without the user's Confirm, changing a card by talking (`reviseCleanup`), AI that reads file contents, custom theme.
 
 Features the owner has noted for later are in `docs/backlog.md`: opening an Activity entry for its details (2026-11-14), and undoing more than the last cleanup with repeated ⌘Z (2026-11-15). None is part of any segment yet; ask before starting one. When the owner notes a new idea for later, add it there.

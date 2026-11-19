@@ -19,8 +19,22 @@ struct ChatMessage: Identifiable {
     var turn: Turn?
 }
 
+extension Turn {
+    /// The cleanup card the reply shows, if its turn planned one and ended with its card on screen.
+    var cleanupCard: CleanupProposal? {
+        // Also after a reply that ran out of lookups or of time: the plan was made and is the
+        // app's, whatever the model went on to do.
+        guard [.answered, .stopped, .toolLimitReached, .timedOut].contains(outcome) else { return nil }
+        return effects.results.lazy.compactMap { if case .cleanup(let proposal) = $0 { proposal } else { nil } }.last
+    }
+}
+
 /// The chat bar's state: the conversation so far, the text being typed and the reply in progress.
 /// The conversation lives here, in memory, until the app quits; nothing typed is logged or stored.
+///
+/// It also holds the plans of the conversation's cleanup cards. The chat module only ever gets
+/// rows about a plan; the plan, and the executor that could carry it out, stay on this side, and
+/// run from the user's Confirm alone (docs/decisions/0023).
 @MainActor
 @Observable
 final class ChatModel {
@@ -42,6 +56,17 @@ final class ChatModel {
     /// Find Duplicates as a question started it. It stops when the turn ends: a reply that was
     /// stopped or ran out of time must not go on reading files.
     private var duplicateScan: Task<CleanupPlan?, Never>?
+    /// The content hashes the Clean Up menu's searches share, which a card's Refresh reads too.
+    private var hashCache: ContentHashCache?
+    /// Each cleanup card's plan, by the card's id: the model the Tidy Now preview works from, in
+    /// review of the plan the chat asked for.
+    private(set) var cleanups: [CleanupProposal.ID: TidyNowModel] = [:]
+    /// Which cards may still be confirmed.
+    private(set) var cards = CleanupCards()
+    /// The cards being planned again by Refresh.
+    private(set) var refreshing: Set<CleanupProposal.ID> = []
+    /// The planning the turn's cleanup requests started. It stops when the turn ends.
+    private var turnPlanning: [Task<TidyNowPlan?, Never>] = []
     /// The number of the newest update shown of the reply arriving now.
     private var shownUpdate = 0
     private let logger = Logger(subsystem: "com.quaden2307.SmartOSFileStore", category: "Chat")
@@ -50,6 +75,7 @@ final class ChatModel {
     isolated deinit {
         task?.cancel()
         duplicateScan?.cancel()
+        turnPlanning.forEach { $0.cancel() }
     }
 
     /// True while a question can be asked: no reply is arriving, and the list is settled. A lookup
@@ -70,6 +96,7 @@ final class ChatModel {
         guard engine == nil else { return }
         self.files = files
         self.activity = activity
+        self.hashCache = hashCache
         engine = ChatEngine(
             snapshot: { [weak files, weak activity] in
                 await MainActor.run {
@@ -79,6 +106,11 @@ final class ChatModel {
             },
             findDuplicates: { [weak self] in
                 await self?.findDuplicates(hashCache: hashCache)
+            },
+            // From the action registry: an action added there is offered here with no other change.
+            cleanupActions: CleanupAction.allCases.filter(CleanupPlanners.hasPlanner).map(\.definition.identifier),
+            proposeCleanup: { [weak self] request, ids in
+                await self?.proposeCleanup(request, only: ids, hashCache: hashCache)
             },
             // What "big" means in a follow-up: the size Review Large Downloads lists from.
             largeFileMegabytes: { CleanupSettings.load(from: UserDefaults.standard).largeDownloadMegabytes }
@@ -117,6 +149,166 @@ final class ChatModel {
         let now = Date.now
         let recent = records.filter { $0.kind == .file && eligibility.refusal(for: $0, now: now) == .insideGracePeriod }.count
         return DuplicateScan(plan, files: files, recentCount: recent)
+    }
+
+    // MARK: - Cleanup cards
+
+    /// Plans the cleanups a request names with the app's own planners, narrowed to `ids`, as Tidy
+    /// Now plans them (the Kept list read first, the same rules for overlap). Reads files and
+    /// changes none. Nil when it cannot run: the window is gone, the log is not open, the turn
+    /// ended, or no action could be planned. Planning `inTurn` stops when the turn ends; a Refresh
+    /// goes on, whatever is asked meanwhile.
+    private func plan(
+        _ request: CleanupRequest, only ids: Set<URL>?, hashCache: ContentHashCache, inTurn: Bool
+    ) async -> TidyNowPlan? {
+        guard let files, let folderURL = files.location?.folderURL, let log = activity?.log else { return nil }
+        let actions = CleanupAction.allCases.filter { request.actions.contains($0.definition.identifier) }
+        let records = files.records
+        let eligibility = files.eligibility
+        let installers = InstallerSources.standard(applicationFolders: files.applicationFolders, cache: log)
+        let stored = CleanupSettings.load(from: UserDefaults.standard)
+        // The request's own numbers stand in for the settings, for this plan only.
+        let settings = CleanupSettings(
+            unusedAfterDays: request.archiveAfterDays ?? stored.unusedAfterDays,
+            oldAfterDays: stored.oldAfterDays,
+            largeDownloadMegabytes: request.largeFileMB ?? stored.largeDownloadMegabytes
+        )
+        let logger = logger
+        hashCache.keepOnly(records)
+        let planning = Task { () -> TidyNowPlan? in
+            do {
+                let keptItems = try await log.keptItems(forFolder: folderURL)
+                let planner = TidyNowPlanner(
+                    actions: actions, eligibility: eligibility, keptItems: keptItems, installers: installers,
+                    settings: settings, records: records, folderURL: folderURL
+                )
+                let plan = try await planner.plan(only: ids, hashCache: hashCache)
+                // As Tidy Now does: what was read from installers is kept, so the next search
+                // reads none of them again.
+                let read = plan.plans.flatMap(\.installerFactsRead)
+                if !read.isEmpty {
+                    do throws(ActivityLogError) {
+                        try await log.storeInstallerFacts(read)
+                    } catch {
+                        logger.error("What was read from installers could not be kept: \(String(describing: error), privacy: .public)")
+                    }
+                }
+                return plan
+            } catch {
+                // The kind of error only: its text could hold a path.
+                logger.notice("A cleanup for the chat was not planned: \(String(reflecting: type(of: error)), privacy: .public)")
+                return nil
+            }
+        }
+        if inTurn {
+            turnPlanning.append(planning)
+        }
+        let plan = await withTaskCancellationHandler(operation: { await planning.value }, onCancel: { planning.cancel() })
+        files.reloadInstalledMarks()
+        // No plan when nothing was found and an action could not be checked: "nothing to clean
+        // up" would then be a guess. With something found, the card says which action failed.
+        guard let plan, plan.plans.contains(where: { !$0.isEmpty }) || !plan.outcomes.contains(where: { $0.outcome == .failed }) else {
+            return nil
+        }
+        return plan
+    }
+
+    /// The card's model for `plan`, kept under `id`. Its run is the chat's in the activity log.
+    private func keep(_ plan: TidyNowPlan, as id: CleanupProposal.ID) {
+        guard let files, let activity, let log = activity.log else { return }
+        cleanups[id] = TidyNowModel(
+            showing: plan,
+            origin: .chat,
+            eligibility: files.eligibility,
+            applicationFolders: files.applicationFolders,
+            log: log,
+            activity: activity,
+            onExecuted: { [weak self, weak files] in
+                self?.cards.executed(id)
+                // Files moved, so the rows on screen are stale.
+                files?.refresh()
+            }
+        )
+    }
+
+    /// `proposeCleanup` as the chat's tool reaches it: plans, keeps the plan for the card, and
+    /// hands back rows. A plan with nothing in it is handed back with no rows and kept nowhere.
+    private func proposeCleanup(_ request: CleanupRequest, only ids: Set<URL>?, hashCache: ContentHashCache) async -> CleanupProposal? {
+        guard let plan = await plan(request, only: ids, hashCache: hashCache, inTurn: true) else { return nil }
+        let found = plan.plans.filter { !$0.isEmpty }
+        let proposal = CleanupProposal(
+            request: request,
+            rows: found.map { plan in
+                CleanupProposal.Row(
+                    action: plan.action.definition.identifier, count: plan.changes.count, bytes: plan.bytesToFree,
+                    tickedCount: plan.changes.count { $0.reason.isTickedByCode }
+                )
+            },
+            sampleNames: found.flatMap(\.changes).prefix(CleanupProposal.sampleNamesShown).map(\.record.displayName)
+        )
+        if !found.isEmpty {
+            keep(plan, as: proposal.id)
+        }
+        return proposal
+    }
+
+    /// True while a card's cleanup is being carried out. Nothing else that moves files may start.
+    var isCleaningUp: Bool {
+        cleanups.values.contains(where: \.isExecuting)
+    }
+
+    /// True while a card waits for Confirm, so the folder is worth reading again when the window
+    /// comes back from another app.
+    var hasWaitingCard: Bool {
+        cards.current.map(cards.canConfirm) ?? false
+    }
+
+    /// Puts out of date every waiting card with a file that is no longer as it was planned, judged
+    /// against the list as just read, or that the user has marked Keep since. The executor checks
+    /// each file again whatever this finds.
+    func checkCards() {
+        guard let files, files.isSettled else { return }
+        let kept = files.keptItems
+        for (id, model) in cleanups where cards.state(of: id) == .ready && model.isReviewing {
+            let isStale = model.plans.values.contains { plan in
+                !plan.staleChangeIDs(in: files.records).isEmpty || plan.changes.contains { kept.contains($0.record) }
+            }
+            if isStale {
+                cards.filesChanged(id)
+            }
+        }
+    }
+
+    /// The card's model while it may be reviewed and confirmed: the current card, its files as
+    /// planned, and no reply arriving that could put another card in its place meanwhile.
+    func confirmable(_ id: CleanupProposal.ID) -> TidyNowModel? {
+        checkCards()
+        guard cards.canConfirm(id), canAsk else { return nil }
+        cleanups[id]?.leavePreview()
+        return cleanups[id]
+    }
+
+    /// True while Refresh may plan an out-of-date card again.
+    func canRefresh(_ id: CleanupProposal.ID) -> Bool {
+        cards.canRefresh(id) && canAsk && !refreshing.contains(id) && !isCleaningUp
+    }
+
+    /// Refresh: the same request planned again over the list as it is now, with no question to the
+    /// model. The card then shows the new plan, and is the current card.
+    func refresh(_ proposal: CleanupProposal) {
+        let id = proposal.id
+        guard canRefresh(id), let files, let activity, let hashCache else { return }
+        refreshing.insert(id)
+        Task { [weak self] in
+            let ids = proposal.request.fileIDs(in: FolderSnapshot(files: files, activity: activity))
+            let plan = await self?.plan(proposal.request, only: ids, hashCache: hashCache, inTurn: false)
+            guard let self else { return }
+            refreshing.remove(id)
+            // Not planned (the log went away, or a question took over): the card stays out of date.
+            guard let plan, cards.canRefresh(id) else { return }
+            keep(plan, as: id)
+            cards.show(id)
+        }
     }
 
     /// Loads the model while the user is still typing.
@@ -175,9 +367,17 @@ final class ChatModel {
         task = nil
         duplicateScan?.cancel()
         duplicateScan = nil
+        turnPlanning.forEach { $0.cancel() }
+        turnPlanning = []
         logger.info("Reply ended: \(String(describing: turn.outcome), privacy: .public)")
         guard let index = messages.firstIndex(where: { $0.id == id }) else { return }
         messages[index].text = turn.text
         messages[index].turn = turn
+        if let card = turn.cleanupCard {
+            cards.show(card.id)
+        }
+        // A plan whose card never came on screen (the turn failed, or planned twice) is dropped.
+        let shown = Set(messages.compactMap { $0.turn?.cleanupCard?.id })
+        cleanups = cleanups.filter { shown.contains($0.key) }
     }
 }

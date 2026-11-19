@@ -109,7 +109,8 @@ struct ActivityLogInstallerFactsTests {
             do {
                 let raw = try RawDatabase(databaseURL)
                 try raw.execute("DROP TABLE installerFacts")
-                try raw.execute("DELETE FROM grdb_migrations WHERE identifier = 'v5'")
+                try raw.execute("ALTER TABLE runs DROP COLUMN origin")
+                try raw.execute("DELETE FROM grdb_migrations WHERE identifier IN ('v5', 'v6')")
             }
 
             let upgraded = try await ActivityLog.open(location)
@@ -120,7 +121,7 @@ struct ActivityLogInstallerFactsTests {
             try await upgraded.close()
 
             let raw = try RawDatabase(databaseURL)
-            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5")
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6")
             #expect(try raw.text("SELECT count(*) FROM changes") == "2")
         }
     }

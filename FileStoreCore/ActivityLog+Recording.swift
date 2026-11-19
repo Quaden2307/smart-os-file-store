@@ -7,13 +7,14 @@ extension ActivityLog: CleanupRecording {
     public func beginRun(_ start: CleanupRunStart) throws(ActivityLogError) -> Int64 {
         try write { db in
             try db.execute(
-                sql: "INSERT INTO runs (action, folderPath, startedAt, state, confirmedCount) VALUES (?, ?, ?, ?, ?)",
+                sql: "INSERT INTO runs (action, folderPath, startedAt, state, confirmedCount, origin) VALUES (?, ?, ?, ?, ?, ?)",
                 arguments: [
                     start.logCode,
                     start.folderURL.path(percentEncoded: false),
                     start.startedAt.timeIntervalSinceReferenceDate,
                     ActivityRun.State.running.logCode,
                     start.confirmedCount,
+                    start.origin.logCode,
                 ]
             )
             return db.lastInsertedRowID

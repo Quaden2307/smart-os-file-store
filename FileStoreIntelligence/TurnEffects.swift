@@ -76,6 +76,8 @@ public struct TurnEffects: Sendable, Equatable {
         case search(FileSearchResult)
         case summary(FolderSummary)
         case duplicates(DuplicateScan)
+        /// A cleanup the app planned and holds, waiting for the user's Confirm.
+        case cleanup(CleanupProposal)
     }
 
     public var results: [Result] = []
@@ -88,6 +90,7 @@ enum Lookup: Hashable {
     case search(FileQuery, FileSort, limit: Int)
     case summary
     case duplicates
+    case cleanup(CleanupRequest)
 
     /// True when this lookup found all that `other` asks for: the same one, or the same search
     /// listing as many files or more. (The model was seen searching for everything, then for
@@ -177,14 +180,19 @@ final class TurnRecorder: Sendable {
 
     /// Keeps a result, unless it comes from a call of an earlier turn that finished late. A search
     /// for the same files as an earlier one in the turn (in another order, or more of them) takes
-    /// its place, so the app draws one line for them.
+    /// its place, so the app draws one line for them. A turn has one cleanup card, the latest.
     func record(_ result: TurnEffects.Result, turn: Int) {
         state.withLock { state in
             guard state.turn == turn else { return }
-            if case .search(let search) = result {
+            switch result {
+            case .search(let search):
                 state.effects.results.removeAll { earlier in
                     if case .search(let earlier) = earlier { earlier.query == search.query } else { false }
                 }
+            case .cleanup:
+                state.effects.results.removeAll { if case .cleanup = $0 { true } else { false } }
+            case .summary, .duplicates:
+                break
             }
             state.effects.results.append(result)
         }

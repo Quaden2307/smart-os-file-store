@@ -1,4 +1,5 @@
 import FileStoreCore
+import FileStoreIntelligence
 import SwiftUI
 
 /// The main window: a sidebar of places (Downloads, Activity) and the chosen place beside it, with
@@ -33,8 +34,12 @@ struct ContentView: View {
     /// The place whose list takes focus once it is shown, after a switch from the View menu.
     @State private var placeToFocus: SidebarSection?
 
-    /// The chat bar's conversation. It reads the list; it can change nothing.
+    /// The chat bar's conversation. It reads the list and holds the plans of its cleanup cards;
+    /// a plan is carried out only from here, by the user's Confirm.
     @State private var chat = ChatModel()
+
+    /// The cleanup card whose Confirm is asking its one question, if any.
+    @State private var confirmingCard: ConfirmingCard?
 
     /// True while the cursor is in the chat bar's field.
     @FocusState private var isChatFocused: Bool
@@ -94,6 +99,11 @@ struct ContentView: View {
                 model.stopKeepingAll()
             }
         }
+        .sheet(item: $confirmingCard) { card in
+            TidyNowConfirmationSheet(totals: card.model.totals) {
+                carryOut(card)
+            }
+        }
     }
 
     /// What the menu bar's commands act on. While a preview sheet is up, they must not act on the
@@ -142,6 +152,18 @@ struct ContentView: View {
                 if isLoading, search.isRunning {
                     search.cancel()
                 }
+                // The list was read again: a waiting cleanup card whose files changed is out of date.
+                if !isLoading {
+                    chat.checkCards()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                // Back from another app, where a file of a waiting cleanup card may have been
+                // changed: the folder is read again, and the card is checked against it. Not for
+                // a sheet or the Settings window closing, which change no file.
+                if chat.hasWaitingCard, canStartCleanup {
+                    model.refresh()
+                }
             }
             .onChange(of: model.scanGeneration) {
                 // The listing was replaced: drop selected rows that are gone, so menu commands never
@@ -160,8 +182,10 @@ struct ContentView: View {
                 model.applySettings()
             }
             .onChange(of: model.marksRevision) {
-                // Marks changed with the Kept list, so the Kept filter may hide selected rows now.
+                // Marks changed with the Kept list, so the Kept filter may hide selected rows now,
+                // and a waiting cleanup card that names a file now Kept is out of date.
                 keepSelectionVisible()
+                chat.checkCards()
             }
             .onChange(of: activity.openings) {
                 // Another log: its runs and items are not the ones that were selected, and its Kept
@@ -215,7 +239,7 @@ struct ContentView: View {
             Divider()
             StatusBar(model: model, activity: activity, showsFileCounts: section == .downloads)
             Divider()
-            ChatSection(chat: chat, files: model, isFocused: $isChatFocused, showInList: showInList)
+            ChatSection(chat: chat, files: model, isFocused: $isChatFocused, showInList: showInList, cardActions: cardActions)
         }
         // Wide enough for all six columns at their ideal widths, so the table never has to
         // scroll sideways in a window the user has not resized.
@@ -278,6 +302,7 @@ struct ContentView: View {
     /// in front of it.
     private var actsOnWindow: Bool {
         search.presentedPlan == nil && tidyNow == nil && undo.presented == nil && !isConfirmingStopKeepingAll
+            && confirmingCard == nil
     }
 
     // MARK: - Kept
@@ -311,7 +336,7 @@ struct ContentView: View {
     /// reads or moves files is under way or on screen.
     private var canStartUndo: Bool {
         activity.log != nil && model.location != nil && !search.isRunning && search.presentedPlan == nil && tidyNow == nil
-            && !undo.isBusy
+            && !undo.isBusy && confirmingCard == nil && !chat.isCleaningUp
     }
 
     private func startUndo(_ target: UndoTarget) {
@@ -401,6 +426,7 @@ struct ContentView: View {
     private var canStartCleanup: Bool {
         model.isSettled && !search.isRunning && search.presentedPlan == nil && tidyNow == nil && activity.log != nil
             && !undo.isBusy && !model.isChangingKept && !isConfirmingStopKeepingAll
+            && confirmingCard == nil && !chat.isCleaningUp
     }
 
     /// The Clean Up menu: every action, under the same rule as the toolbar's menu.
@@ -443,6 +469,32 @@ struct ContentView: View {
         selection = [id]
         fileToReveal = FileTableView.Reveal(id: id)
         show(.downloads)
+    }
+
+    // MARK: - Cleanup cards in the chat
+
+    private var cardActions: ChatCardActions {
+        // Not while a reply arrives: it could put a newer card in this one's place.
+        ChatCardActions(canStart: canStartCleanup && chat.canAsk, review: reviewCard, confirm: confirmCard, undo: { startUndo(.run($0)) })
+    }
+
+    /// Review on a card: the Tidy Now preview, on the card's plan and with its ticks.
+    private func reviewCard(_ id: CleanupProposal.ID) {
+        guard canStartCleanup, let log = activity.log, let card = chat.confirmable(id) else { return }
+        tidyNow = PresentedTidyNow(model: card, log: log)
+    }
+
+    /// Confirm on a card: the one question Tidy Now asks, for what the card has ticked.
+    private func confirmCard(_ id: CleanupProposal.ID) {
+        guard canStartCleanup, let card = chat.confirmable(id), card.canTidyUp else { return }
+        confirmingCard = ConfirmingCard(id: id, model: card)
+    }
+
+    /// The answer to that question was yes. The card must still be the one that may be confirmed;
+    /// the executor then checks every file again, as for any run.
+    private func carryOut(_ card: ConfirmingCard) {
+        guard chat.confirmable(card.id) === card.model else { return }
+        card.model.execute()
     }
 
     private func startCleanup(_ action: CleanupAction) {
@@ -567,6 +619,12 @@ private struct PresentedPlanSheet: View {
             ActivityLogUnavailableSheet(activity: activity)
         }
     }
+}
+
+/// A cleanup card of the chat whose Confirm is asking its question, with the card's plan.
+private struct ConfirmingCard: Identifiable {
+    let id: CleanupProposal.ID
+    let model: TidyNowModel
 }
 
 /// A Tidy Now on screen, with the activity log as it was when it started, as a sheet's item.

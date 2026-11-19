@@ -54,6 +54,9 @@ public struct ActivityRun: Sendable, Hashable, Identifiable {
     /// For a cleanup run: how many of its changes have been undone since.
     public let undoneCount: Int
 
+    /// Where the run was started from.
+    public let origin: RunOrigin
+
     /// The action code an undo run is stored with. No cleanup action has it.
     public static let undoActionCode = "undo"
 
@@ -86,7 +89,8 @@ public struct ActivityRun: Sendable, Hashable, Identifiable {
         bytesMovedToTrash: Int64,
         undoneActionCode: String? = nil,
         bytesTakenFromTrash: Int64 = 0,
-        undoneCount: Int = 0
+        undoneCount: Int = 0,
+        origin: RunOrigin = .app
     ) {
         self.id = id
         self.actionCode = actionCode
@@ -102,6 +106,7 @@ public struct ActivityRun: Sendable, Hashable, Identifiable {
         self.undoneActionCode = undoneActionCode
         self.bytesTakenFromTrash = bytesTakenFromTrash
         self.undoneCount = undoneCount
+        self.origin = origin
     }
 }
 

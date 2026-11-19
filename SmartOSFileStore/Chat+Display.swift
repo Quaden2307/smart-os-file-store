@@ -1,3 +1,4 @@
+import FileStoreCore
 import FileStoreIntelligence
 import Foundation
 
@@ -60,6 +61,35 @@ extension FileSearchResult {
     /// What was looked up, put into words by the app from the lookup itself and not by the model:
     /// "Images · 100 MB or more". A lookup that is not what the question meant shows here.
     var lookedUp: String {
+        let parts = query.lookedUpParts
+        // The line starts with whichever part comes first, so that one takes the capital.
+        let words = parts.joined(separator: " · ")
+        return parts.isEmpty ? String(localized: "All items") : words.prefix(1).localizedUppercase + words.dropFirst()
+    }
+}
+
+extension CleanupRequest {
+    /// "What I understood": the cleanups, the files they are narrowed to and any setting changed
+    /// for this request, put into words by the app from what the tool was asked, never from the
+    /// model's sentence. "Remove Used Installers · added up to 31 Aug 2026 · no open recorded".
+    var understood: String {
+        let titles = actions.map { name in
+            CleanupAction.allCases.first { $0.definition.identifier == name }?.commandTitle ?? name
+        }
+        var parts = [titles.formatted(.list(type: .and, width: .narrow))] + (query?.lookedUpParts ?? [])
+        if let archiveAfterDays {
+            parts.append(String(localized: "archive what was not opened for ^[\(archiveAfterDays) day](inflect: true)"))
+        }
+        if let largeFileMB {
+            parts.append(String(localized: "large from \((Int64(largeFileMB) * 1_000_000).formattedFileSize)"))
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
+extension FileQuery {
+    /// The filter in the user's words, a part for each thing it asks. Empty for every file.
+    var lookedUpParts: [String] {
         func day(_ date: Date) -> String {
             date.formatted(.dateTime.day().month(.abbreviated).year())
         }
@@ -68,22 +98,20 @@ extension FileSearchResult {
             day(Calendar.current.date(byAdding: .day, value: -1, to: date) ?? date)
         }
         var parts: [String] = []
-        if query.withinIDs != nil { parts.append(String(localized: "In the last result")) }
-        if let group = query.typeGroup { parts.append(group.title) }
-        if let text = query.nameContains { parts.append(String(localized: "name contains “\(text)”")) }
-        if let from = query.added.from { parts.append(String(localized: "added since \(day(from))")) }
-        if let before = query.added.before { parts.append(String(localized: "added up to \(lastDay(before: before))")) }
-        if let from = query.opened.from { parts.append(String(localized: "opened since \(day(from))")) }
-        if let before = query.opened.before { parts.append(String(localized: "opened up to \(lastDay(before: before))")) }
+        if withinIDs != nil { parts.append(String(localized: "In the last result")) }
+        if let group = typeGroup { parts.append(group.title) }
+        if let text = nameContains { parts.append(String(localized: "name contains “\(text)”")) }
+        if let from = added.from { parts.append(String(localized: "added since \(day(from))")) }
+        if let before = added.before { parts.append(String(localized: "added up to \(lastDay(before: before))")) }
+        if let from = opened.from { parts.append(String(localized: "opened since \(day(from))")) }
+        if let before = opened.before { parts.append(String(localized: "opened up to \(lastDay(before: before))")) }
         // What macOS can say: it notes an open from Finder, the Dock or an Open panel only.
-        if query.neverOpened { parts.append(String(localized: "no open recorded")) }
-        if let bytes = query.minBytes { parts.append(String(localized: "\(bytes.formattedFileSize) or more")) }
-        if let bytes = query.maxBytes { parts.append(String(localized: "\(bytes.formattedFileSize) or less")) }
-        if let site = query.sourceSite { parts.append(String(localized: "from \(site)")) }
-        if let mark = query.mark { parts.append(String(localized: "marked \(mark.fileMark.title)")) }
-        // The line starts with whichever part comes first, so that one takes the capital.
-        let words = parts.joined(separator: " · ")
-        return parts.isEmpty ? String(localized: "All items") : words.prefix(1).localizedUppercase + words.dropFirst()
+        if neverOpened { parts.append(String(localized: "no open recorded")) }
+        if let bytes = minBytes { parts.append(String(localized: "\(bytes.formattedFileSize) or more")) }
+        if let bytes = maxBytes { parts.append(String(localized: "\(bytes.formattedFileSize) or less")) }
+        if let site = sourceSite { parts.append(String(localized: "from \(site)")) }
+        if let mark { parts.append(String(localized: "marked \(mark.fileMark.title)")) }
+        return parts
     }
 }
 

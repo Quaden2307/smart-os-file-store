@@ -17,14 +17,13 @@ struct ChatMemoryTests {
         Int64(megabytes * 1_000_000).formatted(.byteCount(style: .file))
     }
 
-    /// The note about a last result, as `note-lastResult-v1` words it.
+    /// The note about a last result, as `note-lastResult-v2` words it.
     private static func lastResult(_ count: Int, _ megabytes: Double, _ words: String) -> String {
         """
         Last result: \(count) files, \(size(megabytes)) (\(words)). "Those", "them" and "the big ones" mean these files: \
         to narrow or sort them, call searchFiles with "mark":"lastResult" in filter. \
         By size means "sort":"largest". Big means "largerThanMB":500. \
-        If asked to clean them up, delete them or undo something, answer only: "I can only look things up \
-        here. The Clean Up menu cleans up, and Edit > Undo undoes a cleanup."
+        Asked to undo, answer only: "Use Undo on the cleanup's card, or Edit > Undo."
         """
     }
 
@@ -52,7 +51,10 @@ struct ChatMemoryTests {
 
     // MARK: - Continue
 
-    @Test(arguments: ["Continue", "continue.", "Go on", "keep going!", " Resume ", "Carry on", "Try again"])
+    @Test(arguments: [
+        "Continue", "continue.", "Go on", "keep going!", " Resume ", "Carry on", "Try again",
+        "keep going please", "Please continue.", "Go ahead", "Finish what you were doing",
+    ])
     func continueInItsUsualWordingsAsksTheStoppedQuestionAgain(word: String) async {
         let model = ScriptedModel(Self.hanging, [.text(["Two files are over 500 MB."])])
         let engine = ChatEngine.scripted(model)
@@ -170,16 +172,16 @@ struct ChatMemoryTests {
         #expect(model.toolOutputsSeen == ["That call was not understood: There is no last result yet. Call again without mark lastResult."])
     }
 
-    @Test func decliningAFollowUpKeepsWhatThoseMeans() async throws {
+    @Test func aFollowUpAnsweredWithoutALookupKeepsWhatThoseMeans() async throws {
         let model = ScriptedModel(
             Self.images, [.text(["Three images."])],
-            [.text(["I can only look things up here. The Clean Up menu does that."])],
-            [.text(["Nothing was changed. Edit > Undo undoes a cleanup."])],
+            [.text(["I can look things up and prepare cleanups of Downloads."])],
+            [.text(["Use Undo on the cleanup's card, or Edit > Undo."])],
             ScriptedModel.call("searchFiles", #"{"filter":{"mark":"lastResult"}}"#), [.text(["Still three."])]
         )
         let engine = ChatEngine.scripted(model)
         _ = await engine.ask("Which images are here?")
-        for message in ["clean those up", "undo that"] {
+        for message in ["move those to Documents", "undo that"] {
             let turn = await engine.ask(message)
             #expect(turn.outcome == .answered)
             #expect(turn.effects.results.isEmpty)
@@ -306,8 +308,10 @@ struct ChatMemoryTests {
             ("Which images are here?", [Self.images, [.text(["Three images."])]]),
             ("only the big ones", [big(3), [.text(["Two of them."])]]),
             ("sort those by name", [ScriptedModel.call("searchFiles", #"{"filter":{"mark":"lastResult"},"sort":"name"}"#), [.text(["By name."])]]),
-            ("clean those up", [[.text(["I can only look things up here. The Clean Up menu does that."])]]),
-            ("undo that", [[.text(["Nothing was changed. Edit > Undo undoes a cleanup."])]]),
+            ("clean those up", [
+                ScriptedModel.call("proposeCleanup", #"{"actions":["findDuplicates"],"filter":{"mark":"lastResult"}}"#), [.text(["A preview is ready."])],
+            ]),
+            ("undo that", [[.text(["Use Undo on the cleanup's card, or Edit > Undo."])]]),
             ("how many are those?", [ScriptedModel.call("searchFiles", #"{"filter":{"mark":"lastResult"}}"#), [.text(["Two."])]]),
             ("Which files are over 200 MB?", [Self.hanging]),
             ("Continue", [ScriptedModel.call("searchFiles", #"{"filter":{"largerThanMB":200},"sort":"largest"}"#), [.text(["Three files."])]]),

@@ -454,9 +454,7 @@ public struct CleanupExecutor: Sendable {
             // The rules on what the disk says know no Kept list; the journal checks it (`intend`).
             return .skipped(.markedKept)
         }
-        guard sizeInBytes == change.sizeInBytes,
-              let scannedDate = change.dateModified,
-              abs(lastChange.timeIntervalSince(scannedDate)) <= Self.modificationDateTolerance else {
+        guard change.isUnchanged(sizeInBytes: sizeInBytes, lastChange: lastChange) else {
             return .skipped(.changedSinceScan)
         }
         if status.isUserImmutable || status.isSystemImmutable {

@@ -56,6 +56,11 @@ extension ActivityRun {
         return action?.title ?? String(localized: "Cleanup")
     }
 
+    /// For a run the user confirmed on a card in the chat. Nil for every other run.
+    var originLabel: String? {
+        origin == .chat ? String(localized: "From Chat") : nil
+    }
+
     /// For a cleanup run some of whose changes were undone since: whether all or some were. Nil otherwise.
     var undoLabel: String? {
         guard !isUndo, undoneCount > 0 else { return nil }

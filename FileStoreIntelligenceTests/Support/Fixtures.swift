@@ -69,6 +69,29 @@ enum Fixtures {
         DuplicateScan.Group(kept: named("report.pdf")[0], copies: named("report copy.pdf")),
     ])
 
+    /// The app's cleanup actions by name, as its registry spells them today. The module is handed
+    /// the list when the app runs; this copy is for the tests and the token measurement.
+    static let cleanupActions = [
+        "findDuplicates", "clearFailedDownloads", "removeUnpackedZips", "removeUsedInstallers", "fixMessyNames",
+        "reviewNearDuplicates", "archiveOldDownloads", "reviewLargeDownloads", "removeEmptyFolders",
+    ]
+
+    /// A stand-in for the app's planning: each action asked for "finds" every file the request is
+    /// narrowed to (the whole fixture when it is not), ticked unless the action only reviews.
+    static let proposal: ProposeCleanup = { request, ids in
+        let found = files.filter { ids?.contains($0.id) ?? true }
+        return CleanupProposal(
+            request: request,
+            rows: request.actions.map { action in
+                CleanupProposal.Row(
+                    action: action, count: found.count, bytes: found.reduce(0) { $0 + ($1.sizeInBytes ?? 0) },
+                    tickedCount: action.hasPrefix("review") ? 0 : found.count
+                )
+            },
+            sampleNames: found.map(\.name)
+        )
+    }
+
     static func named(_ names: String...) -> [FolderSnapshot.File] {
         names.compactMap { name in files.first { $0.name == name } }
     }
@@ -141,6 +164,7 @@ extension ChatEngine {
         _ model: ScriptedModel, reads: Collected<Void>? = nil, turnLimit: Duration = .seconds(10),
         availability: @escaping @Sendable () -> IntelligenceAvailability = { .available },
         duplicates: @escaping @Sendable () async -> DuplicateScan? = { Fixtures.duplicates },
+        cleanup: @escaping ProposeCleanup = Fixtures.proposal,
         meter: ContextMeter? = nil
     ) -> ChatEngine {
         ChatEngine(
@@ -150,6 +174,8 @@ extension ChatEngine {
                 return Fixtures.snapshot
             },
             findDuplicates: duplicates,
+            cleanupActions: Fixtures.cleanupActions,
+            proposeCleanup: cleanup,
             availability: availability,
             turnLimit: turnLimit,
             now: { Fixtures.now },

@@ -51,6 +51,14 @@ public protocol CleanupRecording: Sendable {
     func finishUndoRun(_ finish: UndoRunFinish) throws(ActivityLogError)
 }
 
+/// Where a cleanup run was started from.
+public enum RunOrigin: Sendable, Hashable {
+    /// The Clean Up menu, a preview or Tidy Now.
+    case app
+    /// A card in the chat, confirmed by the user like any other preview.
+    case chat
+}
+
 public struct CleanupRunStart: Sendable, Hashable {
     /// The action whose plan the run carries out. Nil for a Tidy Now run, which carries out the
     /// plans of several actions as one run.
@@ -62,6 +70,7 @@ public struct CleanupRunStart: Sendable, Hashable {
     /// How many changes the user confirmed.
     public let confirmedCount: Int
     public let startedAt: Date
+    public var origin = RunOrigin.app
 
     public init(action: CleanupAction, folderURL: URL, confirmedCount: Int, startedAt: Date) {
         self.action = action
@@ -73,8 +82,10 @@ public struct CleanupRunStart: Sendable, Hashable {
 
     /// A Tidy Now run: the confirmed changes of every action's plan, recorded as one run so that one
     /// undo reverses all of it.
-    public static func tidyNow(folderURL: URL, confirmedCount: Int, startedAt: Date) -> CleanupRunStart {
-        CleanupRunStart(logCode: ActivityRun.tidyNowActionCode, folderURL: folderURL, confirmedCount: confirmedCount, startedAt: startedAt)
+    public static func tidyNow(folderURL: URL, confirmedCount: Int, startedAt: Date, origin: RunOrigin = .app) -> CleanupRunStart {
+        var start = CleanupRunStart(logCode: ActivityRun.tidyNowActionCode, folderURL: folderURL, confirmedCount: confirmedCount, startedAt: startedAt)
+        start.origin = origin
+        return start
     }
 
     private init(logCode: String, folderURL: URL, confirmedCount: Int, startedAt: Date) {

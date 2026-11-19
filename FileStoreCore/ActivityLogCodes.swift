@@ -26,6 +26,23 @@ extension CleanupAction {
     }
 }
 
+extension RunOrigin {
+    /// Nil for the app itself, which is every run made before the column existed.
+    var logCode: String? {
+        switch self {
+        case .app:
+            nil
+        case .chat:
+            "chat"
+        }
+    }
+
+    /// An origin this version does not know is shown as the app's own.
+    init(logCode: String?) {
+        self = logCode == "chat" ? .chat : .app
+    }
+}
+
 extension ActivityRun.State {
     var logCode: String {
         switch self {

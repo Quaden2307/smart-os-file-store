@@ -104,6 +104,7 @@ struct RunRow: Decodable, FetchableRecord {
     let bytesMovedToTrash: Int64
     let undoneAction: String?
     let bytesTakenFromTrash: Int64
+    let origin: String?
     let undoneCount: Int
 
     var value: ActivityRun {
@@ -121,7 +122,8 @@ struct RunRow: Decodable, FetchableRecord {
             bytesMovedToTrash: bytesMovedToTrash,
             undoneActionCode: undoneAction,
             bytesTakenFromTrash: bytesTakenFromTrash,
-            undoneCount: undoneCount
+            undoneCount: undoneCount,
+            origin: RunOrigin(logCode: origin)
         )
     }
 }

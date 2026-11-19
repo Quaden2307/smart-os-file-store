@@ -34,9 +34,10 @@ struct ChatEngineTests {
         let model = ScriptedModel([.text(["Hello."])])
         _ = await ChatEngine.scripted(model).ask()
         let request = try #require(model.script.requests.first)
-        #expect(request.enabledToolDefinitions.map(\.name) == ["searchFiles", "folderSummary", "findDuplicates"])
+        #expect(request.enabledToolDefinitions.map(\.name) == ["searchFiles", "folderSummary", "findDuplicates", "proposeCleanup"])
         #expect(request.enabledToolDefinitions.map(\.description) == [
             PromptLibrary.searchFilesTool.text, PromptLibrary.folderSummaryTool.text, PromptLibrary.findDuplicatesTool.text,
+            PromptLibrary.proposeCleanupTool.text,
         ])
         guard case .greedy = request.generationOptions.samplingMode?.kind else {
             Issue.record("Sampling is not greedy")
@@ -211,12 +212,13 @@ struct ChatEngineTests {
 
     @Test func twentyQuestionsInARowAllFitWithoutStartingOver() async throws {
         // Each question makes a lookup whose output is near the cap. Kept in full, three or four
-        // of them fill the scripted context, as three questions filled the real one.
+        // of them fill the scripted context, as three questions filled the real one. (The scripted
+        // context grew with the instructions of chat-v2, which are about 270 characters longer.)
         let rounds = (1...20).flatMap { index in
             [ScriptedModel.call("searchFiles", #"{"sort":"largest","limit":\#(80 + index)}"#), [.text(["Answer \(index)."])]]
         }
-        let model = ScriptedModel(rounds: rounds, contextLimit: 3_000)
-        let engine = ChatEngine.scripted(model, meter: .characters(3_000))
+        let model = ScriptedModel(rounds: rounds, contextLimit: 3_300)
+        let engine = ChatEngine.scripted(model, meter: .characters(3_300))
         for index in 1...20 {
             let turn = await engine.ask("Question \(index) about my files?")
             #expect(turn.outcome == .answered, "question \(index)")

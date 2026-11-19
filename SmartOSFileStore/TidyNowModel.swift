@@ -6,6 +6,9 @@ import os
 /// State of a Tidy Now: every action planned over one scan, the overview of what they found, each
 /// action's ticks as the user leaves them in its preview, one confirmation for all of it, and the
 /// run with its summary. Lives on the main actor; planning and the executor run elsewhere.
+///
+/// A cleanup card in the chat is one of these too, made from a plan that is already there
+/// (`init(showing:)`): its actions are the ones asked for, and its run is logged as the chat's.
 @MainActor
 @Observable
 final class TidyNowModel {
@@ -68,8 +71,10 @@ final class TidyNowModel {
     var isConfirming = false
 
     /// The actions planned, in overview order.
-    let actions = TidyNowPlan.order.filter(CleanupPlanners.hasPlanner)
+    let actions: [CleanupAction]
 
+    /// Where a run of this plan is confirmed from, for the activity log.
+    private let origin: RunOrigin
     private let executor: CleanupExecutor
     private let activity: ActivityLogModel
     private let onPlanned: @MainActor (TidyNowPlan) -> Void
@@ -78,20 +83,31 @@ final class TidyNowModel {
     private let logger = Logger(subsystem: "com.quaden2307.SmartOSFileStore", category: "TidyNow")
 
     /// - Parameters:
+    ///   - plan: A plan made already, for a cleanup card in the chat: the model starts in review of
+    ///     it, with the default ticks, and plans nothing itself. Nil for Tidy Now, which then plans
+    ///     every action (`start`).
+    ///   - origin: Where its run is confirmed from.
     ///   - onPlanned: Hears the plan once every planner has finished, for the list's Duplicate marks.
     ///   - onExecuted: Hears that the run has ended, so the list can be read again.
     init(
+        showing plan: TidyNowPlan? = nil,
+        origin: RunOrigin = .app,
         eligibility: CandidateEligibility,
         applicationFolders: [URL],
         log: ActivityLog,
         activity: ActivityLogModel,
-        onPlanned: @escaping @MainActor (TidyNowPlan) -> Void,
+        onPlanned: @escaping @MainActor (TidyNowPlan) -> Void = { _ in },
         onExecuted: @escaping @MainActor () -> Void
     ) {
+        self.actions = plan?.outcomes.map(\.action) ?? TidyNowPlan.order.filter(CleanupPlanners.hasPlanner)
+        self.origin = origin
         self.executor = CleanupExecutor(recorder: log, eligibility: eligibility, applicationFolders: applicationFolders)
         self.activity = activity
         self.onPlanned = onPlanned
         self.onExecuted = onExecuted
+        if let plan {
+            finishPlanning(plan)
+        }
     }
 
     // Isolated, so it may touch main-actor state: the sheet is gone, stop planning or stop between items.
@@ -289,6 +305,12 @@ final class TidyNowModel {
         openAction = nil
     }
 
+    /// Back to the overview without the open preview's choices: for a card of the chat whose
+    /// sheet was closed with a preview still open, which would otherwise never be confirmable again.
+    func leavePreview() {
+        openAction = nil
+    }
+
     // MARK: - Carrying out
 
     func confirm() {
@@ -305,8 +327,9 @@ final class TidyNowModel {
         logger.info("Tidy Now carrying out \(confirmed.count) changes")
         let executor = executor
         let activity = activity
+        let origin = origin
         task = Task { [weak self] in
-            let result = await executor.executeTidyNow(plans: plans, confirmedChangeIDs: confirmed) { progress in
+            let result = await executor.executeTidyNow(plans: plans, confirmedChangeIDs: confirmed, origin: origin) { progress in
                 Task { @MainActor in
                     self?.report(progress)
                 }

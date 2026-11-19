@@ -96,6 +96,27 @@ public enum ToolOutput {
         return capped(header, lines)
     }
 
+    /// A planned cleanup: the first line says nothing has changed (it is all a later turn keeps of
+    /// this), then files and space per action, then a few names.
+    public static func cleanup(_ proposal: CleanupProposal) -> String {
+        var header = PromptLibrary.cleanupReady.text.replacingOccurrences(of: "{count}", with: String(proposal.count))
+        for row in proposal.rows {
+            header += "\n\(cleaned(row.action, limit: nameLimit)): \(row.count) files"
+            if row.bytes > 0 { header += ", \(size(row.bytes))" }
+            if row.tickedCount < row.count { header += ", \(row.count - row.tickedCount) left for the user to choose" }
+        }
+        let names = proposal.sampleNames.prefix(CleanupProposal.sampleNamesShown).map(quoted)
+        let reply = "\n" + PromptLibrary.cleanupReply.text
+        // The names give way to the cap; how to word the reply always follows them.
+        return (names.isEmpty ? header : capped(header + "\nSome of them:", names, reserving: reply.count)) + reply
+    }
+
+    /// What the model gets when no cleanup the request named has anything to do.
+    public static let nothingToCleanUp = PromptLibrary.nothingToCleanUp.text
+
+    /// What the model gets when the app could not plan a cleanup.
+    public static let cleanupUnavailable = PromptLibrary.cleanupUnavailable.text
+
     /// What the model gets when the app could not run Find Duplicates.
     public static let duplicatesUnavailable = PromptLibrary.duplicatesUnavailable.text
 
@@ -107,10 +128,10 @@ public enum ToolOutput {
         "That call was not understood: \(error.message)"
     }
 
-    private static func capped(_ header: String, _ lines: [String]) -> String {
+    private static func capped(_ header: String, _ lines: [String], reserving reserved: Int = 0) -> String {
         var lines = lines
         func text() -> String { ([header] + lines).joined(separator: "\n") }
-        while text().count > characterLimit, !lines.isEmpty {
+        while text().count > characterLimit - reserved, !lines.isEmpty {
             lines.removeLast()
         }
         return text()

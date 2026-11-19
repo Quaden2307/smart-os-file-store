@@ -36,6 +36,11 @@ struct ActivityRunRow: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+                    if let originLabel = run.originLabel {
+                        Text(originLabel)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     if let undoLabel = run.undoLabel {
                         Text(undoLabel)
                             .font(.caption)

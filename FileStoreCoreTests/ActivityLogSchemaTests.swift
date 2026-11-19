@@ -35,7 +35,7 @@ struct ActivityLogSchemaTests {
             #expect(try raw.text("SELECT count(*) FROM keptItems") == "0")
             #expect(try raw.text("SELECT count(*) FROM totals") == "1")
             #expect(try raw.text("SELECT count(*) FROM maintenance") == "1")
-            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5")
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6")
         }
     }
 
@@ -57,6 +57,31 @@ struct ActivityLogSchemaTests {
         }
     }
 
+    @Test func aLogFromBeforeChatCleanupsGainsTheOriginAndReadsItsRunsAsTheApps() async throws {
+        try await withLogSandbox { sandbox in
+            let location = try sandbox.realLocation()
+            let databaseURL = try #require(location.databaseURL)
+            let log = try await ActivityLog.open(location, now: now)
+            let runID = try LogSamples.writeRun(to: log, startedAt: now, count: 2)
+            try await log.close()
+            // What the version before chat cleanups left: no `runs.origin`, and migrations up to `v5`.
+            do {
+                let raw = try RawDatabase(databaseURL)
+                try raw.execute("ALTER TABLE runs DROP COLUMN origin")
+                try raw.execute("DELETE FROM grdb_migrations WHERE identifier = 'v6'")
+            }
+
+            let upgraded = try await ActivityLog.open(location, now: now)
+            #expect(try await upgraded.run(id: runID)?.origin == .app)
+            #expect(try await upgraded.changes(inRun: runID).count == 2)
+            try await upgraded.close()
+
+            let raw = try RawDatabase(databaseURL)
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6")
+            #expect(try raw.text("SELECT count(*) FROM runs WHERE origin IS NULL") == "1")
+        }
+    }
+
     @Test func aLogFromBeforeFoldersGainsTheColumnAndReadsItsRowsAsFiles() async throws {
         try await withLogSandbox { sandbox in
             let location = try sandbox.realLocation()
@@ -70,7 +95,8 @@ struct ActivityLogSchemaTests {
                 let raw = try RawDatabase(databaseURL)
                 try raw.execute("DROP TABLE installerFacts")
                 try raw.execute("ALTER TABLE changes DROP COLUMN isFolder")
-                try raw.execute("DELETE FROM grdb_migrations WHERE identifier IN ('v4', 'v5')")
+                try raw.execute("ALTER TABLE runs DROP COLUMN origin")
+                try raw.execute("DELETE FROM grdb_migrations WHERE identifier IN ('v4', 'v5', 'v6')")
             }
 
             let upgraded = try await ActivityLog.open(location, now: now)
@@ -80,7 +106,7 @@ struct ActivityLogSchemaTests {
             try await upgraded.close()
 
             let raw = try RawDatabase(databaseURL)
-            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5")
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6")
             #expect(try raw.text("SELECT count(*) FROM changes WHERE isFolder = 0") == "2")
             // Only 0 and 1 are a value it may hold.
             #expect(throws: (any Error).self) {
@@ -147,7 +173,7 @@ struct ActivityLogSchemaTests {
             }
 
             let raw = try RawDatabase(databaseURL)
-            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v999")
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6,v999")
             #expect(try raw.text("SELECT count(*) FROM runs") == "1")
         }
     }

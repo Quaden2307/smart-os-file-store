@@ -145,6 +145,10 @@ enum ActivityLogSchema {
                 CREATE UNIQUE INDEX installerFacts_path ON installerFacts (path) WHERE volumeUUID IS NULL;
                 """)
         }
+        migrator.registerMigration("v6") { db in
+            // Where a run was started from. NULL is the app itself, which is every run before this.
+            try db.execute(sql: "ALTER TABLE runs ADD COLUMN origin TEXT")
+        }
         return migrator
     }
 }

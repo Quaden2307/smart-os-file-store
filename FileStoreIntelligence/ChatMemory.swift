@@ -15,7 +15,8 @@ struct LastResult: Sendable, Equatable {
     /// Above this, the words say less instead of being cut, which could cut a data mark in half.
     static let wordsLimit = 160
 
-    init(_ result: TurnEffects.Result, after previous: LastResult?) {
+    /// Nil for a cleanup card, which is not a list to look in.
+    init?(_ result: TurnEffects.Result, after previous: LastResult?) {
         switch result {
         case .search(let search):
             tool = "searchFiles"
@@ -44,6 +45,8 @@ struct LastResult: Sendable, Equatable {
             let files = scan.groups.flatMap { [$0.kept] + $0.copies }
             ids = files.map(\.id)
             bytes = files.reduce(0) { $0 + ($1.sizeInBytes ?? 0) }
+        case .cleanup:
+            return nil
         }
     }
 }
@@ -67,8 +70,17 @@ struct ChatMemory: Sendable {
     /// True for a message that only asks to go on. With a stopped question waiting, that question
     /// is asked again in its place; any other wording is left to the model, which is told of it.
     static func isContinue(_ text: String) -> Bool {
-        let words = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
-        return ["continue", "go on", "keep going", "resume", "carry on", "try again"].contains(words)
+        let trimmed = CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters)
+        var words = text.lowercased().trimmingCharacters(in: trimmed)
+        // "Keep going please" is no more a new request than "keep going". Left to the model, it
+        // answered the stopped question and then prepared a cleanup nobody asked for (0023).
+        for polite in ["please ", " please"] where words.hasPrefix(polite) || words.hasSuffix(polite) {
+            words = words.replacingOccurrences(of: polite, with: "").trimmingCharacters(in: trimmed)
+        }
+        return [
+            "continue", "go on", "keep going", "resume", "carry on", "try again", "go ahead", "finish",
+            "finish it", "finish what you were doing",
+        ].contains(words)
     }
 
     /// What to ask the model for `text`: the stopped question when `text` only says to continue.
@@ -93,9 +105,12 @@ struct ChatMemory: Sendable {
         }
         // The turns whose card the app shows. A search that found nothing leaves "those" as they
         // were, so "the ones over 500 MB then" still has files to look in.
-        if outcome == .answered || outcome == .stopped, let result = effects.results.last {
-            let found = LastResult(result, after: lastResult)
-            if !found.ids.isEmpty { lastResult = found }
+        // A cleanup card is not a list to look in: the lookup before it, if any, is.
+        let previous = lastResult
+        if outcome == .answered || outcome == .stopped,
+           let found = effects.results.reversed().lazy.compactMap({ LastResult($0, after: previous) }).first,
+           !found.ids.isEmpty {
+            lastResult = found
         }
     }
 
@@ -104,6 +119,7 @@ struct ChatMemory: Sendable {
         case .search(let search): "\(search.matchCount) files, \(ToolOutput.size(search.totalBytes))"
         case .summary: "folder totals"
         case .duplicates(let scan): "\(scan.copyCount) copies"
+        case .cleanup(let proposal): "a cleanup preview of \(proposal.count) files, not confirmed here"
         }
     }
 

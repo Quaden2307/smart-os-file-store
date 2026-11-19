@@ -69,7 +69,10 @@ struct ChatMeasurementTests {
     }
 
     private func engine() -> ChatEngine {
-        ChatEngine(model: SystemLanguageModel.default, snapshot: { Self.snapshot }, findDuplicates: { Fixtures.duplicates }, meter: .system)
+        ChatEngine(
+            model: SystemLanguageModel.default, snapshot: { Self.snapshot }, findDuplicates: { Fixtures.duplicates },
+            cleanupActions: Fixtures.cleanupActions, proposeCleanup: Fixtures.proposal, meter: .system
+        )
     }
 
     /// One question: how long until the first text, how long in all, and how it ended.
@@ -83,18 +86,26 @@ struct ChatMeasurementTests {
         return (firstText.all.first.map { $0 - started }, clock.now - started, turn)
     }
 
+    /// The room taken before any question. A test of its own, so it can be run alone after a
+    /// template or a tool changes.
+    @Test func theFixedPromptStaysWithinItsShareOfTheContext() async throws {
+        let model = SystemLanguageModel.default
+        guard model.isAvailable else {
+            Self.report("not measured: Apple Intelligence is \(model.availability) on this Mac")
+            return
+        }
+        let fixed = try await ChatEngine.fixedPromptTokens(cleanupActions: Fixtures.cleanupActions)
+        let share = Double(fixed.instructions + fixed.tools) / Double(fixed.contextSize)
+        Self.report("contextSize \(fixed.contextSize) tokens; instructions \(fixed.instructions), tool definitions \(fixed.tools), together \(String(format: "%.1f", share * 100))% of the context")
+        #expect(share <= ChatEngine.fixedPromptShare, "Instructions and tools take more of the context than decided (docs/decisions/0023): shorten them")
+    }
+
     @Test func measureTheChatOnThisMac() async throws {
         let model = SystemLanguageModel.default
         guard model.isAvailable else {
             Self.report("not measured: Apple Intelligence is \(model.availability) on this Mac")
             return
         }
-
-        // 1. The room taken before any question.
-        let fixed = try await ChatEngine.fixedPromptTokens()
-        let share = Double(fixed.instructions + fixed.tools) / Double(fixed.contextSize) * 100
-        Self.report("contextSize \(fixed.contextSize) tokens; instructions \(fixed.instructions), tool definitions \(fixed.tools), together \(String(format: "%.1f", share))% of the context")
-        #expect(fixed.instructions + fixed.tools <= fixed.contextSize / 4, "Instructions and tools take more than a quarter of the context: shorten them")
 
         // 2. The largest text a tool can hand the model, and an ordinary one.
         let flood = FolderSnapshot(
@@ -163,7 +174,7 @@ struct ChatMeasurementTests {
         Self.report("""
             30 questions in one conversation: \(outcomes.count - others.count) answered \(others.isEmpty ? "" : "(others: \(others.joined(separator: ", ")))"), \
             \(startedOver) started over; tokens before the reply: first \(tokens.first ?? -1), largest \(tokens.max() ?? -1), \
-            last \(tokens.last ?? -1), of \(fixed.contextSize)
+            last \(tokens.last ?? -1), of \(model.contextSize)
             """)
         #expect(startedOver == 0)
         #expect(!outcomes.contains(.contextFull))

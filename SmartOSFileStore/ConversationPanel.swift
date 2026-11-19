@@ -6,6 +6,7 @@ import SwiftUI
 enum ChatLayout {
     static let columnWidth: CGFloat = 720
     static let bubbleWidth: CGFloat = 520
+    static let cardWidth: CGFloat = 560
 }
 
 /// The conversation above the chat bar: each question in a bubble on the right, the reply under it
@@ -19,6 +20,7 @@ struct ConversationPanel: View {
     /// changing the height kept for it.
     let maxHeight: CGFloat
     let showInList: @MainActor (URL) -> Void
+    let cardActions: ChatCardActions
 
     static let minHeight: CGFloat = 160
     @AppStorage("ChatPanelHeight") private var storedHeight = 280.0
@@ -54,7 +56,7 @@ struct ConversationPanel: View {
                         case .question:
                             QuestionBubble(text: message.text)
                         case .reply:
-                            ChatReplyView(message: message, files: files, showInList: showInList)
+                            ChatReplyView(message: message, chat: chat, files: files, showInList: showInList, cardActions: cardActions)
                         }
                     }
                 }
@@ -193,11 +195,14 @@ private struct QuestionBubble: View {
 }
 
 /// One reply on the left: the thinking animation until its first words, the model's sentence, a
-/// plain line when it did not end as an answer, and the card of what the lookups found.
+/// plain line when it did not end as an answer, the card of what the lookups found, and the card
+/// of a cleanup it prepared.
 private struct ChatReplyView: View {
     let message: ChatMessage
+    let chat: ChatModel
     let files: FileListModel
     let showInList: @MainActor (URL) -> Void
+    let cardActions: ChatCardActions
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -234,6 +239,9 @@ private struct ChatReplyView: View {
                     LookupCard(results: results, files: files, showInList: showInList)
                 }
             }
+            if let proposal = message.turn?.cleanupCard {
+                ChatCleanupCard(proposal: proposal, chat: chat, actions: cardActions)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: isThinking)
@@ -246,6 +254,8 @@ extension TurnEffects {
     /// unless its files are the ones the card lists.
     var shownResults: [Result] {
         let hasSummary = results.contains { if case .summary = $0 { true } else { false } }
+        // A cleanup is drawn as a card of its own (`ChatCleanupCard`), never among the lookups.
+        let results = results.filter { if case .cleanup = $0 { false } else { true } }
         return results.enumerated().compactMap { index, result in
             if hasSummary, index != results.count - 1, case .search(let search) = result, search.query == FileQuery() {
                 return nil
@@ -274,6 +284,9 @@ private struct LookupCard: View {
                     SearchFacts(result: search, listsFiles: isLast, files: files, showInList: showInList)
                 case .duplicates(let scan):
                     DuplicateFacts(scan: scan, listsFiles: isLast, files: files, showInList: showInList)
+                case .cleanup:
+                    // Never among the lookups: `shownResults` leaves it out.
+                    EmptyView()
                 case .summary(let summary):
                     if isLast {
                         SummaryFacts(summary: summary, files: files, showInList: showInList)
@@ -446,7 +459,7 @@ private struct ChatFileRow: View {
     let showInList: @MainActor (URL) -> Void
 
     /// Keeps a size beside its name in a wide window.
-    static let maxWidth: CGFloat = 560
+    static let maxWidth = ChatLayout.cardWidth
 
     private var hint: Text {
         if record == nil { return Text("No longer in the list") }

@@ -10,7 +10,8 @@ public enum TidyNowPlanningEvent: Sendable, Hashable {
 }
 
 /// Runs every action's planner over one scan, together, and resolves the overlap between their
-/// plans (`TidyNowPlan.resolve`). Writes nothing, like every planner.
+/// plans (`TidyNowPlan.resolve`). Writes nothing, like every planner. Given `actions`, it runs only
+/// those: a cleanup asked for in the chat is planned here, by the same planners and the same rules.
 ///
 /// The planners that read whole files run one after another, Find Duplicates first, sharing one
 /// content-hash cache, so no file is read twice; they run alongside the others. One planner failing
@@ -33,11 +34,15 @@ public struct TidyNowPlanner: Sendable {
     public let now: Date
     public let eligibility: CandidateEligibility
     public let keptItems: KeptItems
+    /// The actions planned. Every action unless the planner was made for some.
+    public let actions: [CleanupAction]
     private let planAction: PlanAction
     private static let logger = Logger(subsystem: "com.quaden2307.FileStoreCore", category: "TidyNow")
 
     /// - Parameters: as for `CleanupPlanners.plan`, which plans each action.
+    ///   - actions: The actions to plan, in any order. Every action by default.
     public init(
+        actions: [CleanupAction] = TidyNowPlan.order,
         eligibility: CandidateEligibility,
         keptItems: KeptItems,
         installers: InstallerSources,
@@ -46,7 +51,7 @@ public struct TidyNowPlanner: Sendable {
         folderURL: URL,
         now: Date = .now
     ) {
-        self.init(folderURL: folderURL, now: now, eligibility: eligibility, keptItems: keptItems) { action, hashCache, onProgress throws(CleanupPlanningError) in
+        self.init(actions: actions, folderURL: folderURL, now: now, eligibility: eligibility, keptItems: keptItems) { action, hashCache, onProgress throws(CleanupPlanningError) in
             try await CleanupPlanners.plan(
                 action,
                 records: records,
@@ -63,7 +68,11 @@ public struct TidyNowPlanner: Sendable {
     }
 
     /// A planner with its own way of planning each action, for tests.
-    public init(folderURL: URL, now: Date, eligibility: CandidateEligibility, keptItems: KeptItems, planAction: @escaping PlanAction) {
+    public init(
+        actions: [CleanupAction] = TidyNowPlan.order, folderURL: URL, now: Date, eligibility: CandidateEligibility,
+        keptItems: KeptItems, planAction: @escaping PlanAction
+    ) {
+        self.actions = actions
         self.folderURL = folderURL
         self.now = now
         self.eligibility = eligibility
@@ -71,18 +80,21 @@ public struct TidyNowPlanner: Sendable {
         self.planAction = planAction
     }
 
-    /// Plans every action that has a planner, and resolves the overlap.
+    /// Plans every one of `actions` that has a planner, and resolves the overlap.
     ///
     /// - Parameters:
+    ///   - ids: When set, each plan keeps only its changes to these files, before the overlap is
+    ///     resolved: a file outside them is never changed, and protects nothing.
     ///   - hashCache: Content hashes read earlier in this session; the hashing planners add to it.
     /// - Throws: `.cancelled` when the task is cancelled. A planner failing throws nothing: its
     ///   outcome says so.
     @concurrent
     public func plan(
+        only ids: Set<URL>? = nil,
         hashCache: ContentHashCache = ContentHashCache(),
         onEvent: (@Sendable (TidyNowPlanningEvent) -> Void)? = nil
     ) async throws(CleanupPlanningError) -> TidyNowPlan {
-        let actions = TidyNowPlan.order.filter(CleanupPlanners.hasPlanner)
+        let actions = TidyNowPlan.order.filter { self.actions.contains($0) && CleanupPlanners.hasPlanner($0) }
         let chain = Self.hashingChain.filter(actions.contains)
         let planAction = planAction
         let outcomes = await withTaskGroup(of: [(CleanupAction, CleanupPlan?)].self) { group in
@@ -110,7 +122,9 @@ public struct TidyNowPlanner: Sendable {
         if Task.isCancelled {
             throw .cancelled
         }
-        let plans = outcomes.values.compactMap(\.self)
+        let plans = outcomes.values.compactMap(\.self).map { plan in
+            ids.map { plan.removing(Set(plan.changes.map(\.id)).subtracting($0)) } ?? plan
+        }
         let resolved = TidyNowPlan.resolve(plans, eligibility: eligibility.keeping(keptItems), now: now)
         return TidyNowPlan(
             folderURL: folderURL,

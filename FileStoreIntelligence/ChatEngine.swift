@@ -24,14 +24,43 @@ public struct Turn: Sendable {
     public var text: String
     public var outcome: TurnOutcome
     public var effects: TurnEffects
+    /// True when the first try overflowed or failed, so the question was asked again in a fresh
+    /// conversation that remembers only the last two questions.
+    public var startedOver = false
+    /// What the model was shown before it began, in tokens: instructions, tools, the earlier turns
+    /// it was shown and the question. Nil when not counted.
+    public var tokensBeforeReply: Int?
 }
 
-/// One chat conversation with the on-device model. It can look things up through two read-only
+/// How the engine measures what the model will read, to keep a conversation inside its context.
+public struct ContextMeter: Sendable {
+    public let contextSize: Int
+    /// The tokens in a transcript's entries. The instructions entry counts its tool definitions too.
+    public let count: @Sendable ([Transcript.Entry]) async throws -> Int
+
+    public init(contextSize: Int, count: @escaping @Sendable ([Transcript.Entry]) async throws -> Int) {
+        self.contextSize = contextSize
+        self.count = count
+    }
+
+    /// The on-device model's own count.
+    public static let system = ContextMeter(contextSize: SystemLanguageModel.default.contextSize) { entries in
+        try await SystemLanguageModel.default.tokenCount(for: entries)
+    }
+}
+
+/// One chat conversation with the on-device model. It can look things up through three read-only
 /// tools and nothing else: this module imports no code that changes files (docs/decisions/0020).
 /// The conversation lives in memory only, and nothing the user types is logged.
 public actor ChatEngine {
     public static let toolCallLimit = 4
     public static let turnLimit: Duration = .seconds(30)
+    /// The share of the context that the instructions, the tools, the earlier turns and the question
+    /// may take before a turn starts. The rest is for the turn's lookups and reply: four lookups at
+    /// the output cap and a reply come to about a third of 4,096 tokens (docs/decisions/0021).
+    public static let historyShare = 0.6
+    /// The earlier turns a fresh conversation keeps when the old one is too full to go on.
+    static let turnsKeptOnStartingOver = 2
 
     private static let logger = Logger(subsystem: "com.quaden2307.FileStoreIntelligence", category: "ChatEngine")
 
@@ -43,38 +72,54 @@ public actor ChatEngine {
     }
 
     private let model: any LanguageModel
-    private let snapshot: @Sendable () async -> FolderSnapshot
+    private let tools: Tools
     private let availability: @Sendable () -> IntelligenceAvailability
     private let turnLimit: Duration
     private let now: @Sendable () -> Date
+    /// Nil shows the model every earlier turn (still cut short): for tests that are not about length.
+    private let meter: ContextMeter?
     private var conversation: Conversation?
 
+    /// What the app hands the tools: its view of the folder, and a way to run Find Duplicates.
+    private struct Tools {
+        let snapshot: @Sendable () async -> FolderSnapshot
+        let findDuplicates: @Sendable () async -> DuplicateScan?
+    }
+
     /// The engine the app uses: the on-device system model, and never any other.
-    public init(snapshot: @escaping @Sendable () async -> FolderSnapshot) {
+    public init(
+        snapshot: @escaping @Sendable () async -> FolderSnapshot,
+        findDuplicates: @escaping @Sendable () async -> DuplicateScan?
+    ) {
         self.init(
             model: SystemLanguageModel.default,
             snapshot: snapshot,
+            findDuplicates: findDuplicates,
             availability: {
                 // Unset counts as on, as in Settings.
                 let enabled = UserDefaults.standard.object(forKey: IntelligenceAvailability.enabledKey) as? Bool ?? true
                 return .current(enabledInSettings: enabled)
-            }
+            },
+            meter: .system
         )
     }
 
-    /// For tests and measurements: any model, a short time limit, a clock.
+    /// For tests and measurements: any model, a short time limit, a clock, a context meter.
     public init(
         model: some LanguageModel,
         snapshot: @escaping @Sendable () async -> FolderSnapshot,
+        findDuplicates: @escaping @Sendable () async -> DuplicateScan? = { nil },
         availability: @escaping @Sendable () -> IntelligenceAvailability = { .available },
         turnLimit: Duration = ChatEngine.turnLimit,
-        now: @escaping @Sendable () -> Date = { .now }
+        now: @escaping @Sendable () -> Date = { .now },
+        meter: ContextMeter? = nil
     ) {
         self.model = model
-        self.snapshot = snapshot
+        self.tools = Tools(snapshot: snapshot, findDuplicates: findDuplicates)
         self.availability = availability
         self.turnLimit = turnLimit
         self.now = now
+        self.meter = meter
     }
 
     /// Loads the model ahead of the first question. Called when the chat bar gets focus.
@@ -83,18 +128,71 @@ public actor ChatEngine {
         currentConversation().session.prewarm()
     }
 
-    /// Asks one question. `onText` gets the reply so far each time it grows, on no particular
-    /// actor. Cancelling the calling task is Stop: the turn ends as `.stopped` with what had arrived.
+    /// Asks one question. `onText` gets the reply so far each time it changes, on no particular
+    /// actor; it starts again from empty when the question is asked again in a fresh conversation.
+    /// Cancelling the calling task is Stop: the turn ends as `.stopped` with what had arrived.
     public func respond(to text: String, onText: @escaping @Sendable (String) -> Void) async -> Turn {
         let available = availability()
         guard available == .available else {
             return Turn(text: "", outcome: .unavailable(available), effects: TurnEffects())
         }
-        let conversation = currentConversation()
-        let session = conversation.session
-        conversation.recorder.begin()
-        let history = Array(session.transcript)
         let started = ContinuousClock.now
+        var attempt = await ask(text, in: currentConversation(), within: turnLimit, onText: onText)
+        var startedOver = false
+        // A conversation too full to go on, or an error nobody recognised (which may be the same
+        // under another name), is not the user's to fix: the question is asked again, once, in a
+        // fresh conversation that keeps the last two questions.
+        let remaining = turnLimit - (ContinuousClock.now - started)
+        if attempt.outcome == .contextFull || attempt.outcome == .failed, !Task.isCancelled, remaining > .zero {
+            startedOver = true
+            onText("")
+            let fresh = makeConversation(history: ChatHistory.lastTurns(attempt.history, Self.turnsKeptOnStartingOver))
+            attempt = await ask(text, in: fresh, within: remaining, onText: onText)
+        }
+
+        switch attempt.outcome {
+        case .answered, .toolLimitReached, .refused, .unavailable:
+            // The session put its transcript back as it was before a turn that threw.
+            self.conversation = attempt.conversation
+        case .contextFull, .failed:
+            // Not mended by asking again: the next question starts with nothing carried over.
+            self.conversation = nil
+        case .stopped, .timedOut:
+            // The abandoned reply may still be running behind the session and calling tools, which
+            // would spend the next turn's budget and confuse its answer (seen with the real model).
+            // A new session made from the history before this turn remembers the same conversation
+            // and shares nothing with the old one.
+            self.conversation = makeConversation(history: attempt.history)
+        }
+        Self.logger.info("""
+            Turn ended: \(String(describing: attempt.outcome), privacy: .public), \
+            \(attempt.effects.results.count) tool results, \(startedOver ? "started over, " : "", privacy: .public)\
+            \((ContinuousClock.now - started).formatted(), privacy: .public)
+            """)
+        var turn = Turn(text: attempt.text, outcome: attempt.outcome, effects: attempt.effects)
+        turn.startedOver = startedOver
+        turn.tokensBeforeReply = attempt.tokensBeforeReply
+        return turn
+    }
+
+    /// One try at a question in `conversation`, ended by the reply, an error, Stop or `limit`.
+    private struct Attempt {
+        let conversation: Conversation
+        /// The transcript before the question.
+        let history: [Transcript.Entry]
+        let text: String
+        let outcome: TurnOutcome
+        let effects: TurnEffects
+        let tokensBeforeReply: Int?
+    }
+
+    private func ask(
+        _ text: String, in conversation: Conversation, within limit: Duration, onText: @escaping @Sendable (String) -> Void
+    ) async -> Attempt {
+        let session = conversation.session
+        let history = Array(session.transcript)
+        let fit = await earlierTurnsThatFit(history, question: text, shownLastTime: conversation.recorder.earlierTurnsShown)
+        conversation.recorder.begin(showingEarlierTurns: fit.turns)
         let reply = Mutex("")
 
         enum Ending {
@@ -103,7 +201,6 @@ public actor ChatEngine {
             case outOfTime
             case cancelled
         }
-        let limit = turnLimit
         let ending = await withTaskGroup(of: Ending.self) { group in
             group.addTask {
                 do {
@@ -141,27 +238,43 @@ public actor ChatEngine {
         case .outOfTime: Task.isCancelled ? .stopped : .timedOut
         case .threw(let error): Task.isCancelled ? .stopped : self.outcome(for: error)
         }
-        switch outcome {
-        case .answered, .toolLimitReached, .refused, .unavailable:
-            // The session put its transcript back as it was before a turn that threw.
-            break
-        case .contextFull, .failed:
-            // A full context fails every later turn too, and an error nobody recognised may be one
-            // under another name: either way the next question starts a fresh conversation.
-            self.conversation = nil
-        case .stopped, .timedOut:
-            // The abandoned reply may still be running behind the session and calling tools, which
-            // would spend the next turn's budget and confuse its answer (seen with the real model).
-            // A new session made from the history before this turn remembers the same conversation
-            // and shares nothing with the old one.
-            self.conversation = makeConversation(history: history)
+        return Attempt(
+            conversation: conversation, history: history, text: reply.withLock { $0 }, outcome: outcome,
+            effects: conversation.recorder.effects, tokensBeforeReply: fit.tokens
+        )
+    }
+
+    /// How many of the turns in `history` the model can be shown with `question`, cut short as
+    /// `ChatHistory` does, inside `historyShare` of the context. Counted before every turn, so a
+    /// long conversation drops its oldest turns before it overflows, never after. It starts from
+    /// one more than the last turn showed, so a turn takes one or two counts however long the
+    /// conversation is.
+    private func earlierTurnsThatFit(
+        _ history: [Transcript.Entry], question: String, shownLastTime: Int
+    ) async -> (turns: Int, tokens: Int?) {
+        let earlier = ChatHistory.turnCount(history)
+        guard let meter else { return (earlier, nil) }
+        let budget = Int(Double(meter.contextSize) * Self.historyShare)
+        let prompt = Transcript.Entry.prompt(Transcript.Prompt(segments: [.text(Transcript.TextSegment(content: question))]))
+        // The transcript starts with the instructions, whose count includes the tool definitions.
+        let shownWith = { (turns: Int) in
+            try await meter.count(ChatHistory.compacted(history + [prompt], keepingEarlierTurns: turns))
         }
-        let elapsed = ContinuousClock.now - started
-        Self.logger.info("""
-            Turn ended: \(String(describing: outcome), privacy: .public), \
-            \(conversation.recorder.effects.results.count) tool results, \(elapsed.formatted(), privacy: .public)
-            """)
-        return Turn(text: reply.withLock { $0 }, outcome: outcome, effects: conversation.recorder.effects)
+        var shown = shownLastTime == .max ? earlier : min(earlier, shownLastTime + 1)
+        do {
+            var tokens = try await shownWith(shown)
+            while tokens > budget, shown > 0 {
+                shown -= 1
+                tokens = try await shownWith(shown)
+            }
+            Self.logger.info("Showing \(shown) of \(earlier) earlier turns, \(tokens) of \(meter.contextSize) tokens before the reply")
+            return (shown, tokens)
+        } catch {
+            // Without a count, as much as a fresh conversation keeps.
+            shown = min(shown, Self.turnsKeptOnStartingOver)
+            Self.logger.notice("Could not count tokens (\(String(reflecting: type(of: error)), privacy: .public)); showing \(shown) earlier turns")
+            return (shown, nil)
+        }
     }
 
     /// What the on-device model must read before any question, in tokens: the instructions and the
@@ -169,7 +282,7 @@ public actor ChatEngine {
     /// recorded in docs/decisions/0020 and measured again whenever a template or a tool changes.
     public static func fixedPromptTokens() async throws -> (instructions: Int, tools: Int, contextSize: Int) {
         let model = SystemLanguageModel.default
-        let tools = tools(ToolContext(snapshot: { FolderSnapshot(files: []) }, recorder: TurnRecorder()))
+        let tools = tools(ToolContext(snapshot: { FolderSnapshot(files: []) }, findDuplicates: { nil }, recorder: TurnRecorder()))
         return (
             try await model.tokenCount(for: Instructions(PromptLibrary.chatInstructions(today: .now))),
             try await model.tokenCount(for: tools),
@@ -188,25 +301,22 @@ public actor ChatEngine {
     }
 
     private func makeConversation(history: [Transcript.Entry]) -> Conversation {
-        Self.makeConversation(model: model, snapshot: snapshot, history: history, today: now())
+        Self.makeConversation(model: model, tools: tools, history: history, today: now())
     }
 
-    /// Every tool the model may call. All of them only read the snapshot.
+    /// Every tool the model may call. All of them only read.
     private static func tools(_ context: ToolContext) -> [any Tool] {
-        [SearchFilesTool(context: context), FolderSummaryTool(context: context)]
+        [SearchFilesTool(context: context), FolderSummaryTool(context: context), FindDuplicatesTool(context: context)]
     }
 
     /// Static, so the tool-call hook does not inherit the engine's isolation and wait for it.
-    private static func makeConversation(
-        model: any LanguageModel, snapshot: @escaping @Sendable () async -> FolderSnapshot, history: [Transcript.Entry],
-        today: Date
-    ) -> Conversation {
+    private static func makeConversation(model: any LanguageModel, tools app: Tools, history: [Transcript.Entry], today: Date) -> Conversation {
         // The new session brings its own instructions; the old ones are not part of what was said.
         let history = history.filter { entry in
             if case .instructions = entry { false } else { true }
         }
         let recorder = TurnRecorder()
-        let tools = tools(ToolContext(snapshot: snapshot, recorder: recorder))
+        let tools = tools(ToolContext(snapshot: app.snapshot, findDuplicates: app.findDuplicates, recorder: recorder))
         let registered = Set(tools.map(\.name))
         let instructions = PromptLibrary.chatInstructions(today: today)
         let profile = LanguageModelSession.Profile {
@@ -216,8 +326,15 @@ public actor ChatEngine {
         .model(model)
         .samplingMode(.greedy)
         .transcriptErrorHandlingPolicy(.revertTranscript)
+        // What the model reads; the session keeps the whole transcript. Measured with the real
+        // model: overflow is judged on this, not on the transcript (docs/decisions/0021).
+        .historyTransform { entries in
+            ChatHistory.compacted(entries, keepingEarlierTurns: recorder.earlierTurnsShown)
+        }
         // Runs before each tool; a throw stops that tool and ends the turn (measured: 0020).
         .onToolCall { call in
+            // The name only, never the arguments: they can quote the question or a file name.
+            logger.info("Tool call: \(call.toolName, privacy: .public)")
             try recorder.admit(call.toolName, registered: registered, limit: toolCallLimit)
         }
         return Conversation(

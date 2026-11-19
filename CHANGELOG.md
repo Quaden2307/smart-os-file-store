@@ -8,7 +8,10 @@ All notable changes to Smart OS File Store are recorded here. The format follows
 
 - **A chat bar that answers questions about Downloads** (View > Ask About Downloads, ⌘K), using Apple Intelligence on the Mac:
   - ask in your own words what is taking space, what you downloaded and never opened, what came from a site, and so on; the reply is a sentence or two with the files listed under it, and clicking a file selects it in the list;
-  - the counts, sizes and file lists are worked out by the app, not written by the model;
+  - questions about duplicates or copies run Find Duplicates, which reads the files, and list each file with its copies;
+  - the counts, sizes and file lists are worked out by the app, not written by the model, and a lookup made twice in one reply is shown once;
+  - a long conversation keeps going: older answers are summarised for the model and the oldest dropped before it runs out of room, and a question that still does not fit is asked again by itself in a fresh conversation;
+  - questions in bubbles, a rounded field whose round button sends and stops, a small shuffle of documents while it works (a fade with Reduce Motion), and a conversation that follows the reply unless you scroll up and whose height you set by dragging its top edge;
   - it only looks things up and cannot change, move or remove a file;
   - Stop ends a reply, and a reply is stopped by itself after 30 seconds or four lookups;
   - questions are answered on the Mac, nothing leaves it, and the conversation is not saved or logged;

@@ -34,9 +34,13 @@
         "suites": [
           {
             "name": "ChatMeasurementTests"
+          },
+          {
+            "name": "ChatEvalTests"
           }
         ]
       },
+      "parallelizable": false,
       "target": {
         "containerPath": "container:SmartOSFileStore.xcodeproj",
         "identifier": "271D398C2BAB92A4CF3E9BAC",

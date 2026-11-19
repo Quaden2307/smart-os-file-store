@@ -5,10 +5,11 @@ import UniformTypeIdentifiers
 /// scan. This module imports none of the engine, so it can never see more than this
 /// (docs/decisions/0020).
 public struct FolderSnapshot: Sendable {
-    /// The marks the file list shows. The engine's `FileMark`, case for case; the app maps one to
-    /// the other with an exhaustive switch, so a new mark cannot be forgotten.
+    /// The marks the file list shows, but Duplicate: that one only says what the last Tidy Now
+    /// found, and the chat finds copies by reading the files (`findDuplicates`, docs/decisions/0021).
+    /// The app maps the engine's `FileMark` with an exhaustive switch, so a new mark cannot be forgotten.
     public enum Mark: String, Sendable, Hashable, CaseIterable {
-        case kept, failedDownload, installed, duplicate, neverOpened, unused, old
+        case kept, failedDownload, installed, neverOpened, unused, old
     }
 
     public struct File: Sendable, Identifiable, Equatable {

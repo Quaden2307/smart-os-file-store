@@ -42,8 +42,8 @@ struct TestPlanTests {
 
     /// Swift Testing honours only the structured `{"suites": [{"name": …}]}` form, by type name.
     @Test func defaultPlanLeavesTheBenchmarksOutAndTheBenchmarkPlanRunsOnlyThem() throws {
-        // One suite per bundle: the engine's benchmark, and the chat's measurements on the real model.
-        let measured = [["BenchmarkTests"], ["ChatMeasurementTests"]]
+        // The engine's benchmark, and the chat's measurements and evals on the real model.
+        let measured = [["BenchmarkTests"], ["ChatMeasurementTests", "ChatEvalTests"]]
         let normal = try plan(named: "SmartOSFileStore").testTargets
         #expect(normal.map { $0.skippedTests?.suites.map(\.name) } == measured)
         #expect(normal.allSatisfy { $0.selectedTests == nil })
@@ -51,8 +51,10 @@ struct TestPlanTests {
         #expect(benchmark.map { $0.selectedTests?.suites.map(\.name) } == measured)
         #expect(benchmark.allSatisfy { $0.skippedTests == nil })
         #expect(String(describing: BenchmarkTests.self) == "BenchmarkTests")
-        // The other bundle's suite cannot be named from here; its source can be read.
-        let chat = try SafetyTests.projectRoot().appending(path: "FileStoreIntelligenceTests/ChatMeasurementTests.swift")
-        #expect(try String(contentsOf: chat, encoding: .utf8).contains("\nstruct ChatMeasurementTests {"))
+        // The other bundle's suites cannot be named from here; their sources can be read.
+        for suite in ["ChatMeasurementTests", "ChatEvalTests"] {
+            let chat = try SafetyTests.projectRoot().appending(path: "FileStoreIntelligenceTests/\(suite).swift")
+            #expect(try String(contentsOf: chat, encoding: .utf8).contains("\nstruct \(suite) {"))
+        }
     }
 }

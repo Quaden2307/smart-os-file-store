@@ -16,11 +16,14 @@ extension TurnOutcome {
         case .refused:
             String(localized: "Apple Intelligence declined to answer that. The Clean Up menu still does everything the app can do.")
         case .contextFull:
-            String(localized: "This conversation got too long for the on-device model, so it has started again. Earlier messages are no longer remembered. Ask once more.")
+            // Usually after the question was already asked again in a fresh conversation (not when
+            // the first try used up the time limit).
+            String(localized: "This question needs more room than the on-device model has. Try asking for one thing at a time.")
         case .unavailable(let availability):
             availability.reason
         case .failed:
-            String(localized: "Something went wrong answering that, so the conversation has started again. Ask once more.")
+            // Usually after the question was already asked again in a fresh conversation.
+            String(localized: "Something went wrong answering that, so the conversation has started again.")
         }
     }
 }

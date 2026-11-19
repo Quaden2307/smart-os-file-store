@@ -2,7 +2,7 @@ import FileStoreIntelligence
 import SwiftUI
 
 /// The chat at the bottom of the main window: the conversation, while it is open, and under it the
-/// bar to ask in. When Apple Intelligence cannot answer, the bar is one line saying why instead.
+/// field to ask in. When Apple Intelligence cannot answer, the field is one line saying why instead.
 struct ChatSection: View {
     @Bindable var chat: ChatModel
     let files: FileListModel
@@ -23,9 +23,8 @@ struct ChatSection: View {
         let availability = IntelligenceAvailability.current(enabledInSettings: usesAppleIntelligence)
         VStack(spacing: 0) {
             if chat.isPanelOpen, !chat.messages.isEmpty {
-                ConversationPanel(chat: chat, files: files, showInList: showInList)
+                ConversationPanel(chat: chat, files: files, maxHeight: chat.panelRoom, showInList: showInList)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
-                Divider()
             }
             if availability == .available {
                 ChatBar(chat: chat, isFocused: isFocused, canTakeKeyboard: canTakeKeyboard)
@@ -56,9 +55,10 @@ struct ChatSection: View {
     }
 }
 
-/// The field to ask in, with Send, or Stop while a reply is arriving. Until the first question,
-/// three example questions sit above it. (Not only while the field has the cursor: a button that
-/// goes away when the keyboard moves to it could never be pressed from the keyboard.)
+/// The rounded field to ask in, with one round button that sends, and stops while a reply is
+/// arriving. Until the first question, three example questions sit above it. (Not only while the
+/// field has the cursor: a button that goes away when the keyboard moves to it could never be
+/// pressed from the keyboard.)
 struct ChatBar: View {
     @Bindable var chat: ChatModel
     var isFocused: FocusState<Bool>.Binding
@@ -73,15 +73,15 @@ struct ChatBar: View {
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(spacing: 8) {
             if chat.messages.isEmpty {
                 HStack(spacing: 8) {
-                    Text("Try asking:")
-                        .foregroundStyle(.secondary)
                     ForEach(Self.examples, id: \.self) { example in
                         Button(example) {
                             chat.ask(example)
                         }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
                         .controlSize(.small)
                         .disabled(!chat.canAsk)
                         .help("Ask this question")
@@ -90,16 +90,14 @@ struct ChatBar: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel("Example questions")
             }
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: "sparkles")
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
+            HStack(alignment: .bottom, spacing: 6) {
                 TextField("Ask about your Downloads", text: $chat.draft, axis: .vertical)
-                    .lineLimit(1...4)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
+                    .lineLimit(1...6)
                     .focused(isFocused)
                     .disabled(!canTakeKeyboard)
                     .onSubmit(chat.send)
+                    .padding(.vertical, 5)
                     .accessibilityLabel("Question about your Downloads")
                     .help("Ask about the files in this folder (⌘K). Answers are worked out on this Mac.")
                 if !chat.messages.isEmpty, !chat.isPanelOpen {
@@ -110,24 +108,25 @@ struct ChatBar: View {
                     }
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
+                    .padding(.bottom, 5)
                     .help("Show the conversation")
                 }
-                if chat.isResponding {
-                    ProgressView()
-                        .controlSize(.small)
-                        .accessibilityLabel("Answering")
-                    Button("Stop", action: chat.stop)
-                        .help("Stop the reply")
-                } else {
-                    Button("Send", action: chat.send)
-                        .disabled(!chat.canSend)
-                        .help("Send the question (Return)")
-                }
+                SendButton(chat: chat)
             }
+            .padding(.leading, 14)
+            .padding(.trailing, 5)
+            .padding(.vertical, 4)
+            .background(.background, in: .rect(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(isFocused.wrappedValue ? AnyShapeStyle(.secondary) : AnyShapeStyle(.separator))
+            }
+            .frame(maxWidth: ChatLayout.columnWidth)
         }
         .font(.callout)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
         .onChange(of: isFocused.wrappedValue) { _, isFocused in
             if isFocused {
                 chat.prewarm()
@@ -135,6 +134,42 @@ struct ChatBar: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Chat")
+    }
+}
+
+/// Send, which turns into Stop while a reply is arriving: black on white, or white on black in Dark
+/// Mode, and grey while there is nothing to send.
+private struct SendButton: View {
+    let chat: ChatModel
+
+    private var isEnabled: Bool {
+        chat.isResponding || chat.canSend
+    }
+
+    private var fill: AnyShapeStyle {
+        isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary)
+    }
+
+    var body: some View {
+        Button {
+            if chat.isResponding {
+                chat.stop()
+            } else {
+                chat.send()
+            }
+        } label: {
+            Image(systemName: chat.isResponding ? "stop.fill" : "arrow.up")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(.background)
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(fill))
+                .contentTransition(.symbolEffect(.replace))
+                .contentShape(.circle)
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .accessibilityLabel(chat.isResponding ? Text("Stop") : Text("Send"))
+        .help(chat.isResponding ? Text("Stop the reply") : Text("Send the question (Return)"))
     }
 }
 
@@ -170,8 +205,10 @@ struct ChatUnavailableBar: View {
             }
         }
         .font(.callout)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .frame(maxWidth: ChatLayout.columnWidth)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Chat")
     }

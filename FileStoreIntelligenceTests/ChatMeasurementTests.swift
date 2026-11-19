@@ -5,7 +5,7 @@ import Testing
 
 /// What the chat costs on this Mac with the real on-device model: the room the instructions and
 /// tool definitions take, how long an answer takes with and without prewarming, how big a tool's
-/// output gets, how fast Stop is, and what happens when a conversation outgrows the context.
+/// output gets, how fast Stop is, and how much of the context a long conversation uses.
 /// Results go to the test log as warnings starting `CHAT` and are copied by hand into the decision
 /// record (docs/decisions/0020). Nothing is asserted about speed.
 ///
@@ -69,7 +69,7 @@ struct ChatMeasurementTests {
     }
 
     private func engine() -> ChatEngine {
-        ChatEngine(model: SystemLanguageModel.default, snapshot: { Self.snapshot })
+        ChatEngine(model: SystemLanguageModel.default, snapshot: { Self.snapshot }, findDuplicates: { Fixtures.duplicates }, meter: .system)
     }
 
     /// One question: how long until the first text, how long in all, and how it ended.
@@ -147,15 +147,25 @@ struct ChatMeasurementTests {
             Self.seconds(stopTook), String(describing: stopped.outcome), String(describing: afterStop.turn.outcome), Self.seconds(afterStop.total)
         ))
 
-        // 5. Overflow: one conversation asked until it no longer fits, then once more.
+        // 5. One long conversation: does every question fit without starting over, and how much of
+        // the context was the model shown before each reply (docs/decisions/0021).
         let long = engine()
-        var turns = 0
-        var last = TurnOutcome.answered
-        while last != .contextFull, last != .failed, turns < 80 {
-            last = await ask(long, Self.questions[turns % Self.questions.count]).turn.outcome
-            turns += 1
+        var outcomes: [TurnOutcome] = []
+        var startedOver = 0
+        var tokens: [Int] = []
+        for index in 0..<30 {
+            let turn = await ask(long, Self.questions[index % Self.questions.count]).turn
+            outcomes.append(turn.outcome)
+            if turn.startedOver { startedOver += 1 }
+            if let shown = turn.tokensBeforeReply { tokens.append(shown) }
         }
-        let after = await ask(long, "How many items are in this folder?")
-        Self.report("overflow: turn \(turns) ended \(last); the turn after it ended \(after.turn.outcome) with \(after.turn.effects.results.count) lookups")
+        let others = outcomes.filter { $0 != .answered }.map { String(describing: $0) }
+        Self.report("""
+            30 questions in one conversation: \(outcomes.count - others.count) answered \(others.isEmpty ? "" : "(others: \(others.joined(separator: ", ")))"), \
+            \(startedOver) started over; tokens before the reply: first \(tokens.first ?? -1), largest \(tokens.max() ?? -1), \
+            last \(tokens.last ?? -1), of \(fixed.contextSize)
+            """)
+        #expect(startedOver == 0)
+        #expect(!outcomes.contains(.contextFull))
     }
 }

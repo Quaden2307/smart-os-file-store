@@ -34,10 +34,10 @@ public struct FileFilter: Sendable, Equatable {
     @Guide(description: "Only files of this many MB or less.")
     public var smallerThanMB: Double?
 
-    @Guide(description: "Site it was downloaded from.")
+    @Guide(description: "Download site.")
     public var sourceSite: String?
 
-    @Guide(description: "A mark the app gave it.", .anyOf(["kept", "failedDownload", "installed", "duplicate", "neverOpened", "unused", "old"]))
+    @Guide(description: "A mark the app gave it.", .anyOf(["kept", "failedDownload", "installed", "neverOpened", "unused", "old"]))
     public var mark: String?
 
     public init(
@@ -75,6 +75,11 @@ extension FileFilter {
         var query = FileQuery()
         query.nameContains = nameContains.flatMap { $0.isEmpty ? nil : $0 }
         query.typeGroup = try Self.choice(typeGroup, named: "typeGroup")
+        // The list's Duplicate mark is not handed to the chat: it only says what the last Tidy Now
+        // found. Copies are found by reading the files (docs/decisions/0021).
+        if mark?.caseInsensitiveCompare("duplicate") == .orderedSame {
+            throw FilterError(message: "Duplicates are found by reading the files, not by a mark: call findDuplicates.")
+        }
         query.mark = try Self.choice(mark, named: "mark")
         query.sourceSite = sourceSite.flatMap(Self.site)
 
@@ -148,9 +153,9 @@ extension FileFilter {
 }
 
 /// A checked filter. An unset field matches every file.
-public struct FileQuery: Sendable, Equatable {
+public struct FileQuery: Sendable, Hashable {
     /// `from` is included, `before` is not.
-    public struct DateRange: Sendable, Equatable {
+    public struct DateRange: Sendable, Hashable {
         public var from: Date?
         public var before: Date?
 

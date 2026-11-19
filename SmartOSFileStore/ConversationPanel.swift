@@ -2,51 +2,95 @@ import FileStoreCore
 import FileStoreIntelligence
 import SwiftUI
 
-/// The conversation above the chat bar: each question, the reply to it, and under a reply what its
-/// lookups were and what they found. Those lines and lists come from the app's own code
-/// (`TurnEffects`), never from the model's sentence, and clicking a file selects it in the list.
+/// Sizes the chat shares: one centred column, as wide as reads well.
+enum ChatLayout {
+    static let columnWidth: CGFloat = 720
+    static let bubbleWidth: CGFloat = 520
+}
+
+/// The conversation above the chat bar: each question in a bubble on the right, the reply under it
+/// on the left, and under a reply a card with what its lookups were and what they found. The card
+/// comes from the app's own code (`TurnEffects`), never from the model's sentence, and clicking a
+/// file selects it in the list. The panel's height is the user's, kept between launches.
 struct ConversationPanel: View {
     let chat: ChatModel
     let files: FileListModel
+    /// The most the window has room for. A smaller window draws the panel shorter without
+    /// changing the height kept for it.
+    let maxHeight: CGFloat
     let showInList: @MainActor (URL) -> Void
 
-    /// The newest question, which is where the panel scrolls to: the reply and what it found then
-    /// read downwards from the top, however long the list under it is.
+    static let minHeight: CGFloat = 160
+    @AppStorage("ChatPanelHeight") private var storedHeight = 280.0
+    @State private var position = ScrollPosition(idType: ChatMessage.ID.self, edge: .bottom)
+    /// True while the view keeps the newest text in sight. Scrolling up stops it; scrolling back to
+    /// the bottom, or asking, starts it again.
+    @State private var isFollowing = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var heights: ClosedRange<CGFloat> {
+        Self.minHeight...max(Self.minHeight, maxHeight)
+    }
+
+    /// The kept height as drawn: inside `heights`, or the least of them when what was kept is not
+    /// a number (clamping passes NaN through, and the handle's VoiceOver value would trap on it).
+    static func height(_ stored: Double, in heights: ClosedRange<CGFloat>) -> CGFloat {
+        stored.isFinite ? CGFloat(stored).clamped(to: heights) : heights.lowerBound
+    }
+
+    /// The newest question, which a finished reply scrolls to: the reply and its card then read
+    /// downwards from the top, however long the list in the card is.
     private var newestQuestion: ChatMessage.ID? {
         chat.messages.last { $0.role == .question }?.id
     }
 
     var body: some View {
-        ScrollViewReader { proxy in
+        VStack(spacing: 0) {
+            PanelResizeHandle(height: $storedHeight, heights: heights)
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 18) {
                     ForEach(chat.messages) { message in
                         switch message.role {
                         case .question:
-                            Text(message.text)
-                                .fontWeight(.semibold)
-                                .textSelection(.enabled)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .accessibilityLabel(Text("You asked: \(message.text)"))
+                            QuestionBubble(text: message.text)
                         case .reply:
                             ChatReplyView(message: message, files: files, showInList: showInList)
                         }
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .scrollTargetLayout()
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
+                .frame(maxWidth: ChatLayout.columnWidth)
+                .frame(maxWidth: .infinity)
             }
-            // When a question is asked, and again when its reply and list have arrived.
-            .onChange(of: chat.isResponding, initial: true) {
-                guard let newestQuestion else { return }
-                // On the next turn, once the new rows are laid out.
+            .scrollPosition($position)
+            .onScrollPhaseChange { old, new, context in
+                // Only the user's own scrolling decides: text that grows moves the content, not the phase.
+                guard new == .idle, old == .interacting || old == .decelerating else { return }
+                let geometry = context.geometry
+                isFollowing = geometry.visibleRect.maxY >= geometry.contentSize.height - 24
+            }
+            .onChange(of: chat.messages.count) {
+                // A question was asked: show it, and the reply as it comes.
+                isFollowing = true
                 Task { @MainActor in
-                    proxy.scrollTo(newestQuestion, anchor: .top)
+                    scroll { position.scrollTo(edge: .bottom) }
+                }
+            }
+            .onChange(of: chat.messages.last?.text) {
+                guard isFollowing else { return }
+                position.scrollTo(edge: .bottom)
+            }
+            .onChange(of: chat.isResponding) { _, isResponding in
+                guard !isResponding, isFollowing, let newestQuestion else { return }
+                // On the next turn, once the card is laid out.
+                Task { @MainActor in
+                    scroll { position.scrollTo(id: newestQuestion, anchor: .top) }
                 }
             }
         }
-        .frame(height: 240)
+        .frame(height: Self.height(storedHeight, in: heights))
         .font(.callout)
         .overlay(alignment: .topTrailing) {
             Button {
@@ -62,29 +106,121 @@ struct ConversationPanel: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Conversation")
     }
+
+    private func scroll(_ change: () -> Void) {
+        if reduceMotion {
+            change()
+        } else {
+            withAnimation(.smooth(duration: 0.3), change)
+        }
+    }
 }
 
-/// One reply: the model's sentence, a plain line when it did not end as an answer, and what the
-/// lookups found.
+/// The top edge of the conversation, dragged to make it taller or shorter. Up and down arrows do
+/// the same from the keyboard, and VoiceOver adjusts it.
+private struct PanelResizeHandle: View {
+    @Binding var height: Double
+    let heights: ClosedRange<CGFloat>
+
+    /// The height when the drag began. A drag is measured in the window, as the handle moves with it.
+    @State private var dragStart: CGFloat?
+    private static let step: CGFloat = 24
+
+    private var current: CGFloat {
+        ConversationPanel.height(height, in: heights)
+    }
+
+    private func set(_ value: CGFloat) {
+        guard value.isFinite else { return }
+        height = Double(value.clamped(to: heights))
+    }
+
+    var body: some View {
+        Capsule()
+            .fill(.quaternary)
+            .frame(width: 36, height: 4)
+            .frame(maxWidth: .infinity, minHeight: 12)
+            .contentShape(.rect)
+            .pointerStyle(.frameResize(position: .top, directions: [.inward, .outward]))
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { drag in
+                        let start = dragStart ?? current
+                        dragStart = start
+                        set(start - drag.translation.height)
+                    }
+                    .onEnded { _ in dragStart = nil }
+            )
+            .focusable()
+            .onKeyPress(.upArrow) {
+                set(current + Self.step)
+                return .handled
+            }
+            .onKeyPress(.downArrow) {
+                set(current - Self.step)
+                return .handled
+            }
+            .help("Drag to make the conversation taller or shorter")
+            .accessibilityElement()
+            .accessibilityLabel("Conversation height")
+            .accessibilityValue(Text("\(Int(current)) points"))
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: set(current + Self.step)
+                case .decrement: set(current - Self.step)
+                @unknown default: break
+                }
+            }
+    }
+}
+
+/// What the user asked, in a bubble on the right.
+private struct QuestionBubble: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.quaternary, in: .rect(cornerRadius: 16, style: .continuous))
+            .frame(maxWidth: ChatLayout.bubbleWidth, alignment: .trailing)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text("You asked: \(text)"))
+    }
+}
+
+/// One reply on the left: the thinking animation until its first words, the model's sentence, a
+/// plain line when it did not end as an answer, and the card of what the lookups found.
 private struct ChatReplyView: View {
     let message: ChatMessage
     let files: FileListModel
     let showInList: @MainActor (URL) -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var isThinking: Bool {
+        message.turn == nil && message.text.isEmpty
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if message.turn == nil, message.text.isEmpty {
-                HStack(spacing: 6) {
-                    ProgressView()
-                        .controlSize(.small)
-                        .accessibilityHidden(true)
-                    Text("Looking…")
-                        .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            Group {
+                if isThinking {
+                    ThinkingIndicator()
+                } else if !message.text.isEmpty {
+                    Text(message.text)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            if !message.text.isEmpty {
-                Text(message.text)
-                    .textSelection(.enabled)
+            .transition(.opacity)
+            // Only beside an answer: an outcome's own line already says the conversation started again.
+            if let turn = message.turn, turn.startedOver, turn.outcome.message == nil || turn.outcome == .stopped {
+                Text("This was asked again in a fresh conversation, so earlier messages were set aside.")
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let note = message.turn?.outcome.message {
@@ -93,31 +229,69 @@ private struct ChatReplyView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let turn = message.turn, turn.outcome == .answered || turn.outcome == .stopped {
-                // Every lookup gets its line, so each number in the sentence has one from the app
-                // beside it. The files are listed for the last lookup, which the reply ends on.
-                let results = turn.effects.results
-                ForEach(Array(results.enumerated()), id: \.offset) { index, result in
-                    let isLast = index == results.count - 1
-                    switch result {
-                    case .search(let search):
-                        SearchFacts(result: search, listsFiles: isLast, files: files, showInList: showInList)
-                    case .summary(let summary):
-                        if isLast {
-                            SummaryFacts(summary: summary, files: files, showInList: showInList)
-                        } else {
-                            Text("All items: ^[\(summary.all.count) item](inflect: true), \(summary.all.bytes.formattedFileSize)")
-                                .monospacedDigit()
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+                let results = turn.effects.shownResults
+                if !results.isEmpty {
+                    LookupCard(results: results, files: files, showInList: showInList)
                 }
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: isThinking)
+    }
+}
+
+extension TurnEffects {
+    /// The results the card shows. (The engine already keeps one search per set of files.) A search
+    /// for everything says what a summary's first row says, so beside a summary it is left out,
+    /// unless its files are the ones the card lists.
+    var shownResults: [Result] {
+        let hasSummary = results.contains { if case .summary = $0 { true } else { false } }
+        return results.enumerated().compactMap { index, result in
+            if hasSummary, index != results.count - 1, case .search(let search) = result, search.query == FileQuery() {
+                return nil
+            }
+            return result
         }
     }
 }
 
-/// What a search was and what it found: the lookup in words, how many and how much, all worked out
-/// in code, then the files.
+/// Every lookup of a reply, in one card. Each says what was looked up and what it came to, worked
+/// out in code; the files are listed for the last, which the reply ends on.
+private struct LookupCard: View {
+    let results: [TurnEffects.Result]
+    let files: FileListModel
+    let showInList: @MainActor (URL) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(results.enumerated()), id: \.offset) { index, result in
+                let isLast = index == results.count - 1
+                if index > 0 {
+                    Divider()
+                }
+                switch result {
+                case .search(let search):
+                    SearchFacts(result: search, listsFiles: isLast, files: files, showInList: showInList)
+                case .duplicates(let scan):
+                    DuplicateFacts(scan: scan, listsFiles: isLast, files: files, showInList: showInList)
+                case .summary(let summary):
+                    if isLast {
+                        SummaryFacts(summary: summary, files: files, showInList: showInList)
+                    } else {
+                        Text("All items: ^[\(summary.all.count) item](inflect: true), \(summary.all.bytes.formattedFileSize)")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: ChatFileRow.maxWidth, alignment: .leading)
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.separator))
+    }
+}
+
+/// What a search was and what it found: the lookup in words, how many and how much, then the files.
 private struct SearchFacts: View {
     let result: FileSearchResult
     /// False for a lookup that was not the turn's last: its line is shown without its files.
@@ -148,7 +322,45 @@ private struct SearchFacts: View {
                 }
             }
         }
-        .frame(maxWidth: ChatFileRow.maxWidth, alignment: .leading)
+    }
+}
+
+/// What Find Duplicates found by reading the files: how many copies, then each file that would be
+/// kept with its copies under it.
+private struct DuplicateFacts: View {
+    let scan: DuplicateScan
+    let listsFiles: Bool
+    let files: FileListModel
+    let showInList: @MainActor (URL) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Group {
+                if scan.copyCount == 0 {
+                    Text("Same content: no copies")
+                } else {
+                    Text("Same content: ^[\(scan.copyCount) copy](inflect: true) of ^[\(scan.groups.count) file](inflect: true), taking \(scan.copyBytes.formattedFileSize)")
+                }
+                if scan.recentCount > 0 {
+                    Text("^[\(scan.recentCount) file](inflect: true) added in the last hour not checked yet")
+                }
+                if scan.unreadableCount > 0 {
+                    Text("^[\(scan.unreadableCount) file](inflect: true) could not be read, so they are not counted")
+                }
+            }
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            if listsFiles {
+                ForEach(scan.groups, id: \.kept.id) { group in
+                    ChatFileRow(file: group.kept, record: files.record(for: group.kept.id), showInList: showInList)
+                    ForEach(group.copies) { copy in
+                        ChatFileRow(file: copy, record: files.record(for: copy.id), copyOf: group.kept.name, showInList: showInList)
+                            .padding(.leading, 22)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -160,7 +372,7 @@ private struct SummaryFacts: View {
     let showInList: @MainActor (URL) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 2) {
                 row(Text("All items"), summary.all)
                 ForEach(FileTypeGroup.allCases, id: \.self) { group in
@@ -192,7 +404,6 @@ private struct SummaryFacts: View {
                         ChatFileRow(file: file, record: files.record(for: file.id), showInList: showInList)
                     }
                 }
-                .frame(maxWidth: ChatFileRow.maxWidth, alignment: .leading)
             }
         }
     }
@@ -217,10 +428,18 @@ private struct SummaryFacts: View {
 private struct ChatFileRow: View {
     let file: FolderSnapshot.File
     let record: FileRecord?
+    /// The name of the file this one is a copy of, for VoiceOver.
+    var copyOf: String?
     let showInList: @MainActor (URL) -> Void
 
     /// Keeps a size beside its name in a wide window.
     static let maxWidth: CGFloat = 560
+
+    private var hint: Text {
+        if record == nil { return Text("No longer in the list") }
+        if let copyOf { return Text("A copy of \(copyOf). Selects the file in the list") }
+        return Text("Selects the file in the list")
+    }
 
     var body: some View {
         Button {
@@ -251,6 +470,12 @@ private struct ChatFileRow: View {
         .help(record == nil ? Text("This file is no longer in the list") : Text("Select this file in the list"))
         // One element for VoiceOver: "report.pdf, 2.5 MB", pressed to select it.
         .accessibilityElement(children: .combine)
-        .accessibilityHint(record == nil ? Text("No longer in the list") : Text("Selects the file in the list"))
+        .accessibilityHint(hint)
+    }
+}
+
+private extension Comparable {
+    func clamped(to range: ClosedRange<Self>) -> Self {
+        min(max(self, range.lowerBound), range.upperBound)
     }
 }

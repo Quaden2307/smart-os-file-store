@@ -10,7 +10,10 @@ struct PromptLibraryTests {
     private static let pinned = [
         "chat-v1": "cea63e964a36104f33fc25fd917a3cc2ab4885e222ee46b61523dc03b16e2155",
         "tool-searchFiles-v1": "e667ca7b3a4e3932d3dadd7c4c32d528e890d0854fab91c8005755d57526291b",
-        "tool-folderSummary-v1": "770654b29da2c9b094794868d125e34e79360c745797e868379ea05797ca6a3c",
+        "tool-folderSummary-v2": "9a45c23241218f9662dafc19874df1700c8cbf854781067cf496889557d46a18",
+        "tool-findDuplicates-v1": "049c1ab78be513d1441f3f661207e95dfca16bfffa26f13cd7c9b1b6226b0f77",
+        "output-repeatedLookup-v1": "8ec87c519f42203a13d2f97addf578758cd8a15cdb3a8d6c2449bbf96a978b15",
+        "output-duplicatesUnavailable-v1": "c4b511687b29a3eb6ea93bca9a766eb82c96ee232f660301f522f42c1512dbd3",
     ]
 
     @Test func everyTemplateIsPinnedByItsVersion() {

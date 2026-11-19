@@ -129,7 +129,7 @@ struct ContentView: View {
         view
             .onAppear {
                 model.connect(to: activity)
-                chat.connect(files: model, activity: activity)
+                chat.connect(files: model, activity: activity, hashCache: search.hashCache)
                 activity.open()
                 model.refresh()
                 // Makes the folder disk images are read in, and detaches what a crashed run left
@@ -220,6 +220,8 @@ struct ContentView: View {
         // Wide enough for all six columns at their ideal widths, so the table never has to
         // scroll sideways in a window the user has not resized.
         .frame(minWidth: 1_080, minHeight: 400)
+        // The conversation leaves room for a few rows of the list, the status line and the bar.
+        .onGeometryChange(for: CGFloat.self, of: \.size.height) { chat.panelRoom = $0 - 260 }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 // The first step of a cleanup: every action at once. Its shortcut is in the Clean Up menu.

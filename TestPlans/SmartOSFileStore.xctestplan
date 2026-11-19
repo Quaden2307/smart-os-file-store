@@ -27,6 +27,9 @@
         "suites": [
           {
             "name": "ChatMeasurementTests"
+          },
+          {
+            "name": "ChatEvalTests"
           }
         ]
       },

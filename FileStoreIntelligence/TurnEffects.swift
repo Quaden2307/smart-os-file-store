@@ -62,11 +62,29 @@ public struct TurnEffects: Sendable, Equatable {
     public enum Result: Sendable, Equatable {
         case search(FileSearchResult)
         case summary(FolderSummary)
+        case duplicates(DuplicateScan)
     }
 
     public var results: [Result] = []
 
     public init() {}
+}
+
+/// A lookup by what it asks, so the same one again in a turn can be told apart from another.
+enum Lookup: Hashable {
+    case search(FileQuery, FileSort, limit: Int)
+    case summary
+    case duplicates
+
+    /// True when this lookup found all that `other` asks for: the same one, or the same search
+    /// listing as many files or more. (The model was seen searching for everything, then for
+    /// everything again with a limit of 1.)
+    func covers(_ other: Lookup) -> Bool {
+        if case let .search(query, sort, limit) = self, case let .search(otherQuery, otherSort, otherLimit) = other {
+            return query == otherQuery && sort == otherSort && limit >= otherLimit
+        }
+        return self == other
+    }
 }
 
 /// Why the tool-call hook refused a call.
@@ -81,18 +99,44 @@ final class TurnRecorder: Sendable {
     private struct State {
         var turn = 0
         var calls = 0
+        var lookups: [Lookup] = []
         var effects = TurnEffects()
+        var earlierTurnsShown = Int.max
     }
 
     private let state = Mutex(State())
 
-    /// Starts a turn with an empty record and a full budget of tool calls.
-    func begin() {
-        state.withLock { $0 = State(turn: $0.turn + 1) }
+    /// Starts a turn with an empty record and a full budget of tool calls, in which the model is
+    /// shown at most `earlierTurns` of the turns before it (`ChatHistory`).
+    func begin(showingEarlierTurns earlierTurns: Int = .max) {
+        state.withLock { $0 = State(turn: $0.turn + 1, earlierTurnsShown: earlierTurns) }
     }
 
     var turn: Int {
         state.withLock { $0.turn }
+    }
+
+    var earlierTurnsShown: Int {
+        state.withLock { $0.earlierTurnsShown }
+    }
+
+    /// True when `turn` already made a lookup that covers this one. It then does not run: the
+    /// model is told it has the result, and the app draws it once (the same lookup three times
+    /// drew three lines).
+    func isRepeat(_ lookup: Lookup, turn: Int) -> Bool {
+        state.withLock { state in
+            guard state.turn == turn else { return false }
+            if state.lookups.contains(where: { $0.covers(lookup) }) { return true }
+            state.lookups.append(lookup)
+            return false
+        }
+    }
+
+    /// Takes back a lookup that found nothing to keep, so the model may try it again.
+    func forget(_ lookup: Lookup, turn: Int) {
+        state.withLock { state in
+            if state.turn == turn { state.lookups.removeAll { $0 == lookup } }
+        }
     }
 
     /// Counts a tool call, or refuses it: only a registered tool, and only `limit` calls a turn.
@@ -105,10 +149,18 @@ final class TurnRecorder: Sendable {
         guard allowed else { throw .overLimit }
     }
 
-    /// Keeps a result, unless it comes from a call of an earlier turn that finished late.
+    /// Keeps a result, unless it comes from a call of an earlier turn that finished late. A search
+    /// for the same files as an earlier one in the turn (in another order, or more of them) takes
+    /// its place, so the app draws one line for them.
     func record(_ result: TurnEffects.Result, turn: Int) {
         state.withLock { state in
-            if state.turn == turn { state.effects.results.append(result) }
+            guard state.turn == turn else { return }
+            if case .search(let search) = result {
+                state.effects.results.removeAll { earlier in
+                    if case .search(let earlier) = earlier { earlier.query == search.query } else { false }
+                }
+            }
+            state.effects.results.append(result)
         }
     }
 

@@ -49,3 +49,4 @@ One short record per segment for each decision a reader of the code would otherw
 - [0018. Tidy Now: the priority rule and one undo for the whole tidy](0018-tidy-now-priority-and-single-run-undo.md)
 - [0019. Hardening version 0.2](0019-hardening-version-0-2.md)
 - [0020. The chat bar on the on-device model](0020-chat-bar-on-the-on-device-model.md)
+- [0021. Chat context, duplicates and the chat's look](0021-chat-context-and-duplicates.md)

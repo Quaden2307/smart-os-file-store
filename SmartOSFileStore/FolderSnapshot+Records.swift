@@ -16,7 +16,7 @@ extension FolderSnapshot.File {
             lastOpened: record.lastOpened,
             recordsOpens: record.recordsLastOpened,
             sourceSite: record.downloadSource?.site,
-            marks: Set(marks.map(\.chatMark))
+            marks: Set(marks.compactMap(\.chatMark))
         )
     }
 }
@@ -32,14 +32,30 @@ extension FolderSnapshot {
     }
 }
 
+extension DuplicateScan {
+    /// Find Duplicates' groups as plain rows, with the marks the list shows on each file.
+    @MainActor
+    init(_ plan: CleanupPlan, files: FileListModel, recentCount: Int) {
+        func row(_ record: FileRecord) -> FolderSnapshot.File {
+            FolderSnapshot.File(record, marks: files.marks(for: record))
+        }
+        self.init(
+            groups: plan.duplicateGroups.map { Group(kept: row($0.kept), copies: $0.duplicates.map(row)) },
+            unreadableCount: plan.skippedItems.count,
+            recentCount: recentCount
+        )
+    }
+}
+
 extension FileMark {
-    /// Exhaustive on purpose: a new mark does not compile until the chat knows it.
-    var chatMark: FolderSnapshot.Mark {
+    /// Exhaustive on purpose: a new mark does not compile until the chat knows it. Nil for
+    /// Duplicate, which only says what the last Tidy Now found: the chat reads the files instead.
+    var chatMark: FolderSnapshot.Mark? {
         switch self {
         case .kept: .kept
         case .failedDownload: .failedDownload
         case .installed: .installed
-        case .duplicate: .duplicate
+        case .duplicate: nil
         case .neverOpened: .neverOpened
         case .unused: .unused
         case .old: .old
@@ -53,7 +69,6 @@ extension FolderSnapshot.Mark {
         case .kept: .kept
         case .failedDownload: .failedDownload
         case .installed: .installed
-        case .duplicate: .duplicate
         case .neverOpened: .neverOpened
         case .unused: .unused
         case .old: .old

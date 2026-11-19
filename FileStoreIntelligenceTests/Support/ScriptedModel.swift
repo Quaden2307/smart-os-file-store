@@ -55,8 +55,39 @@ struct ScriptedModel: LanguageModel {
 
     let script: Script
 
-    init(_ rounds: [Step]...) {
+    /// When set, a request whose transcript holds more characters than this fails as a full
+    /// context does, before it uses up a round, so a retried turn plays the same round.
+    let contextLimit: Int?
+
+    init(_ rounds: [Step]..., contextLimit: Int? = nil) {
+        self.init(rounds: rounds, contextLimit: contextLimit)
+    }
+
+    init(rounds: [[Step]], contextLimit: Int? = nil) {
         script = Script(rounds)
+        self.contextLimit = contextLimit
+    }
+
+    /// What the scripted model counts as the size of a transcript: the characters of its text and
+    /// of its tool calls. Tests use it as the engine's token count too.
+    static func size(of entries: some Collection<Transcript.Entry>) -> Int {
+        func text(_ segments: [Transcript.Segment]) -> Int {
+            segments.reduce(0) { total, segment in
+                if case .text(let text) = segment { total + text.content.count } else { total }
+            }
+        }
+        return entries.reduce(0) { total, entry in
+            total + {
+                switch entry {
+                case .instructions(let instructions): text(instructions.segments)
+                case .prompt(let prompt): text(prompt.segments)
+                case .toolCalls(let calls): calls.reduce(0) { $0 + $1.toolName.count + $1.arguments.jsonString.count }
+                case .toolOutput(let output): text(output.segments)
+                case .response(let response): text(response.segments)
+                default: 0
+                }
+            }()
+        }
     }
 
     var capabilities: LanguageModelCapabilities {
@@ -77,6 +108,9 @@ struct ScriptedModel: LanguageModel {
             model: ScriptedModel,
             streamingInto channel: LanguageModelExecutorGenerationChannel
         ) async throws {
+            if let limit = model.contextLimit, case let size = ScriptedModel.size(of: request.transcript), size > limit {
+                throw LanguageModelError.contextSizeExceeded(.init(contextSize: limit, tokenCount: size, debugDescription: "scripted"))
+            }
             for step in model.script.nextRound(for: request) {
                 switch step {
                 case .text(let chunks):

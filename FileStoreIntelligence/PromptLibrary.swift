@@ -34,12 +34,27 @@ public enum PromptLibrary {
         {"filter":{"addedOnOrAfter":"7 days ago","neverOpened":true}}.
         """)
 
-    public static let folderSummaryTool = PromptTemplate(name: "tool-folderSummary", version: 1, text: """
-        Totals for all of Downloads: count and size by kind and by mark, the largest files, and \
-        what cleanups moved to the Trash.
+    // v2: shorter, to keep instructions and the three tools within a quarter of the context (0021).
+    public static let folderSummaryTool = PromptTemplate(name: "tool-folderSummary", version: 2, text: """
+        Totals for all of Downloads by kind and by mark, the largest files, and what cleanups \
+        moved to the Trash.
         """)
 
-    public static let all = [chat, searchFilesTool, folderSummaryTool]
+    public static let findDuplicatesTool = PromptTemplate(name: "tool-findDuplicates", version: 1, text: """
+        Reads the files to find exact copies. Use it for any question about duplicates or copies.
+        """)
+
+    /// What the model reads for a lookup it already made in the turn.
+    public static let repeatedLookup = PromptTemplate(name: "output-repeatedLookup", version: 1, text: """
+        You already have this result above. Answer the question now.
+        """)
+
+    /// What the model reads when the app could not run Find Duplicates.
+    public static let duplicatesUnavailable = PromptTemplate(name: "output-duplicatesUnavailable", version: 1, text: """
+        The duplicate check could not run just now. Say so and suggest Find Duplicates in the Clean Up menu.
+        """)
+
+    public static let all = [chat, searchFilesTool, folderSummaryTool, findDuplicatesTool, repeatedLookup, duplicatesUnavailable]
 
     /// The chat instructions with today's date filled in, so the model can turn "last week" into dates.
     public static func chatInstructions(today: Date) -> String {

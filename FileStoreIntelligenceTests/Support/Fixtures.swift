@@ -55,13 +55,18 @@ enum Fixtures {
         file("podcast.m4a", .mpeg4Audio, megabytes: 40, added: 60, marks: [.neverOpened]),
         file("mystery.xyz", nil, megabytes: 0.5, added: 1),
         file("setup.dmg.crdownload", UTType(filenameExtension: "crdownload"), megabytes: 15, added: 4, marks: [.failedDownload]),
-        file("report copy.pdf", .pdf, megabytes: 2.5, added: 3, marks: [.duplicate]),
+        file("report copy.pdf", .pdf, megabytes: 2.5, added: 3),
         file("Photos", .folder, megabytes: nil, added: 30, recordsOpens: false),
         file("Notes.app", .applicationBundle, megabytes: 20, added: 15, recordsOpens: false),
         file("undated.pdf", .pdf, megabytes: 1, added: nil),
     ]
 
     static let snapshot = FolderSnapshot(files: files, bytesMovedToTrash: 3_400_000_000, now: now)
+
+    /// What Find Duplicates would find in the fixture folder, as the app hands it over.
+    static let duplicates = DuplicateScan(groups: [
+        DuplicateScan.Group(kept: named("report.pdf")[0], copies: named("report copy.pdf")),
+    ])
 
     static func named(_ names: String...) -> [FolderSnapshot.File] {
         names.compactMap { name in files.first { $0.name == name } }
@@ -113,12 +118,21 @@ extension ScriptedModel {
     }
 }
 
+extension ContextMeter {
+    /// The scripted model's measure, where a token is a character.
+    static func characters(_ contextSize: Int) -> ContextMeter {
+        ContextMeter(contextSize: contextSize) { ScriptedModel.size(of: $0) }
+    }
+}
+
 extension ChatEngine {
     /// An engine over the fixture folder. `reads` counts how often a tool asked for the folder,
     /// which is once per tool call that ran.
     static func scripted(
         _ model: ScriptedModel, reads: Collected<Void>? = nil, turnLimit: Duration = .seconds(10),
-        availability: @escaping @Sendable () -> IntelligenceAvailability = { .available }
+        availability: @escaping @Sendable () -> IntelligenceAvailability = { .available },
+        duplicates: @escaping @Sendable () async -> DuplicateScan? = { Fixtures.duplicates },
+        meter: ContextMeter? = nil
     ) -> ChatEngine {
         ChatEngine(
             model: model,
@@ -126,9 +140,11 @@ extension ChatEngine {
                 reads?.add(())
                 return Fixtures.snapshot
             },
+            findDuplicates: duplicates,
             availability: availability,
             turnLimit: turnLimit,
-            now: { Fixtures.now }
+            now: { Fixtures.now },
+            meter: meter
         )
     }
 

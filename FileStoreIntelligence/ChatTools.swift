@@ -1,9 +1,12 @@
 import Foundation
 import FoundationModels
 
-/// What both tools work from: the app's current view of the folder, and the turn's record.
+/// What the tools work from: the app's current view of the folder, its duplicate scan, and the
+/// turn's record.
 struct ToolContext: Sendable {
     let snapshot: @Sendable () async -> FolderSnapshot
+    /// Nil when the scan could not run.
+    let findDuplicates: @Sendable () async -> DuplicateScan?
     let recorder: TurnRecorder
 }
 
@@ -15,7 +18,8 @@ struct SearchFilesArguments {
     @Guide(description: "Order of the list.", .anyOf(["largest", "smallest", "newest", "earliest", "recentlyOpened", "leastRecentlyOpened", "name"]))
     var sort: String?
 
-    @Guide(description: "How many to list, 1 to 100.")
+    // The range is checked in code, and a wrong limit is answered with it.
+    @Guide(description: "How many to list.")
     var limit: Int?
 }
 
@@ -34,6 +38,9 @@ struct SearchFilesTool: Tool {
             let limit = arguments.limit ?? FileSearchResult.defaultLimit
             guard FileSearchResult.limitRange.contains(limit) else {
                 throw FilterError(message: "limit must be between 1 and 100.")
+            }
+            guard !context.recorder.isRepeat(.search(query, sort, limit: limit), turn: turn) else {
+                return ToolOutput.repeated
             }
             let result = FileSearchResult(query: query, sort: sort, limit: limit, in: snapshot)
             context.recorder.record(.search(result), turn: turn)
@@ -56,8 +63,31 @@ struct FolderSummaryTool: Tool {
 
     func call(arguments: FolderSummaryArguments) async -> String {
         let turn = context.recorder.turn
+        guard !context.recorder.isRepeat(.summary, turn: turn) else { return ToolOutput.repeated }
         let summary = FolderSummary(await context.snapshot())
         context.recorder.record(.summary(summary), turn: turn)
         return ToolOutput.summary(summary)
+    }
+}
+
+@Generable
+struct FindDuplicatesArguments {}
+
+/// Read-only: the app's Find Duplicates scan, which reads the files to compare their content. A
+/// mark cannot answer this: it holds only what the last Tidy Now found.
+struct FindDuplicatesTool: Tool {
+    let name = "findDuplicates"
+    let description = PromptLibrary.findDuplicatesTool.text
+    let context: ToolContext
+
+    func call(arguments: FindDuplicatesArguments) async -> String {
+        let turn = context.recorder.turn
+        guard !context.recorder.isRepeat(.duplicates, turn: turn) else { return ToolOutput.repeated }
+        guard let scan = await context.findDuplicates() else {
+            context.recorder.forget(.duplicates, turn: turn)
+            return ToolOutput.duplicatesUnavailable
+        }
+        context.recorder.record(.duplicates(scan), turn: turn)
+        return ToolOutput.duplicates(scan)
     }
 }

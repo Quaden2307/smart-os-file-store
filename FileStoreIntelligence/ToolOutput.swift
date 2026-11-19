@@ -76,6 +76,27 @@ public enum ToolOutput {
         return capped(header + "\nLargest files:", lines)
     }
 
+    public static func duplicates(_ scan: DuplicateScan) -> String {
+        var notes = ""
+        if scan.recentCount > 0 { notes += "\n\(scan.recentCount) files added in the last hour are not checked yet." }
+        if scan.unreadableCount > 0 { notes += "\n\(scan.unreadableCount) files could not be read, so they are not counted." }
+        guard scan.copyCount > 0 else { return "No two files have the same content." + notes }
+        let header = """
+            \(scan.copyCount) files are copies of another file, \(size(scan.copyBytes)) in the copies. The app shows the user the list.\(notes)
+            Each kept file and its number of copies:
+            """
+        let lines = scan.groups.prefix(namesShown).map { group in
+            "\(quoted(group.kept.name)) \(group.copies.count) \(group.copies.count == 1 ? "copy" : "copies")"
+        }
+        return capped(header, lines)
+    }
+
+    /// What the model gets when the app could not run Find Duplicates.
+    public static let duplicatesUnavailable = PromptLibrary.duplicatesUnavailable.text
+
+    /// What the model gets for a lookup it already made in this turn: nothing runs twice.
+    public static let repeated = PromptLibrary.repeatedLookup.text
+
     /// What the model gets back for arguments that made no sense, so it can call again correctly.
     public static func invalid(_ error: FilterError) -> String {
         "That call was not understood: \(error.message)"

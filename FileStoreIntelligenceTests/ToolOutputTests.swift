@@ -63,6 +63,33 @@ struct ToolOutputTests {
         #expect(!output.unicodeScalars.contains { isInvisible($0) && $0 != "\n" })
     }
 
+    @Test func duplicatesOfThousandsOfHostileFilesStayUnderTheCap() {
+        let files = flood.files
+        let groups = stride(from: 0, to: 3_000, by: 3).map { index in
+            DuplicateScan.Group(kept: files[index], copies: [files[index + 1], files[index + 2]])
+        }
+        let output = ToolOutput.duplicates(DuplicateScan(groups: groups, unreadableCount: 4, recentCount: 2))
+        #expect(output.count <= ToolOutput.characterLimit)
+        // The first line is what later turns keep (ChatHistory), so it holds the whole answer.
+        #expect(output.hasPrefix("2000 files are copies of another file, "))
+        #expect(output.split(separator: "\n")[1] == "2 files added in the last hour are not checked yet.")
+        #expect(output.split(separator: "\n")[2] == "4 files could not be read, so they are not counted.")
+        let lines = output.split(separator: "\n").filter { $0.first == PromptLibrary.dataOpen }
+        #expect((3...ToolOutput.namesShown).contains(lines.count))
+        for line in lines {
+            #expect(line.count { $0 == PromptLibrary.dataOpen } == 1 && line.count { $0 == PromptLibrary.dataClose } == 1)
+            #expect(line.hasSuffix(" 2 copies"))
+        }
+        #expect(!output.unicodeScalars.contains { isInvisible($0) && $0 != "\n" })
+    }
+
+    @Test func noDuplicatesSaysSoAndWhatWasNotChecked() {
+        #expect(ToolOutput.duplicates(DuplicateScan(groups: [])) == "No two files have the same content.")
+        // A file just downloaded twice is left out by the grace period: "no" alone would be wrong.
+        #expect(ToolOutput.duplicates(DuplicateScan(groups: [], recentCount: 2))
+            == "No two files have the same content.\n2 files added in the last hour are not checked yet.")
+    }
+
     @Test func aSummaryOfThousandsOfHostileFilesStaysUnderTheCap() {
         let output = ToolOutput.summary(FolderSummary(flood))
         #expect(output.count <= ToolOutput.characterLimit)
@@ -87,7 +114,7 @@ struct ToolOutputTests {
         #expect(output.contains(" to the Trash so far."))
         #expect(!output.localizedCaseInsensitiveContains("freed"))
         #expect(output.contains("By kind: documents 6 ("))
-        #expect(output.contains("By mark: kept 1, failedDownload 1, installed 1, duplicate 1, neverOpened 4, unused 2, old 3."))
+        #expect(output.contains("By mark: kept 1, failedDownload 1, installed 1, neverOpened 4, unused 2, old 3."))
         #expect(output.count <= ToolOutput.characterLimit)
     }
 

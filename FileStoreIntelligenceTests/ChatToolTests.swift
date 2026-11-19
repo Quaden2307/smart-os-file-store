@@ -159,6 +159,29 @@ struct ChatToolTests {
         ])
     }
 
+    @Test func findDuplicatesReportsTheAppsScanAndTheModelGetsTheShortText() async {
+        let model = ScriptedModel(ScriptedModel.call("findDuplicates"), [.text(["One file has a copy."])])
+        let turn = await ChatEngine.scripted(model).ask("How many duplicate files are there?")
+        #expect(turn.outcome == .answered)
+        guard case .duplicates(let scan) = turn.effects.results.first, turn.effects.results.count == 1 else {
+            Issue.record("No duplicate scan was recorded")
+            return
+        }
+        #expect(scan == Fixtures.duplicates)
+        #expect(scan.copyCount == 1)
+        #expect(scan.copyBytes == 2_500_000)
+        #expect(model.toolOutputsSeen == [ToolOutput.duplicates(scan)])
+        #expect(model.toolOutputsSeen.first?.contains("⟦report.pdf⟧ 1 copy") == true)
+    }
+
+    @Test func whenTheScanCannotRunTheModelIsToldSoAndNothingIsRecorded() async {
+        let model = ScriptedModel(ScriptedModel.call("findDuplicates"), [.text(["It could not check."])])
+        let turn = await ChatEngine.scripted(model, duplicates: { nil }).ask()
+        #expect(turn.outcome == .answered)
+        #expect(turn.effects.results.isEmpty)
+        #expect(model.toolOutputsSeen == [ToolOutput.duplicatesUnavailable])
+    }
+
     @Test func anEmptyFolderSummarisesToZeros() {
         let summary = FolderSummary(FolderSnapshot(files: [], now: Fixtures.now))
         #expect(summary.all.count == 0)

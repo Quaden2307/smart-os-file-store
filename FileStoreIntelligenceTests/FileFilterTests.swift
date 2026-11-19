@@ -51,7 +51,7 @@ struct FileFilterTests {
         #expect(message(FileFilter(typeGroup: "movies"))
             == "typeGroup \"movies\" is not one of: documents, images, installers, archives, video, audio, other.")
         #expect(message(FileFilter(mark: "ancient"))
-            == "mark \"ancient\" is not one of: kept, failedDownload, installed, duplicate, neverOpened, unused, old.")
+            == "mark \"ancient\" is not one of: kept, failedDownload, installed, neverOpened, unused, old.")
         #expect(message(FileFilter(typeGroup: "Images", mark: "NeverOpened")) == nil)
     }
 
@@ -142,6 +142,14 @@ struct FileFilterTests {
         #expect(try names(FileFilter(typeGroup: "video")) == ["movie.mov", "clip.mp4"])
         #expect(try names(FileFilter(typeGroup: "audio")) == ["song.mp3", "podcast.m4a"])
         #expect(try names(FileFilter(typeGroup: "other")) == ["mystery.xyz", "setup.dmg.crdownload", "Photos", "Notes.app"])
+    }
+
+    @Test func aSearchByTheDuplicateMarkIsSentToTheRealScan() {
+        // The mark only says what the last Tidy Now found, so before one runs it is on no file and
+        // the chat answered "0 duplicates". Copies are found by reading the files.
+        for mark in ["duplicate", "Duplicate"] {
+            #expect(message(FileFilter(mark: mark)) == "Duplicates are found by reading the files, not by a mark: call findDuplicates.")
+        }
     }
 
     @Test func marksAndCombinationsNarrowTogether() throws {

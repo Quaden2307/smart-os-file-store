@@ -13,7 +13,7 @@ All notable changes to Smart OS File Store are recorded here. The format follows
   - a long conversation keeps going: older answers are summarised for the model and the oldest dropped before it runs out of room, and a question that still does not fit is asked again by itself in a fresh conversation;
   - follow-ups work: "only the big ones", "sort those by size" or "which of those is the largest?" look inside the files the last answer found ("big" is the size set for Review Large Downloads), and "Continue" after Stop asks the stopped question again;
   - a file macOS has no last-opened date for is called "no open recorded", folders, apps and links are counted apart as unknown, and downloads still in progress are left out;
-  - the field is labelled "Apple Intelligence · on device" and glows softly while a reply is being worked out (it holds still with Reduce Motion);
+  - the field is labelled "Apple Intelligence" and glows softly while a reply is being worked out (it holds still with Reduce Motion);
   - questions in bubbles, a rounded field whose round button sends and stops, a small shuffle of documents while it works (a fade with Reduce Motion), and a conversation that follows the reply unless you scroll up and whose height you set by dragging its top edge;
   - it only looks things up and cannot change, move or remove a file;
   - Stop ends a reply, and a reply is stopped by itself after 30 seconds or four lookups;

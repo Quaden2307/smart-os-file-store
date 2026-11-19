@@ -135,7 +135,7 @@ Same Mac as 0020 and 0021, Release build, the real on-device model, `ChatMeasure
 
 ## The Apple Intelligence label
 
-- Under the field: the SF Symbol `sparkles` and "Apple Intelligence · on device", small and secondary. No Apple logo or artwork, no colour.
+- Under the field: the SF Symbol `sparkles` and "Apple Intelligence", small and secondary. No Apple logo or artwork, no colour. It first read "Apple Intelligence · on device"; the owner had "on device" taken out after seeing it. The tooltip still says answers are worked out on this Mac.
 - While a reply is being worked out, a blurred stroke in the text colour sits behind the field and breathes between 15% and 45% opacity over 1.2 seconds. With Reduce Motion it holds at 30%. It is hidden from VoiceOver, which already hears "Looking through your files" from the shuffle of documents, and that animation stays.
 
 ## Consequences

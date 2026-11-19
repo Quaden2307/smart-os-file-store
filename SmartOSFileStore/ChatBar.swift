@@ -133,7 +133,7 @@ struct ChatBar: View {
                     .strokeBorder(isFocused.wrappedValue ? AnyShapeStyle(.secondary) : AnyShapeStyle(.separator))
             }
             .frame(maxWidth: ChatLayout.columnWidth)
-            Label("Apple Intelligence · on device", systemImage: "sparkles")
+            Label("Apple Intelligence", systemImage: "sparkles")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .help("Answers are worked out on this Mac. Nothing you type or any file name leaves it.")

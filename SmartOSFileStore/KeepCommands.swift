@@ -22,8 +22,8 @@ extension FocusedValues {
     @Entry var keepCommands: KeepCommandTarget?
 }
 
-/// File menu: Keep This File (Command-K), which reads Stop Keeping when every selected item is
-/// Kept, and Stop Keeping All, which asks first.
+/// File menu: Keep This File (Shift-Command-K; Command-K is the chat bar's), which reads Stop
+/// Keeping when every selected item is Kept, and Stop Keeping All, which asks first.
 struct KeepCommands: Commands {
     @FocusedValue(\.keepCommands) private var target
 
@@ -33,7 +33,7 @@ struct KeepCommands: Commands {
             Button((target?.toggle ?? .keep).title) {
                 target?.toggleSelection()
             }
-            .keyboardShortcut("k", modifiers: .command)
+            .keyboardShortcut("k", modifiers: [.command, .shift])
             .disabled(target?.canToggle != true)
             Button("Stop Keeping All…") {
                 target?.stopKeepingAll()

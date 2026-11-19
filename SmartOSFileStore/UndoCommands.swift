@@ -23,7 +23,8 @@ extension FocusedValues {
 
 /// Edit menu: Undo (Command-Z), named after the newest cleanup run, and Undo Selected for what is
 /// selected in Activity. They take the place of the standard Undo and Redo: there is no redo in
-/// this version, and the app has no text a user edits.
+/// this version. The one text field, the chat bar's, turns them off while it has the cursor, so
+/// Command-Z there never starts undoing a cleanup; it does not undo typing either.
 struct UndoCommands: Commands {
     @FocusedValue(\.undoCommands) private var target
 

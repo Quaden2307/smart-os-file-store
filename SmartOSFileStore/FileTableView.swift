@@ -5,7 +5,7 @@ import SwiftUI
 
 /// The sortable file table, showing the rows the filter lets through. Space, Command-Y or a double
 /// click opens Quick Look (on the Old downloads folder alone, each opens it in Finder); the context menu and the File menu reveal the selection in Finder and
-/// keep it (Keep This File, Command-K), and the context menu copies where a file was downloaded
+/// keep it (Keep This File, Shift-Command-K), and the context menu copies where a file was downloaded
 /// from. Hovering anywhere on a row shows the site and app it came from.
 struct FileTableView: View {
     @Bindable var model: FileListModel
@@ -18,10 +18,33 @@ struct FileTableView: View {
     /// False while the Kept list cannot be changed: Keep This File is then shown disabled.
     var canChangeKept = false
 
+    /// A request to bring one row into view. A new value each time, so asking for the same file
+    /// twice scrolls twice.
+    struct Reveal: Equatable {
+        let id: FileRecord.ID
+        private let request = UUID()
+    }
+
+    /// The row the chat asked to show, already selected by the window.
+    var reveal: Reveal?
+
     @State private var previewItem: URL?
     @State private var previewItems: [URL] = []
 
     var body: some View {
+        ScrollViewReader { proxy in
+            table
+                .onChange(of: reveal) { _, reveal in
+                    guard let reveal else { return }
+                    // On the next turn: a filter cleared with the request has put the row back by then.
+                    Task { @MainActor in
+                        proxy.scrollTo(reveal.id, anchor: .center)
+                    }
+                }
+        }
+    }
+
+    private var table: some View {
         Table(model.visibleRecords, selection: $selection, sortOrder: $model.sortOrder) {
             TableColumn("Name", sortUsing: FileListSort.name) { record in
                 HStack(spacing: 6) {

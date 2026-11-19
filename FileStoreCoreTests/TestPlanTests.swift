@@ -1,9 +1,9 @@
 import Foundation
 import Testing
 
-/// The committed test plans point at the generated project's test target by XcodeGen's identifier,
-/// and the .xcodeproj is regenerated, never committed. If the identifier ever changed, the plans
-/// could quietly stop leaving the benchmark out of the normal run; this catches it.
+/// The committed test plans point at the generated project's test targets by XcodeGen's identifiers,
+/// and the .xcodeproj is regenerated, never committed. If an identifier ever changed, the plans
+/// could quietly stop leaving the benchmarks out of the normal run; this catches it.
 @Suite("Test plans")
 struct TestPlanTests {
     private struct Plan: Decodable {
@@ -23,27 +23,36 @@ struct TestPlanTests {
         return try JSONDecoder().decode(Plan.self, from: Data(contentsOf: url))
     }
 
-    @Test func plansPointAtTheGeneratedTestTarget() throws {
+    @Test func plansPointAtTheGeneratedTestTargets() throws {
         let project = try SafetyTests.projectRoot().appending(path: "SmartOSFileStore.xcodeproj/project.pbxproj")
         let generated = try String(contentsOf: project, encoding: .utf8)
         for name in ["SmartOSFileStore", "Benchmark"] {
-            let target = try #require(try plan(named: name).testTargets.first).target
-            #expect(target.name == "FileStoreCoreTests")
-            // XcodeGen writes each target as `<identifier> /* <name> */ = {` followed by its `isa`.
-            #expect(
-                generated.contains("\(target.identifier) /* \(target.name) */ = {\n\t\t\tisa = PBXNativeTarget;"),
-                "\(name).xctestplan names \(target.identifier), which is not the generated FileStoreCoreTests target"
-            )
+            let targets = try plan(named: name).testTargets.map(\.target)
+            // Both test bundles, or one of them would never run.
+            #expect(targets.map(\.name) == ["FileStoreCoreTests", "FileStoreIntelligenceTests"])
+            for target in targets {
+                // XcodeGen writes each target as `<identifier> /* <name> */ = {` followed by its `isa`.
+                #expect(
+                    generated.contains("\(target.identifier) /* \(target.name) */ = {\n\t\t\tisa = PBXNativeTarget;"),
+                    "\(name).xctestplan names \(target.identifier), which is not the generated \(target.name) target"
+                )
+            }
         }
     }
 
     /// Swift Testing honours only the structured `{"suites": [{"name": …}]}` form, by type name.
-    @Test func defaultPlanLeavesTheBenchmarkOutAndTheBenchmarkPlanRunsOnlyIt() throws {
-        let normal = try #require(try plan(named: "SmartOSFileStore").testTargets.first)
-        #expect(normal.skippedTests?.suites.map(\.name) == ["BenchmarkTests"])
-        #expect(normal.selectedTests == nil)
-        let benchmark = try #require(try plan(named: "Benchmark").testTargets.first)
-        #expect(benchmark.selectedTests?.suites.map(\.name) == ["BenchmarkTests"])
+    @Test func defaultPlanLeavesTheBenchmarksOutAndTheBenchmarkPlanRunsOnlyThem() throws {
+        // One suite per bundle: the engine's benchmark, and the chat's measurements on the real model.
+        let measured = [["BenchmarkTests"], ["ChatMeasurementTests"]]
+        let normal = try plan(named: "SmartOSFileStore").testTargets
+        #expect(normal.map { $0.skippedTests?.suites.map(\.name) } == measured)
+        #expect(normal.allSatisfy { $0.selectedTests == nil })
+        let benchmark = try plan(named: "Benchmark").testTargets
+        #expect(benchmark.map { $0.selectedTests?.suites.map(\.name) } == measured)
+        #expect(benchmark.allSatisfy { $0.skippedTests == nil })
         #expect(String(describing: BenchmarkTests.self) == "BenchmarkTests")
+        // The other bundle's suite cannot be named from here; its source can be read.
+        let chat = try SafetyTests.projectRoot().appending(path: "FileStoreIntelligenceTests/ChatMeasurementTests.swift")
+        #expect(try String(contentsOf: chat, encoding: .utf8).contains("\nstruct ChatMeasurementTests {"))
     }
 }

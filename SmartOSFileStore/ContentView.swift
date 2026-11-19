@@ -2,8 +2,8 @@ import FileStoreCore
 import SwiftUI
 
 /// The main window: a sidebar of places (Downloads, Activity) and the chosen place beside it, with
-/// the toolbar and status line. Downloads is the file table, or the loading, empty and error states
-/// in its place; Activity is every confirmed cleanup.
+/// the toolbar, the status line and, along the bottom, the chat bar. Downloads is the file table,
+/// or the loading, empty and error states in its place; Activity is every confirmed cleanup.
 struct ContentView: View {
     @Environment(ActivityLogModel.self) private var activity
     @State private var model = FileListModel()
@@ -32,6 +32,15 @@ struct ContentView: View {
 
     /// The place whose list takes focus once it is shown, after a switch from the View menu.
     @State private var placeToFocus: SidebarSection?
+
+    /// The chat bar's conversation. It reads the list; it can change nothing.
+    @State private var chat = ChatModel()
+
+    /// True while the cursor is in the chat bar's field.
+    @FocusState private var isChatFocused: Bool
+
+    /// The file a chat row asked the list to show.
+    @State private var fileToReveal: FileTableView.Reveal?
 
     var body: some View {
         observingChanges(publishingCommandTargets(splitView))
@@ -104,7 +113,8 @@ struct ContentView: View {
             )
             .focusedSceneValue(\.fileListFilter, actsOnWindow && section == .downloads ? $model.filter : nil)
             .focusedSceneValue(\.placeSwitcher, actsOnWindow ? PlaceSwitcher(show: show) : nil)
-            .focusedSceneValue(\.undoCommands, actsOnWindow ? undoCommands : nil)
+            // Not while typing in the chat bar: there Command-Z must never start undoing a cleanup.
+            .focusedSceneValue(\.undoCommands, actsOnWindow && !isChatFocused ? undoCommands : nil)
             .focusedSceneValue(\.keepCommands, actsOnWindow && section == .downloads ? keepCommands : nil)
     }
 
@@ -112,12 +122,14 @@ struct ContentView: View {
         view
             // From either place, as the toolbar's menu: a cleanup always acts on the listed files.
             .focusedSceneValue(\.cleanUpCommands, actsOnWindow ? cleanUpCommands : nil)
+            .focusedSceneValue(\.chatCommands, actsOnWindow ? ChatCommandTarget(focus: focusChat) : nil)
     }
 
     private func observingChanges(_ view: some View) -> some View {
         view
             .onAppear {
                 model.connect(to: activity)
+                chat.connect(files: model, activity: activity)
                 activity.open()
                 model.refresh()
                 // Makes the folder disk images are read in, and detaches what a crashed run left
@@ -202,6 +214,8 @@ struct ContentView: View {
             ActivityLogNotices(activity: activity)
             Divider()
             StatusBar(model: model, activity: activity, showsFileCounts: section == .downloads)
+            Divider()
+            ChatSection(chat: chat, files: model, isFocused: $isChatFocused, showInList: showInList)
         }
         // Wide enough for all six columns at their ideal widths, so the table never has to
         // scroll sideways in a window the user has not resized.
@@ -409,6 +423,26 @@ struct ContentView: View {
         selection = selection.intersection(Set(model.visibleRecords.map(\.id)))
     }
 
+    // MARK: - Chat
+
+    /// View > Ask About Downloads: the cursor goes to the chat bar, and the conversation so far shows.
+    private func focusChat() {
+        isChatFocused = true
+        chat.isPanelOpen = true
+    }
+
+    /// A file clicked in the conversation: Downloads is shown with that file selected. A filter that
+    /// hides it is cleared first, since a hidden row must never be the selection.
+    private func showInList(_ id: FileRecord.ID) {
+        guard model.record(for: id) != nil else { return }
+        if !model.visibleRecords.contains(where: { $0.id == id }) {
+            model.filter = .all
+        }
+        selection = [id]
+        fileToReveal = FileTableView.Reveal(id: id)
+        show(.downloads)
+    }
+
     private func startCleanup(_ action: CleanupAction) {
         guard canStartCleanup, let location = model.location, let log = activity.log else { return }
         search.start(
@@ -468,7 +502,10 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 FileFilterBar(filter: $model.filter)
                 Divider()
-                FileTableView(model: model, selection: $selection, isShown: section == .downloads, canChangeKept: canChangeKept)
+                FileTableView(
+                    model: model, selection: $selection, isShown: section == .downloads, canChangeKept: canChangeKept,
+                    reveal: fileToReveal
+                )
                     .focused($focusedPlace, equals: .downloads)
             }
         }

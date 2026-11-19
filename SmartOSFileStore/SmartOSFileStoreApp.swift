@@ -19,6 +19,7 @@ struct SmartOSFileStoreApp: App {
             CleanUpCommands()
             CopyDownloadSourceCommands()
             FilterCommands()
+            ChatCommands()
             // View > Show/Hide Sidebar, so the toolbar's sidebar button has a menu item and a shortcut.
             SidebarCommands()
             PlaceCommands()

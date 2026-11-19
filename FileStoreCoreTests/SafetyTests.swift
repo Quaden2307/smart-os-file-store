@@ -126,7 +126,7 @@ struct SafetyTests {
     }
 
     private static func productionSources() throws -> [Source] {
-        try sources(of: "FileStoreCore") + sources(of: "SmartOSFileStore")
+        try sources(of: "FileStoreCore") + sources(of: "SmartOSFileStore") + sources(of: "FileStoreIntelligence")
     }
 
     /// `\b` with simple word boundaries. Under the default Unicode rules `default.trashItem` is one
@@ -150,7 +150,8 @@ struct SafetyTests {
 
     @Test func productionCodeRemovesFilesOnlyThroughTheTrash() throws {
         let engine = try Self.sources(of: "FileStoreCore")
-        let app = try Self.sources(of: "SmartOSFileStore")
+        // The chat module is held to the app's rules: it changes nothing and never reaches the Trash.
+        let app = try Self.sources(of: "SmartOSFileStore") + Self.sources(of: "FileStoreIntelligence")
         #expect(engine.count >= 10)
         #expect(app.count >= 10)
 
@@ -228,7 +229,7 @@ struct SafetyTests {
     /// It is imported as it is: a `@preconcurrency` import would hide what strict concurrency checks.
     @Test func onlyTheActivityLogUsesTheDatabaseLibrary() throws {
         let engine = try Self.sources(of: "FileStoreCore")
-        let app = try Self.sources(of: "SmartOSFileStore")
+        let app = try Self.sources(of: "SmartOSFileStore") + Self.sources(of: "FileStoreIntelligence")
         let databaseImport = try Self.regex(#"\bimport\s+GRDB\b"#)
         let unqualifiedImport = try Self.regex(#"^\s*import\s+GRDB\b"#).anchorsMatchLineEndings()
         let preconcurrencyImport = try Self.regex(#"@preconcurrency\s+import\b"#)

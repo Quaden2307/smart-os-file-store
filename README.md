@@ -1,6 +1,6 @@
 # Smart OS File Store
 
-Smart OS File Store is a native macOS file browser that will replace Finder, starting with a self-cleaning Downloads folder. It lists what is in Downloads and, only when asked, proposes cleanups such as removing exact duplicates, shows a preview you can edit, and sends confirmed files to the Trash. It is built with Swift 6, SwiftUI and XcodeGen for macOS 26 on Apple silicon, with all file logic in the `FileStoreCore` framework and the app as a thin interface on top.
+Smart OS File Store is a native macOS file browser that will replace Finder, starting with a self-cleaning Downloads folder. It lists what is in Downloads and, only when asked, proposes cleanups such as removing exact duplicates, shows a preview you can edit, and sends confirmed files to the Trash. It is built with Swift 6, SwiftUI and XcodeGen for macOS 27 on Apple silicon, with all file logic in the `FileStoreCore` framework, the Apple Intelligence chat in `FileStoreIntelligence`, and the app as a thin interface on top.
 
 ## What version 0.1 does
 
@@ -30,7 +30,7 @@ Smart OS File Store is a native macOS file browser that will replace Finder, sta
 - **Remove Empty Folders** (⇧⌘E, in the Clean Up menu) proposes, ticked, the folders that hold nothing but `.DS_Store`, `.localized` and empty folders. A folder holding any other item at any depth, one the app cannot read, Old downloads, apps, links, hidden and Kept folders are never proposed, and each folder is checked again right before it goes to the Trash.
 - **Tidy Now** (⌘T, first in the toolbar and the Clean Up menu) runs every cleanup over one scan and shows an overview: one row per cleanup that found something, with its count and the space it would move to the Trash, the review lists (possible installer matches, near-duplicates, large downloads) apart and unticked, and the cleanups with nothing to do at the bottom. Each file is in one row only, by priority: failed downloads, used installers, unpacked zips, duplicates, empty folders, archive, messy names. A row opens that cleanup's own preview; Back to Tidy Now keeps the ticks. One Tidy Up asks once ("Move 14 items to the Trash, archive 2, rename 9?", Cancel the default), then moves to the Trash, archives and renames, in that order, as one run that one Undo reverses. After the scan, the copies Find Duplicates would remove carry a Duplicate mark until the next refresh.
 - **Settings** (⌘,): "Treat files as unused after" 30, 60 or 90 days, "Mark files as old after" 90, 180 or 365 days, and "List downloads as large from" 500 MB, 1 GB or 5 GB; the marks in the list change at once. It also shows where the activity log is stored, its size, and a button to reveal it in Finder.
-- **Keep This File** (⌘K, File menu and context menu): marks files and folders Kept, so no cleanup ever proposes them. Kept items show a Kept badge and a Kept choice in the filter; File > Stop Keeping All clears them, after asking. In the preview, Keep This File takes a file out of the plan and marks it Kept. Kept follows the file through renames and moves; editing it in an app that saves a new copy makes it a new, unkept file. When one copy of a duplicate is Kept, that copy is the one kept.
+- **Keep This File** (⇧⌘K, File menu and context menu; it was ⌘K until version 0.3): marks files and folders Kept, so no cleanup ever proposes them. Kept items show a Kept badge and a Kept choice in the filter; File > Stop Keeping All clears them, after asking. In the preview, Keep This File takes a file out of the plan and marks it Kept. Kept follows the file through renames and moves; editing it in an app that saves a new copy makes it a new, unkept file. When one copy of a duplicate is Kept, that copy is the one kept.
 
 The thresholds live in the app's defaults, which Settings writes. To set another value, or one for one launch:
 
@@ -41,8 +41,21 @@ defaults write com.quaden2307.SmartOSFileStore CleanupLargeDownloadMegabytes -in
 open build/Build/Products/Debug/SmartOSFileStore.app --args -CleanupUnusedAfterDays 1
 ```
 
+## What version 0.3 adds so far
+
+Version 0.3 needs macOS 27. It is in progress; this is what is in so far.
+
+- **A chat bar** along the bottom of the window (View > Ask About Downloads, ⌘K) that answers questions about the folder with Apple Intelligence, the model on your Mac: "What's taking the most space?", "What did I download last week and never open?", "How many files have I never opened?". Before the first question, three examples sit above the field.
+  - The reply is a sentence or two. Under it the app says what it looked up, in its own words ("Images · 100 MB or more: 2 files, 838.9 MB"), and lists the files. That line, the numbers and the list are worked out by the app's own code, not written by the model, so they are the ones to trust, and they show when the model looked up something other than what you meant. Click a file to select it in the list; a filter that hides it is cleared.
+  - It can filter by text in the name, kind (documents, images, installers, archives, video, audio, other), date added, last opened, never opened, size, download site and the marks, and sort by size, date or name. A second lookup totals the folder by kind and by mark, lists the ten largest files and says how much cleanups have moved to the Trash.
+  - **It only looks things up.** It cannot move, rename or remove anything, and says so when asked. The part of the app that holds the model is built without any access to the code that changes files.
+  - Stop ends a reply early. A reply that takes more than 30 seconds, or needs more than four lookups, is stopped with a plain line saying so. Escape hides the conversation; ⌘K or the arrow beside the field shows it again.
+  - **Private:** questions are answered on this Mac and nothing leaves it. The conversation is kept in memory only and is gone when the app quits; what you type is never written to the log or the database. File names and download sites are shown to the model as data, cleaned and shortened first.
+  - When Apple Intelligence cannot answer (turned off, still downloading, not supported on this Mac or in its language), the bar is one line saying why, with a button to System Settings where that helps. Everything else works as before. Settings has **Use Apple Intelligence**, on by default, to turn the chat off.
+
 ## What it does not do yet
 
+- The chat answers questions only. It cannot prepare a cleanup yet, there is no New Chat, and it knows names, sizes, dates, sources and marks, not what files contain. While typing in the chat bar, ⌘Z does not undo typing (and never starts undoing a cleanup).
 - Only the top level of Downloads. No other folders and no subfolders.
 - All six cleanups are here: Find Duplicates, Clear Failed Downloads, Remove Unpacked Zips, Remove Used Installers, Fix Messy Names, Review Near-Duplicates and Archive Old Downloads, Remove Empty Folders, and the review list Review Large Downloads, plus Tidy Now, which runs them together.
 - An Activity entry cannot be opened for more detail yet. That is planned for later, perhaps with an Apple Intelligence summary.
@@ -70,12 +83,15 @@ open build/Build/Products/Debug/SmartOSFileStore.app --args -CleanupUnusedAfterD
 | Main window | ⌘R | Refresh the list |
 | Main window | Space, ⌘Y, double-click | Quick Look the selection (press again to close); double-click opens Old downloads in Finder |
 | Main window | ⌥⌘R | Reveal the selection in Finder |
-| Main window | ⌘K | Keep the selection, or stop keeping it when all of it is Kept |
+| Main window | ⌘K | Go to the chat bar and show the conversation |
+| Chat bar | Return | Send the question |
+| Chat bar | Esc | Hide the conversation |
+| Main window | ⇧⌘K | Keep the selection, or stop keeping it when all of it is Kept |
 | Preview | ↑ ↓ | Move between rows |
 | Preview | Space | Tick or untick the selected duplicate |
 | Preview | ⌘Y, double-click | Quick Look the selected row |
 | Preview | ⌘A, ⌥⌘A | Select all, select none |
-| Preview | ⌘K | Keep the selected file: take it out of the plan and mark it Kept |
+| Preview | ⇧⌘K | Keep the selected file: take it out of the plan and mark it Kept |
 | Preview | Return | Move to Trash or Rename (opens the confirmation) |
 | Preview | Esc | Close the preview |
 | Trash confirmation | Return, Esc | Cancel |
@@ -99,7 +115,7 @@ The database library is [GRDB](https://github.com/groue/GRDB.swift) 7.12.0, the 
 
 ## Build, test and run
 
-Requirements: Xcode 27 or newer and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`). The first build downloads GRDB, so it needs a network connection.
+Requirements: macOS 27, Xcode 27 or newer and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`). The first build downloads GRDB, so it needs a network connection.
 
 ```bash
 # Generate SmartOSFileStore.xcodeproj from project.yml (rerun after adding or moving files)
@@ -108,7 +124,7 @@ xcodegen generate
 # Build
 xcodebuild -scheme SmartOSFileStore -destination 'platform=macOS' -derivedDataPath build build
 
-# Run the unit tests (about 640 tests, a minute or two; the scale suite adds a few seconds)
+# Run the unit tests (about 700 tests in two bundles, a minute or two; the scale suite adds a few seconds)
 xcodebuild -scheme SmartOSFileStore -destination 'platform=macOS' -derivedDataPath build test
 
 # Launch the app
@@ -130,6 +146,14 @@ A benchmark times the scan (with and without reading last-opened dates and downl
 ```bash
 xcodebuild -scheme SmartOSFileStore -destination 'platform=macOS' -configuration Release -derivedDataPath build test -testPlan Benchmark 2>&1 | grep BENCHMARK
 TEST_RUNNER_SMARTOS_BENCHMARK_FILES=50000 xcodebuild -scheme SmartOSFileStore -destination 'platform=macOS' -configuration Release -derivedDataPath build test -testPlan Benchmark 2>&1 | grep BENCHMARK
+```
+
+### Chat measurements
+
+The chat's tests use a scripted stand-in for the model, so they and CI never need Apple Intelligence. One suite does use the real on-device model: it measures how much of the model's context the instructions and tool definitions take, the time to the first text and for a whole answer over 20 questions (with and without prewarming), the size of a tool's output, how fast Stop is, and what happens when a conversation outgrows the context. It runs from the same Benchmark plan, takes several minutes, and only on a Mac with Apple Intelligence turned on. Copy the `CHAT` lines into the decision record that holds the last ones ([0020](docs/decisions/0020-chat-bar-on-the-on-device-model.md)):
+
+```bash
+xcodebuild -scheme SmartOSFileStore -destination 'platform=macOS' -configuration Release -derivedDataPath build test -testPlan Benchmark -only-testing:FileStoreIntelligenceTests 2>&1 | grep CHAT
 ```
 
 The tests only ever touch folders they create under the system temporary directory. The executor tests send their own small fixture files to the Trash, because that is the only place `FileManager.trashItem` can put them, and remove them again when the runner is allowed into the Trash.

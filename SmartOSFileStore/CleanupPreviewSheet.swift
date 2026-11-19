@@ -6,7 +6,7 @@ import SwiftUI
 /// shown by group with its kept copy, a plan of near-duplicates by group with nothing ticked; any
 /// other plan one change per row, with the new name or folder for a rename or a move. Every
 /// proposed change has a checkbox, which Space toggles for the selected row; Command-Y opens Quick
-/// Look, and Space with two rows selected shows them side by side. Keep This File, in the context menu or with Command-K,
+/// Look, and Space with two rows selected shows them side by side. Keep This File, in the context menu or with Shift-Command-K,
 /// takes the selected change out of the plan and marks its file Kept. Move to Trash or Rename asks for confirmation, carries
 /// out the ticked changes and then shows what happened; moves are shown but not applied yet.
 /// Every cleanup action shares this screen.
@@ -289,21 +289,20 @@ struct CleanupPreviewSheet: View {
             return .handled
         }
         .onKeyPress(phases: .down) { press in
-            guard press.modifiers == .command else { return .ignored }
-            switch press.key {
-            case "y":
+            if press.modifiers == .command, press.key == "y" {
                 // Command-Y, as in Finder, handled by the list itself.
                 guard !selection.isEmpty || previewItem != nil else { return .ignored }
                 toggleQuickLook()
                 return .handled
-            case "k":
-                // Command-K, as in the main window: Keep This File for the selected rows.
+            }
+            // Shift-Command-K, as in the main window: Keep This File for the selected rows. With
+            // Shift held the key may arrive as either case.
+            if press.modifiers == [.command, .shift], press.key == "k" || press.key == "K" {
                 guard model.canKeep(selection) else { return .ignored }
                 model.keep(selection)
                 return .handled
-            default:
-                return .ignored
             }
+            return .ignored
         }
         .onKeyPress(.return) {
             // A list answers Return with its primary action (Quick Look) before the default button

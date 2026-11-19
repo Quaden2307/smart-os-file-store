@@ -28,6 +28,20 @@
         "identifier": "79CA0D85BC92FC8AD6EDE511",
         "name": "FileStoreCoreTests"
       }
+    },
+    {
+      "selectedTests": {
+        "suites": [
+          {
+            "name": "ChatMeasurementTests"
+          }
+        ]
+      },
+      "target": {
+        "containerPath": "container:SmartOSFileStore.xcodeproj",
+        "identifier": "271D398C2BAB92A4CF3E9BAC",
+        "name": "FileStoreIntelligenceTests"
+      }
     }
   ],
   "version": 1

@@ -1,9 +1,10 @@
 import FileStoreCore
+import FileStoreIntelligence
 import SwiftUI
 
 /// The Settings window (⌘,): when files count as unused and as old, which the marks and Archive Old
-/// Downloads go by, how big a download must be for Review Large Downloads, and where the activity
-/// log is kept. The thresholds are the `CleanupSettings`
+/// Downloads go by, how big a download must be for Review Large Downloads, whether the chat bar
+/// may use Apple Intelligence, and where the activity log is kept. The thresholds are the `CleanupSettings`
 /// keys in the user's defaults; the main window watches them and marks again at once.
 struct SettingsView: View {
     @Environment(ActivityLogModel.self) private var activity
@@ -11,6 +12,7 @@ struct SettingsView: View {
     @AppStorage(CleanupSettings.unusedAfterDaysKey) private var unusedAfterDays = CleanupSettings.defaultUnusedAfterDays
     @AppStorage(CleanupSettings.oldAfterDaysKey) private var oldAfterDays = CleanupSettings.defaultOldAfterDays
     @AppStorage(CleanupSettings.largeDownloadMegabytesKey) private var largeDownloadMegabytes = CleanupSettings.defaultLargeDownloadMegabytes
+    @AppStorage(IntelligenceAvailability.enabledKey) private var usesAppleIntelligence = true
 
     /// The database and its journal files, in bytes. Nil until read, or when there is no file.
     @State private var logSize: Int64?
@@ -47,6 +49,13 @@ struct SettingsView: View {
                 }
             } footer: {
                 Text("Review Large Downloads lists the files and apps taking at least this much space on disk.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("Use Apple Intelligence", isOn: $usesAppleIntelligence)
+            } footer: {
+                Text("The chat bar answers questions about your Downloads on this Mac. Nothing leaves it.")
                     .foregroundStyle(.secondary)
             }
 

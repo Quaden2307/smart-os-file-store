@@ -3,7 +3,7 @@ name: SmartOSFileStore
 options:
   bundleIdPrefix: com.quaden2307
   deploymentTarget:
-    macOS: "26.0"
+    macOS: "27.0"
   developmentLanguage: en
   xcodeVersion: "27.2"
   createIntermediateGroups: true
@@ -25,13 +25,17 @@ settings:
     SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
     GCC_TREAT_WARNINGS_AS_ERRORS: YES
     ARCHS: arm64
-    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    MACOSX_DEPLOYMENT_TARGET: "27.0"
     ENABLE_APP_SANDBOX: NO
     CODE_SIGN_STYLE: Automatic
     CODE_SIGN_IDENTITY: "-"   # Sign to Run Locally
     DEVELOPMENT_TEAM: ""
     LOCALIZATION_PREFERS_STRING_CATALOGS: YES
     SWIFT_EMIT_LOC_STRINGS: YES
+    # Every built module lands in one products folder, so without this an `import` of a module the
+    # target does not depend on can still compile. With it that import is a build error, which is
+    # what keeps the chat module (no dependencies) away from the engine. Checked: docs/decisions/0020.
+    DIAGNOSE_MISSING_TARGET_DEPENDENCIES: YES_ERROR
 
 targets:
   SmartOSFileStore:
@@ -44,6 +48,8 @@ targets:
       # cannot load an embedded framework that carries no Team ID (library validation refuses it),
       # so the engine is linked into the app binary and there is nothing to validate.
       - target: FileStoreCore
+        embed: false
+      - target: FileStoreIntelligence
         embed: false
     settings:
       base:
@@ -94,13 +100,43 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.quaden2307.FileStoreCoreTests
         GENERATE_INFOPLIST_FILE: YES
 
+  # The Apple Intelligence chat. It has no dependencies on purpose: it cannot import the engine, so
+  # it cannot reach the executor, the activity log or the database. The app hands it plain rows
+  # (docs/decisions/0020). BoundaryTests fails if a dependency or an engine import ever appears.
+  FileStoreIntelligence:
+    type: framework
+    platform: macOS
+    sources:
+      - FileStoreIntelligence
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.quaden2307.FileStoreIntelligence
+        GENERATE_INFOPLIST_FILE: YES
+        SKIP_INSTALL: YES
+        MACH_O_TYPE: staticlib   # as FileStoreCore: linked into the app and the test bundle
+
+  FileStoreIntelligenceTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - FileStoreIntelligenceTests
+    dependencies:
+      - target: FileStoreIntelligence
+        embed: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.quaden2307.FileStoreIntelligenceTests
+        GENERATE_INFOPLIST_FILE: YES
+
 schemes:
   SmartOSFileStore:
     build:
       targets:
         SmartOSFileStore: all
         FileStoreCore: all
+        FileStoreIntelligence: all
         FileStoreCoreTests: [test]
+        FileStoreIntelligenceTests: [test]
     run:
       config: Debug
     test:

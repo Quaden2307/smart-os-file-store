@@ -4,6 +4,22 @@ All notable changes to Smart OS File Store are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **A chat bar that answers questions about Downloads** (View > Ask About Downloads, ⌘K), using Apple Intelligence on the Mac:
+  - ask in your own words what is taking space, what you downloaded and never opened, what came from a site, and so on; the reply is a sentence or two with the files listed under it, and clicking a file selects it in the list;
+  - the counts, sizes and file lists are worked out by the app, not written by the model;
+  - it only looks things up and cannot change, move or remove a file;
+  - Stop ends a reply, and a reply is stopped by itself after 30 seconds or four lookups;
+  - questions are answered on the Mac, nothing leaves it, and the conversation is not saved or logged;
+  - when Apple Intelligence is off or not available the bar says why, and the rest of the app works as before.
+- **Use Apple Intelligence** in Settings, on by default, turns the chat off.
+
+### Changed
+
+- Version 0.3 needs macOS 27 (version 0.2 ran on macOS 26).
+- Keep This File is now ⇧⌘K, in the main window and in the preview. ⌘K goes to the chat bar.
+
 ## [0.2.0] - 2026-11-16
 
 ### Fixed

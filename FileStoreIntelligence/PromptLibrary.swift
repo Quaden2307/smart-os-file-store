@@ -54,7 +54,38 @@ public enum PromptLibrary {
         The duplicate check could not run just now. Say so and suggest Find Duplicates in the Clean Up menu.
         """)
 
-    public static let all = [chat, searchFilesTool, folderSummaryTool, findDuplicatesTool, repeatedLookup, duplicatesUnavailable]
+    /// What the app puts before the user's message when it has something to remember
+    /// (`ChatMemory`). The parts in braces are filled in by code.
+    public static let note = PromptTemplate(name: "note", version: 1, text: """
+        [Notes from the app, not from the user]
+        {notes}
+        [The user's message]
+
+        """)
+
+    /// The turns the model is no longer shown, a line each.
+    public static let noteEarlier = PromptTemplate(name: "note-earlier", version: 1, text: """
+        Earlier in this chat: {lines}
+        """)
+
+    /// A question that was stopped, or ran out of time, before it was answered.
+    public static let noteStopped = PromptTemplate(name: "note-stopped", version: 1, text: """
+        This request was stopped before it was answered: "{question}". If the user asks to continue, answer it now.
+        """)
+
+    /// The files the last turn ended on, in one line and never as a list.
+    public static let noteLastResult = PromptTemplate(name: "note-lastResult", version: 1, text: """
+        Last result: {count} files, {size} ({words}). "Those", "them" and "the big ones" mean these files: \
+        to narrow or sort them, call searchFiles with "mark":"lastResult" in filter. \
+        By size means "sort":"largest". Big means "largerThanMB":{large}. \
+        If asked to clean them up, delete them or undo something, answer only: "I can only look things up \
+        here. The Clean Up menu cleans up, and Edit > Undo undoes a cleanup."
+        """)
+
+    public static let all = [
+        chat, searchFilesTool, folderSummaryTool, findDuplicatesTool, repeatedLookup, duplicatesUnavailable,
+        note, noteEarlier, noteStopped, noteLastResult,
+    ]
 
     /// The chat instructions with today's date filled in, so the model can turn "last week" into dates.
     public static func chatInstructions(today: Date) -> String {

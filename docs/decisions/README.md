@@ -50,3 +50,4 @@ One short record per segment for each decision a reader of the code would otherw
 - [0019. Hardening version 0.2](0019-hardening-version-0-2.md)
 - [0020. The chat bar on the on-device model](0020-chat-bar-on-the-on-device-model.md)
 - [0021. Chat context, duplicates and the chat's look](0021-chat-context-and-duplicates.md)
+- [0022. Chat memory, "no open recorded" and the Apple Intelligence label](0022-chat-memory.md)

@@ -9,6 +9,12 @@ public struct FileSearchResult: Sendable, Equatable {
     /// Of every match with a known size, not only the listed ones.
     public var totalBytes: Int64
     public var files: [FolderSnapshot.File]
+    /// Every match, for a follow-up that searches inside this result.
+    public var matchIDs: [URL]
+    /// For a query about when files were opened: the items that fit the rest of it but that macOS
+    /// keeps no date for (folders, apps, links, a volume without the attribute). Unknown, so they
+    /// are not counted as matches, and said to be unknown instead of left out in silence.
+    public var unknownOpenCount = 0
 
     public static let defaultLimit = 20
     public static let limitRange = 1...100
@@ -20,6 +26,13 @@ public struct FileSearchResult: Sendable, Equatable {
         matchCount = matches.count
         totalBytes = matches.reduce(0) { $0 + ($1.sizeInBytes ?? 0) }
         files = Array(matches.prefix(limit))
+        matchIDs = matches.map(\.id)
+        if query.asksAboutOpens {
+            var rest = query
+            rest.neverOpened = false
+            rest.opened = FileQuery.DateRange()
+            unknownOpenCount = snapshot.files.count { $0.lastOpened == nil && !$0.recordsOpens && rest.matches($0) }
+        }
     }
 }
 
@@ -102,14 +115,27 @@ final class TurnRecorder: Sendable {
         var lookups: [Lookup] = []
         var effects = TurnEffects()
         var earlierTurnsShown = Int.max
+        var note: String?
+        var previous: LastResult?
     }
 
     private let state = Mutex(State())
 
     /// Starts a turn with an empty record and a full budget of tool calls, in which the model is
-    /// shown at most `earlierTurns` of the turns before it (`ChatHistory`).
-    func begin(showingEarlierTurns earlierTurns: Int = .max) {
-        state.withLock { $0 = State(turn: $0.turn + 1, earlierTurnsShown: earlierTurns) }
+    /// shown at most `earlierTurns` of the turns before it and `note` before the question
+    /// (`ChatHistory`), and `previous` is what a search inside the last result looks in.
+    func begin(showingEarlierTurns earlierTurns: Int = .max, note: String? = nil, previous: LastResult? = nil) {
+        state.withLock { $0 = State(turn: $0.turn + 1, earlierTurnsShown: earlierTurns, note: note, previous: previous) }
+    }
+
+    /// What the history transform shows the model: how many earlier turns, and the note.
+    var shown: (earlierTurns: Int, note: String?) {
+        state.withLock { ($0.earlierTurnsShown, $0.note) }
+    }
+
+    /// The result the turn before ended on.
+    var previous: LastResult? {
+        state.withLock { $0.previous }
     }
 
     var turn: Int {

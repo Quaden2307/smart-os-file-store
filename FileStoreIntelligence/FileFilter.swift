@@ -37,7 +37,10 @@ public struct FileFilter: Sendable, Equatable {
     @Guide(description: "Download site.")
     public var sourceSite: String?
 
-    @Guide(description: "A mark the app gave it.", .anyOf(["kept", "failedDownload", "installed", "neverOpened", "unused", "old"]))
+    // "lastResult" is not a mark: it stands for the files of the last result (`validated`). It
+    // rides here because an argument of its own cost 27 tokens in every turn, which did not fit
+    // the quarter of the context that instructions and tools may take (docs/decisions/0022).
+    @Guide(description: "A mark the app gave it.", .anyOf(["kept", "failedDownload", "installed", "neverOpened", "unused", "old", "lastResult"]))
     public var mark: String?
 
     public init(
@@ -69,8 +72,12 @@ extension FileFilter {
     /// A megabyte as Finder and the app's settings count it.
     static let bytesPerMegabyte = 1_000_000.0
 
-    /// The filter with every field read and checked, or the first problem found.
-    public func validated(now: Date) throws(FilterError) -> FileQuery {
+    /// What `mark` says for "only the files of the last result".
+    static let lastResultMark = "lastResult"
+
+    /// The filter with every field read and checked, or the first problem found. `lastResultIDs`
+    /// are the files the turn before ended on, for a filter that asks for them.
+    public func validated(now: Date, lastResultIDs: [URL]? = nil) throws(FilterError) -> FileQuery {
         let calendar = DayText.calendar
         var query = FileQuery()
         query.nameContains = nameContains.flatMap { $0.isEmpty ? nil : $0 }
@@ -80,7 +87,14 @@ extension FileFilter {
         if mark?.caseInsensitiveCompare("duplicate") == .orderedSame {
             throw FilterError(message: "Duplicates are found by reading the files, not by a mark: call findDuplicates.")
         }
-        query.mark = try Self.choice(mark, named: "mark")
+        if mark?.caseInsensitiveCompare(Self.lastResultMark) == .orderedSame {
+            guard let lastResultIDs else {
+                throw FilterError(message: "There is no last result yet. Call again without mark lastResult.")
+            }
+            query.withinIDs = Set(lastResultIDs)
+        } else {
+            query.mark = try Self.choice(mark, named: "mark")
+        }
         query.sourceSite = sourceSite.flatMap(Self.site)
 
         func day(_ text: String?, named name: String) throws(FilterError) -> Date? {
@@ -178,20 +192,47 @@ public struct FileQuery: Sendable, Hashable {
     public var typeGroup: FileTypeGroup?
     public var added = DateRange()
     public var opened = DateRange()
-    /// True for only the files with no recorded open, where macOS would have recorded one.
+    /// True for only the files with no recorded open, where macOS would have recorded one. That
+    /// is all macOS can say: it notes an open from Finder, the Dock or an Open panel, not a Quick
+    /// Look or a drag into an app, so the app calls it "no open recorded" (docs/decisions/0022).
     public var neverOpened = false
     public var minBytes: Int64?
     public var maxBytes: Int64?
     public var sourceSite: String?
     public var mark: FolderSnapshot.Mark?
+    /// Set for a search inside the last result: only these files can match.
+    public var withinIDs: Set<URL>?
 
     public init() {}
 
+    /// True when the query turns on when files were opened, which is unknown for some items.
+    var asksAboutOpens: Bool { neverOpened || !opened.isOpen }
+
+    /// The filter in words for the one line the model gets about a result, without `withinIDs`.
+    /// Text the model chose goes between the data marks: it may have copied it from a file name.
+    var words: [String] {
+        var parts: [String] = []
+        if let typeGroup { parts.append(typeGroup.rawValue) }
+        if let nameContains { parts.append("name contains \(ToolOutput.quoted(nameContains))") }
+        if let from = added.from { parts.append("added on or after \(DayText.string(from: from))") }
+        if let before = added.before { parts.append("added before \(DayText.string(from: before))") }
+        if let from = opened.from { parts.append("opened on or after \(DayText.string(from: from))") }
+        if let before = opened.before { parts.append("opened before \(DayText.string(from: before))") }
+        if neverOpened { parts.append("no open recorded") }
+        if let minBytes { parts.append("\(ToolOutput.size(minBytes)) or more") }
+        if let maxBytes { parts.append("\(ToolOutput.size(maxBytes)) or less") }
+        if let sourceSite { parts.append("from \(ToolOutput.quoted(sourceSite))") }
+        if let mark { parts.append("marked \(mark.rawValue)") }
+        return parts
+    }
+
     public func matches(_ file: FolderSnapshot.File) -> Bool {
+        if let withinIDs, !withinIDs.contains(file.id) { return false }
         if let nameContains, !file.name.localizedStandardContains(nameContains) { return false }
         if let typeGroup, FileTypeGroup(contentType: file.contentType) != typeGroup { return false }
         if !added.contains(file.dateAdded) || !opened.contains(file.lastOpened) { return false }
-        if neverOpened, file.lastOpened != nil || !file.recordsOpens { return false }
+        // A download in progress cannot have been opened; the list gives it no age mark either.
+        if neverOpened, file.lastOpened != nil || !file.recordsOpens || file.isDownloading { return false }
         if minBytes != nil || maxBytes != nil {
             guard let size = file.sizeInBytes, size >= minBytes ?? 0, size <= maxBytes ?? .max else { return false }
         }

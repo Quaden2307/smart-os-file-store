@@ -66,6 +66,8 @@ struct ChatBar: View {
     /// False while the window is opening, when the field must not be handed the keyboard.
     var canTakeKeyboard = true
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     private static let examples = [
         String(localized: "What’s taking the most space?"),
         String(localized: "What did I download last week and never open?"),
@@ -117,11 +119,24 @@ struct ChatBar: View {
             .padding(.trailing, 5)
             .padding(.vertical, 4)
             .background(.background, in: .rect(cornerRadius: 14, style: .continuous))
+            .background {
+                ZStack {
+                    if chat.isResponding {
+                        WorkingGlow()
+                            .transition(.opacity)
+                    }
+                }
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: chat.isResponding)
+            }
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(isFocused.wrappedValue ? AnyShapeStyle(.secondary) : AnyShapeStyle(.separator))
             }
             .frame(maxWidth: ChatLayout.columnWidth)
+            Label("Apple Intelligence · on device", systemImage: "sparkles")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .help("Answers are worked out on this Mac. Nothing you type or any file name leaves it.")
         }
         .font(.callout)
         .frame(maxWidth: .infinity)
@@ -134,6 +149,30 @@ struct ChatBar: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Chat")
+    }
+}
+
+/// A soft glow around the field while the model is working, in the text's own colour: black on
+/// white, white on black. It breathes slowly; with Reduce Motion it holds still.
+private struct WorkingGlow: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let glow = RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .stroke(.primary, lineWidth: 3)
+            .blur(radius: 5)
+        Group {
+            if reduceMotion {
+                glow.opacity(0.3)
+            } else {
+                glow.phaseAnimator([0.15, 0.45]) { glow, opacity in
+                    glow.opacity(opacity)
+                } animation: { _ in
+                    .easeInOut(duration: 1.2)
+                }
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 

@@ -9,13 +9,28 @@ import FoundationModels
 enum ChatHistory {
     /// `entries` as the model should see them, with at most `earlierTurns` of the turns before the
     /// one in progress. A turn starts at a prompt; what comes before the first one (the
-    /// instructions) is always kept.
-    static func compacted(_ entries: [Transcript.Entry], keepingEarlierTurns earlierTurns: Int) -> [Transcript.Entry] {
+    /// instructions) is always kept. `note` is what the app remembers (`ChatMemory`): it goes in
+    /// front of the question of the turn in progress only, so the transcript keeps the question as
+    /// asked and a note is never shown twice.
+    static func compacted(
+        _ entries: [Transcript.Entry], keepingEarlierTurns earlierTurns: Int, note: String? = nil
+    ) -> [Transcript.Entry] {
         let starts = turnStarts(in: entries)
         guard let current = starts.last else { return entries }
         let earlier = starts.dropLast()
         let firstShown = earlier.dropFirst(max(0, earlier.count - max(0, earlierTurns))).first ?? current
-        return Array(entries[..<starts[0]]) + entries[firstShown..<current].map(stubbed) + entries[current...]
+        var inProgress = Array(entries[current...])
+        if let note, case .prompt(var prompt) = inProgress[0] {
+            // In the question's own segment where it has one: how the model is shown two is not documented.
+            if case .text(var question)? = prompt.segments.first {
+                question.content = note + question.content
+                prompt.segments[0] = .text(question)
+            } else {
+                prompt.segments.insert(.text(Transcript.TextSegment(content: note)), at: 0)
+            }
+            inProgress[0] = .prompt(prompt)
+        }
+        return Array(entries[..<starts[0]]) + entries[firstShown..<current].map(stubbed) + inProgress
     }
 
     /// The last `count` turns of `entries`, with nothing before them: the history a fresh

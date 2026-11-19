@@ -316,6 +316,19 @@ private struct SearchFacts: View {
             .monospacedDigit()
             .foregroundStyle(.secondary)
             .lineLimit(2)
+            if result.query.neverOpened {
+                // The model's sentence tends to say "never opened"; this says what the app can know.
+                Text("macOS records an open from Finder, the Dock or an Open dialog, not from Quick Look or a drag into an app.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if result.unknownOpenCount > 0 {
+                Text("Last opened unknown for ^[\(result.unknownOpenCount) more item](inflect: true), not counted")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .help("macOS keeps no last-opened date for folders, apps and links")
+            }
             if listsFiles {
                 ForEach(result.files) { file in
                     ChatFileRow(file: file, record: files.record(for: file.id), showInList: showInList)

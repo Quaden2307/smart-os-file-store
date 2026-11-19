@@ -28,7 +28,8 @@ public struct Turn: Sendable {
     /// conversation that remembers only the last two questions.
     public var startedOver = false
     /// What the model was shown before it began, in tokens: instructions, tools, the earlier turns
-    /// it was shown and the question. Nil when not counted.
+    /// it was shown, the app's note and the question. Counted with the longest note the turn could
+    /// have carried, so it is at most this many. Nil when not counted.
     public var tokensBeforeReply: Int?
 }
 
@@ -79,6 +80,8 @@ public actor ChatEngine {
     /// Nil shows the model every earlier turn (still cut short): for tests that are not about length.
     private let meter: ContextMeter?
     private var conversation: Conversation?
+    /// What is remembered whatever becomes of the session (docs/decisions/0022).
+    private var memory = ChatMemory()
 
     /// What the app hands the tools: its view of the folder, and a way to run Find Duplicates.
     private struct Tools {
@@ -86,15 +89,21 @@ public actor ChatEngine {
         let findDuplicates: @Sendable () async -> DuplicateScan?
     }
 
+    /// The size from which the app calls a file large: what "big" means in a follow-up, so the
+    /// number is the app's and not the model's.
+    private let largeFileMegabytes: @Sendable () -> Int
+
     /// The engine the app uses: the on-device system model, and never any other.
     public init(
         snapshot: @escaping @Sendable () async -> FolderSnapshot,
-        findDuplicates: @escaping @Sendable () async -> DuplicateScan?
+        findDuplicates: @escaping @Sendable () async -> DuplicateScan?,
+        largeFileMegabytes: @escaping @Sendable () -> Int
     ) {
         self.init(
             model: SystemLanguageModel.default,
             snapshot: snapshot,
             findDuplicates: findDuplicates,
+            largeFileMegabytes: largeFileMegabytes,
             availability: {
                 // Unset counts as on, as in Settings.
                 let enabled = UserDefaults.standard.object(forKey: IntelligenceAvailability.enabledKey) as? Bool ?? true
@@ -109,6 +118,7 @@ public actor ChatEngine {
         model: some LanguageModel,
         snapshot: @escaping @Sendable () async -> FolderSnapshot,
         findDuplicates: @escaping @Sendable () async -> DuplicateScan? = { nil },
+        largeFileMegabytes: @escaping @Sendable () -> Int = { 500 },
         availability: @escaping @Sendable () -> IntelligenceAvailability = { .available },
         turnLimit: Duration = ChatEngine.turnLimit,
         now: @escaping @Sendable () -> Date = { .now },
@@ -116,6 +126,7 @@ public actor ChatEngine {
     ) {
         self.model = model
         self.tools = Tools(snapshot: snapshot, findDuplicates: findDuplicates)
+        self.largeFileMegabytes = largeFileMegabytes
         self.availability = availability
         self.turnLimit = turnLimit
         self.now = now
@@ -131,11 +142,13 @@ public actor ChatEngine {
     /// Asks one question. `onText` gets the reply so far each time it changes, on no particular
     /// actor; it starts again from empty when the question is asked again in a fresh conversation.
     /// Cancelling the calling task is Stop: the turn ends as `.stopped` with what had arrived.
-    public func respond(to text: String, onText: @escaping @Sendable (String) -> Void) async -> Turn {
+    /// "Continue" after a stopped question asks that question again.
+    public func respond(to message: String, onText: @escaping @Sendable (String) -> Void) async -> Turn {
         let available = availability()
         guard available == .available else {
             return Turn(text: "", outcome: .unavailable(available), effects: TurnEffects())
         }
+        let text = memory.question(for: message)
         let started = ContinuousClock.now
         var attempt = await ask(text, in: currentConversation(), within: turnLimit, onText: onText)
         var startedOver = false
@@ -164,6 +177,7 @@ public actor ChatEngine {
             // and shares nothing with the old one.
             self.conversation = makeConversation(history: attempt.history)
         }
+        memory.record(text, outcome: attempt.outcome, effects: attempt.effects)
         Self.logger.info("""
             Turn ended: \(String(describing: attempt.outcome), privacy: .public), \
             \(attempt.effects.results.count) tool results, \(startedOver ? "started over, " : "", privacy: .public)\
@@ -192,7 +206,7 @@ public actor ChatEngine {
         let session = conversation.session
         let history = Array(session.transcript)
         let fit = await earlierTurnsThatFit(history, question: text, shownLastTime: conversation.recorder.earlierTurnsShown)
-        conversation.recorder.begin(showingEarlierTurns: fit.turns)
+        conversation.recorder.begin(showingEarlierTurns: fit.turns, note: fit.note, previous: memory.lastResult)
         let reply = Mutex("")
 
         enum Ending {
@@ -244,21 +258,28 @@ public actor ChatEngine {
         )
     }
 
-    /// How many of the turns in `history` the model can be shown with `question`, cut short as
-    /// `ChatHistory` does, inside `historyShare` of the context. Counted before every turn, so a
-    /// long conversation drops its oldest turns before it overflows, never after. It starts from
-    /// one more than the last turn showed, so a turn takes one or two counts however long the
-    /// conversation is.
+    /// How many of the turns in `history` the model can be shown with `question` and the note of
+    /// what the app remembers, cut short as `ChatHistory` does, inside `historyShare` of the
+    /// context. Counted before every turn, so a long conversation drops its oldest turns before it
+    /// overflows, never after. It starts from one more than the last turn showed, so a turn takes
+    /// one or two counts however long the conversation is.
     private func earlierTurnsThatFit(
         _ history: [Transcript.Entry], question: String, shownLastTime: Int
-    ) async -> (turns: Int, tokens: Int?) {
+    ) async -> (turns: Int, tokens: Int?, note: String?) {
         let earlier = ChatHistory.turnCount(history)
-        guard let meter else { return (earlier, nil) }
+        let memory = memory
+        let large = largeFileMegabytes()
+        // The fewer turns shown, the more of them the note has a line for. Counting is done with
+        // the note at its longest, so dropping a turn never makes the count grow and a turn still
+        // takes one or two counts.
+        let note = { (turns: Int?) in memory.note(showingTurns: turns, asking: question, largeMegabytes: large) }
+        let longestNote = note(nil)
+        guard let meter else { return (earlier, nil, note(earlier)) }
         let budget = Int(Double(meter.contextSize) * Self.historyShare)
         let prompt = Transcript.Entry.prompt(Transcript.Prompt(segments: [.text(Transcript.TextSegment(content: question))]))
         // The transcript starts with the instructions, whose count includes the tool definitions.
         let shownWith = { (turns: Int) in
-            try await meter.count(ChatHistory.compacted(history + [prompt], keepingEarlierTurns: turns))
+            try await meter.count(ChatHistory.compacted(history + [prompt], keepingEarlierTurns: turns, note: longestNote))
         }
         var shown = shownLastTime == .max ? earlier : min(earlier, shownLastTime + 1)
         do {
@@ -268,12 +289,12 @@ public actor ChatEngine {
                 tokens = try await shownWith(shown)
             }
             Self.logger.info("Showing \(shown) of \(earlier) earlier turns, \(tokens) of \(meter.contextSize) tokens before the reply")
-            return (shown, tokens)
+            return (shown, tokens, note(shown))
         } catch {
             // Without a count, as much as a fresh conversation keeps.
             shown = min(shown, Self.turnsKeptOnStartingOver)
             Self.logger.notice("Could not count tokens (\(String(reflecting: type(of: error)), privacy: .public)); showing \(shown) earlier turns")
-            return (shown, nil)
+            return (shown, nil, note(shown))
         }
     }
 
@@ -329,7 +350,8 @@ public actor ChatEngine {
         // What the model reads; the session keeps the whole transcript. Measured with the real
         // model: overflow is judged on this, not on the transcript (docs/decisions/0021).
         .historyTransform { entries in
-            ChatHistory.compacted(entries, keepingEarlierTurns: recorder.earlierTurnsShown)
+            let shown = recorder.shown
+            return ChatHistory.compacted(entries, keepingEarlierTurns: shown.earlierTurns, note: shown.note)
         }
         // Runs before each tool; a throw stops that tool and ends the turn (measured: 0020).
         .onToolCall { call in

@@ -15,6 +15,7 @@ extension FolderSnapshot.File {
             dateAdded: record.dateAdded,
             lastOpened: record.lastOpened,
             recordsOpens: record.recordsLastOpened,
+            isDownloading: record.isDownloading,
             sourceSite: record.downloadSource?.site,
             marks: Set(marks.compactMap(\.chatMark))
         )

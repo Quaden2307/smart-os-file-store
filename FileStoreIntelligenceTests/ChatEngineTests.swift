@@ -235,7 +235,8 @@ struct ChatEngineTests {
             return
         }
         #expect(prompts.count >= 3)
-        #expect(prompts.last == "Question 20 about my files?")
+        // The latest one follows the app's note of what the turn before found.
+        #expect(prompts.last?.hasSuffix("[The user's message]\nQuestion 20 about my files?") == true)
         #expect(!prompts.contains("Question 1 about my files?"))
     }
 
@@ -329,8 +330,35 @@ struct ChatEngineTests {
         let next = await engine.ask("Second")
         #expect(next.outcome == .answered)
         #expect(next.text == "Second answer.")
-        // The stopped question is not part of what the model remembers.
+        // The stopped question is not in the transcript, so an abandoned reply cannot reach the
+        // new session, but the model is told about it beside the next question.
         #expect(model.promptsInLatestRequest == 1)
+        #expect(model.latestPrompt.contains("\"First\""))
+        #expect(model.latestPrompt.hasSuffix("Second"))
+    }
+
+    @Test func continueAfterStopAsksTheStoppedQuestionAgain() async {
+        let model = ScriptedModel(
+            [.text(["Looking "]), .wait(.seconds(30))],
+            [.text(["Two files are over 500 MB."])],
+            [.text(["Hello."])]
+        )
+        let engine = ChatEngine.scripted(model)
+        let seen = Collected<String>()
+        let asking = Task { await engine.respond(to: "Which files are over 500 MB?") { seen.add($0) } }
+        #expect(await seen.waitFor { $0 == "Looking " })
+        asking.cancel()
+        #expect(await asking.value.outcome == .stopped)
+
+        let next = await engine.ask(" continue. ")
+        #expect(next.outcome == .answered)
+        #expect(next.text == "Two files are over 500 MB.")
+        // The model is asked the stopped question itself, not the word.
+        #expect(model.latestPrompt == "Which files are over 500 MB?")
+
+        // Once answered, nothing is pending: the word is an ordinary message again.
+        _ = await engine.ask("Continue")
+        #expect(model.latestPrompt.hasSuffix("Continue"))
     }
 
     // MARK: - Typed outcomes

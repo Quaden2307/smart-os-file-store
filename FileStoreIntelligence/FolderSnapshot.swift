@@ -23,6 +23,8 @@ public struct FolderSnapshot: Sendable {
         /// False for the kinds macOS does not date when they are opened (folders, apps, links), so
         /// "never opened" is never claimed for them.
         public var recordsOpens: Bool
+        /// True for a download still in progress, which cannot have been opened yet.
+        public var isDownloading: Bool
         /// The site the file was downloaded from, without "www.".
         public var sourceSite: String?
         public var marks: Set<Mark>
@@ -30,7 +32,7 @@ public struct FolderSnapshot: Sendable {
         public init(
             id: URL, name: String, contentType: UTType? = nil, sizeInBytes: Int64? = nil,
             dateAdded: Date? = nil, lastOpened: Date? = nil, recordsOpens: Bool = true,
-            sourceSite: String? = nil, marks: Set<Mark> = []
+            isDownloading: Bool = false, sourceSite: String? = nil, marks: Set<Mark> = []
         ) {
             self.id = id
             self.name = name
@@ -39,6 +41,7 @@ public struct FolderSnapshot: Sendable {
             self.dateAdded = dateAdded
             self.lastOpened = lastOpened
             self.recordsOpens = recordsOpens
+            self.isDownloading = isDownloading
             self.sourceSite = sourceSite
             self.marks = marks
         }

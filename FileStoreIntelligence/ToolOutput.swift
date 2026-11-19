@@ -38,9 +38,14 @@ public enum ToolOutput {
     }
 
     public static func search(_ result: FileSearchResult, now: Date) -> String {
-        guard result.matchCount > 0 else { return "No files match." }
+        // Unknown is said, never counted: macOS dates no opens for folders, apps and links.
+        let unknown = result.unknownOpenCount > 0
+            ? "\n\(result.unknownOpenCount) more items: last opened unknown, not counted." : ""
+        guard result.matchCount > 0 else { return "No files match." + unknown }
+        // All macOS can say of a file without a last-opened date (docs/decisions/0022).
+        let found = result.query.neverOpened ? "files have no open recorded by macOS" : "files match"
         let header = """
-            \(result.matchCount) files match, \(size(result.totalBytes)) in total. The app shows the user the list.
+            \(result.matchCount) \(found), \(size(result.totalBytes)) in total. The app shows the user the list.\(unknown)
             The first ones, sorted by \(result.sort.rawValue):
             """
         let lines = result.files.prefix(namesShown).map { file in

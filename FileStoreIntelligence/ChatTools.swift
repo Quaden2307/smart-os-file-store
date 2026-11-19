@@ -33,8 +33,11 @@ struct SearchFilesTool: Tool {
         let turn = context.recorder.turn
         let snapshot = await context.snapshot()
         do throws(FilterError) {
-            let query = try (arguments.filter ?? FileFilter()).validated(now: snapshot.now)
-            let sort: FileSort = try FileFilter.choice(arguments.sort, named: "sort") ?? .newest
+            let previous = context.recorder.previous
+            let query = try (arguments.filter ?? FileFilter()).validated(now: snapshot.now, lastResultIDs: previous?.ids)
+            // "Only the big ones" keeps the order the list was in.
+            let kept = query.withinIDs == nil ? nil : previous?.sort
+            let sort: FileSort = try FileFilter.choice(arguments.sort, named: "sort") ?? kept ?? .newest
             let limit = arguments.limit ?? FileSearchResult.defaultLimit
             guard FileSearchResult.limitRange.contains(limit) else {
                 throw FilterError(message: "limit must be between 1 and 100.")

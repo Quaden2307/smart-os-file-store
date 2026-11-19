@@ -14,6 +14,10 @@ struct PromptLibraryTests {
         "tool-findDuplicates-v1": "049c1ab78be513d1441f3f661207e95dfca16bfffa26f13cd7c9b1b6226b0f77",
         "output-repeatedLookup-v1": "8ec87c519f42203a13d2f97addf578758cd8a15cdb3a8d6c2449bbf96a978b15",
         "output-duplicatesUnavailable-v1": "c4b511687b29a3eb6ea93bca9a766eb82c96ee232f660301f522f42c1512dbd3",
+        "note-v1": "93eb3a18dcc6e6e7fad774d9ca60c0f96bd75f99f349086dd329e98e7983d11a",
+        "note-earlier-v1": "a3e3a27d7c8a2c59f100281362497a80586e37827e5229bb00dfa7978edcc88e",
+        "note-stopped-v1": "ce8f341f908df52af73365f4731f592dcf3ffadd5003c76df5968ba0ecab110d",
+        "note-lastResult-v1": "0461c0faf5f365ff9e66418ed042b06b5a7eee7170c4141da0623663a580cde4",
     ]
 
     @Test func everyTemplateIsPinnedByItsVersion() {

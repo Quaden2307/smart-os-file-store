@@ -97,7 +97,7 @@ Plus:
 
 And from version 0.3 so far:
 
-10. A chat bar that answers questions about Downloads with the on-device model. It only looks things up; it changes nothing on disk.
+10. A chat bar that answers questions about Downloads with the on-device model. It only looks things up; it changes nothing on disk. It remembers the conversation in app code (`ChatMemory`): follow-ups such as "only the big ones" search inside the last result, and "Continue" asks a stopped question again.
 
 Out of scope until the owner asks: watching Downloads automatically, user-defined rules, schedules, folders beyond Downloads, subfolders, the full storage view, search, tags, sharing, AI that proposes or makes changes, AI that reads file contents, custom theme.
 

@@ -103,6 +103,8 @@ struct FileFilterTests {
         // A folder and an app are not dated by macOS when opened, so nothing is claimed about them.
         #expect(!never.contains("Photos"))
         #expect(!never.contains("Notes.app"))
+        // A download still in progress cannot have been opened: the list gives it no age mark either.
+        #expect(!never.contains("setup.dmg.crdownload"))
         // Only `true` narrows: `false` is what a model may write for "not asked", and it must not
         // hide the files that were never opened.
         #expect(try names(FileFilter(neverOpened: false)).count == Fixtures.files.count)

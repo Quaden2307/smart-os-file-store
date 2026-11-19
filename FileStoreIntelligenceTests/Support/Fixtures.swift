@@ -22,7 +22,7 @@ enum Fixtures {
 
     static func file(
         _ name: String, _ type: UTType?, megabytes: Double?, added: Int?, opened: Int? = nil,
-        recordsOpens: Bool = true, site: String? = nil, marks: Set<FolderSnapshot.Mark> = []
+        recordsOpens: Bool = true, downloading: Bool = false, site: String? = nil, marks: Set<FolderSnapshot.Mark> = []
     ) -> FolderSnapshot.File {
         FolderSnapshot.File(
             id: URL(filePath: "/tmp/FakeDownloads/\(name)"),
@@ -32,6 +32,7 @@ enum Fixtures {
             dateAdded: added.map(daysAgo),
             lastOpened: opened.map(daysAgo),
             recordsOpens: recordsOpens,
+            isDownloading: downloading,
             sourceSite: site,
             marks: marks
         )
@@ -54,7 +55,7 @@ enum Fixtures {
         file("song.mp3", .mp3, megabytes: 6, added: 7, opened: 5),
         file("podcast.m4a", .mpeg4Audio, megabytes: 40, added: 60, marks: [.neverOpened]),
         file("mystery.xyz", nil, megabytes: 0.5, added: 1),
-        file("setup.dmg.crdownload", UTType(filenameExtension: "crdownload"), megabytes: 15, added: 4, marks: [.failedDownload]),
+        file("setup.dmg.crdownload", UTType(filenameExtension: "crdownload"), megabytes: 15, added: 4, downloading: true, marks: [.failedDownload]),
         file("report copy.pdf", .pdf, megabytes: 2.5, added: 3),
         file("Photos", .folder, megabytes: nil, added: 30, recordsOpens: false),
         file("Notes.app", .applicationBundle, megabytes: 20, added: 15, recordsOpens: false),
@@ -110,6 +111,14 @@ extension ScriptedModel {
                 if case .text(let text) = segment { text.content } else { nil }
             }.joined()
         }
+    }
+
+    /// The question the model is answering at its latest request, with any note the app put before it.
+    var latestPrompt: String {
+        script.requests.last?.transcript.compactMap { entry -> String? in
+            guard case .prompt(let prompt) = entry else { return nil }
+            return prompt.segments.compactMap { if case .text(let text) = $0 { text.content } else { nil } }.joined()
+        }.last ?? ""
     }
 
     /// How many questions the model has in front of it at its latest request.

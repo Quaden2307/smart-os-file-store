@@ -79,7 +79,9 @@ final class ChatModel {
             },
             findDuplicates: { [weak self] in
                 await self?.findDuplicates(hashCache: hashCache)
-            }
+            },
+            // What "big" means in a follow-up: the size Review Large Downloads lists from.
+            largeFileMegabytes: { CleanupSettings.load(from: UserDefaults.standard).largeDownloadMegabytes }
         )
     }
 

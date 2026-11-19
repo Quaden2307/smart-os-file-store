@@ -206,9 +206,21 @@ fi
 xcrun swift "$SCRIPTS/set-dates.swift" "${DATES[@]}"
 
 # Last opened, as Launch Services records it: the old receipt on 2025-02-01, the tax form yesterday.
-# The manual and everything else were never opened.
+# The manual was never opened.
 xattr -wx 'com.apple.lastuseddate#PS' "$(le64 1738400400)$(le64 0)" "old-receipt.pdf"
 xattr -wx 'com.apple.lastuseddate#PS' "$(le64 "$(date -v-1d +%s)")$(le64 0)" "tax-form-2024.pdf"
+
+# One in two of the ordinary files at the top level was opened ninety minutes ago, as in a real
+# Downloads folder. With only the two above opened, "which files have I never opened?" was nearly
+# every file. Which ones goes by the order they are made in, so a new file above shifts the rest.
+OPENED=(); n=0
+for item in "${SETTLED[@]}"; do
+  if [ -f "$item" ] && [ ! -L "$item" ] && [[ "$item" != */* ]] && [[ "$item" != .* ]]; then
+    if [ $((n % 2)) -eq 0 ]; then OPENED+=("$item"); fi
+    n=$((n + 1))
+  fi
+done
+xattr -wx 'com.apple.lastuseddate#PS' "$(le64 "$(date -v-90M +%s)")$(le64 0)" "${OPENED[@]}"
 
 # Where the statement was downloaded from, as browsers record it: a binary property list of URLs,
 # and the app that downloaded it, as the quarantine system records it (flags;time;app;event).

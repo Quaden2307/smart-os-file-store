@@ -50,7 +50,7 @@ struct ChatToolTests {
         (#"{"filter":{"addedOnOrAfter":"2026-11-10","addedOnOrBefore":"2026-11-12"},"sort":"newest"}"#, ["holiday.jpg", "song.mp3", "Tool.pkg"]),
         (#"{"filter":{"openedOnOrBefore":"30 days ago"},"sort":"recentlyOpened"}"#, ["clip.mp4", "Annual Report 2025.pdf"]),
         (#"{"filter":{"openedOnOrAfter":"5 days ago"},"sort":"leastRecentlyOpened"}"#, ["song.mp3", "movie.mov", "report.pdf"]),
-        (#"{"filter":{"neverOpened":true,"largerThanMB":10},"sort":"smallest"}"#, ["setup.dmg.crdownload", "podcast.m4a", "Tool.pkg", "backup.tar.gz"]),
+        (#"{"filter":{"neverOpened":true,"largerThanMB":10},"sort":"smallest"}"#, ["podcast.m4a", "Tool.pkg", "backup.tar.gz"]),
         (#"{"filter":{"largerThanMB":50,"smallerThanMB":700},"sort":"largest"}"#, ["movie.mov", "backup.tar.gz", "clip.mp4", "Tool.pkg"]),
         (#"{"filter":{"sourceSite":"example.com"},"sort":"name"}"#, ["holiday.jpg", "report.pdf"]),
         (#"{"filter":{"mark":"neverOpened"},"sort":"largest"}"#, ["backup.tar.gz", "podcast.m4a", "old-photo.heic", "budget.xlsx"]),
@@ -62,6 +62,20 @@ struct ChatToolTests {
         #expect(result.files.map(\.name) == expected)
         #expect(result.matchCount == expected.count)
         #expect(result.totalBytes == total(Fixtures.files.filter { expected.contains($0.name) }))
+    }
+
+    @Test func aQuestionAboutOpensSaysHowManyItemsCannotBeToldAndCountsNoneOfThem() async throws {
+        // A folder and an app: macOS dates no opens for them, so they are unknown, not never opened.
+        let never = try await search(#"{"filter":{"neverOpened":true},"limit":100}"#)
+        #expect(never.unknownOpenCount == 2)
+        #expect(never.matchCount == never.files.count)
+        #expect(never.files.allSatisfy { $0.lastOpened == nil && $0.recordsOpens && !$0.isDownloading })
+        #expect(!never.files.map(\.name).contains("setup.dmg.crdownload"))
+        #expect(try await search(#"{"filter":{"openedOnOrAfter":"5 days ago"}}"#).unknownOpenCount == 2)
+        // Only the unknown items that fit the rest of the filter, and none for a question that is not about opens.
+        #expect(try await search(#"{"filter":{"neverOpened":true,"typeGroup":"documents"}}"#).unknownOpenCount == 0)
+        #expect(try await search(#"{"filter":{"neverOpened":true,"nameContains":"Photos"}}"#).unknownOpenCount == 1)
+        #expect(try await search("{}").unknownOpenCount == 0)
     }
 
     @Test func theLimitCutsTheListButNotTheCountOrTheTotal() async throws {

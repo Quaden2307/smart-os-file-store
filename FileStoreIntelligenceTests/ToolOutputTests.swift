@@ -135,6 +135,21 @@ struct ToolOutputTests {
         #expect(recent.last?.hasSuffix(", added 1 day ago") == true)
     }
 
+    @Test func neverOpenedIsSaidAsNoOpenRecordedAndUnknownItemsAreNamedNotCounted() {
+        var query = FileQuery()
+        query.neverOpened = true
+        let result = FileSearchResult(query: query, sort: .largest, limit: 20, in: Fixtures.snapshot)
+        let lines = ToolOutput.search(result, now: Fixtures.now).split(separator: "\n")
+        #expect(lines.first == "\(result.matchCount) files have no open recorded by macOS, \(result.totalBytes.formatted(.byteCount(style: .file))) in total. The app shows the user the list.")
+        #expect(lines.dropFirst().first == "2 more items: last opened unknown, not counted.")
+        #expect(!lines.contains { $0.contains("Photos") || $0.contains("Notes.app") || $0.contains("crdownload") })
+
+        // Nothing with a recorded answer, and still the items that cannot be told.
+        query.nameContains = "Photos"
+        let none = FileSearchResult(query: query, sort: .largest, limit: 20, in: Fixtures.snapshot)
+        #expect(ToolOutput.search(none, now: Fixtures.now) == "No files match.\n1 more items: last opened unknown, not counted.")
+    }
+
     @Test func noMatchesIsSaidInOneLine() {
         var query = FileQuery()
         query.nameContains = "no such file"

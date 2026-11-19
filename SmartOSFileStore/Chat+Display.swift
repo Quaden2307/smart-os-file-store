@@ -68,18 +68,22 @@ extension FileSearchResult {
             day(Calendar.current.date(byAdding: .day, value: -1, to: date) ?? date)
         }
         var parts: [String] = []
+        if query.withinIDs != nil { parts.append(String(localized: "In the last result")) }
         if let group = query.typeGroup { parts.append(group.title) }
         if let text = query.nameContains { parts.append(String(localized: "name contains “\(text)”")) }
         if let from = query.added.from { parts.append(String(localized: "added since \(day(from))")) }
         if let before = query.added.before { parts.append(String(localized: "added up to \(lastDay(before: before))")) }
         if let from = query.opened.from { parts.append(String(localized: "opened since \(day(from))")) }
         if let before = query.opened.before { parts.append(String(localized: "opened up to \(lastDay(before: before))")) }
-        if query.neverOpened { parts.append(String(localized: "never opened")) }
+        // What macOS can say: it notes an open from Finder, the Dock or an Open panel only.
+        if query.neverOpened { parts.append(String(localized: "no open recorded")) }
         if let bytes = query.minBytes { parts.append(String(localized: "\(bytes.formattedFileSize) or more")) }
         if let bytes = query.maxBytes { parts.append(String(localized: "\(bytes.formattedFileSize) or less")) }
         if let site = query.sourceSite { parts.append(String(localized: "from \(site)")) }
         if let mark = query.mark { parts.append(String(localized: "marked \(mark.fileMark.title)")) }
-        return parts.isEmpty ? String(localized: "All items") : parts.joined(separator: " · ")
+        // The line starts with whichever part comes first, so that one takes the capital.
+        let words = parts.joined(separator: " · ")
+        return parts.isEmpty ? String(localized: "All items") : words.prefix(1).localizedUppercase + words.dropFirst()
     }
 }
 

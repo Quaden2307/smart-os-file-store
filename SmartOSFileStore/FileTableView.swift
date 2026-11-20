@@ -47,60 +47,62 @@ struct FileTableView: View {
     private var table: some View {
         Table(model.visibleRecords, selection: $selection, sortOrder: $model.sortOrder) {
             TableColumn("Name", sortUsing: FileListSort.name) { record in
-                HStack(spacing: 6) {
+                HStack(spacing: Design.Space.s) {
                     FileIconView(record: record)
                     Text(record.displayName)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     ForEach(model.marks(for: record), id: \.self) { mark in
-                        MarkBadge(mark: mark)
+                        Badge(Text(mark.title))
                     }
                 }
                 // One element for VoiceOver: "old-manual.pdf, Never opened, Old".
                 .accessibilityElement(children: .combine)
                 .rowHelp(record.downloadSourceTooltip)
             }
-            .width(min: 180, ideal: 280)
+            .width(min: 200, ideal: 280)
 
             TableColumn("Kind", sortUsing: FileListSort.kind) { record in
                 Text(record.kindDescription)
                     .lineLimit(1)
                     .rowHelp(record.downloadSourceTooltip)
             }
-            .width(min: 90, ideal: 110)
+            .width(min: 88, ideal: 132)
 
             TableColumn("Size", sortUsing: FileListSort.size) { record in
                 Group {
                     if let size = record.formattedSize {
                         Text(size)
-                            .monospacedDigit()
                     } else {
                         NoValueCell(label: "No size")
                     }
                 }
                 .rowHelp(record.downloadSourceTooltip, alignment: .trailing)
             }
-            .width(min: 60, ideal: 70)
+            .width(min: 64, ideal: 72)
             .alignment(.numeric)
 
-            TableColumn("Date Added", sortUsing: FileListSort.dateAdded) { record in
+            TableColumn("Date added", sortUsing: FileListSort.dateAdded) { record in
                 DateCell(date: record.dateAdded)
                     .rowHelp(record.downloadSourceTooltip)
             }
-            .width(min: 120, ideal: 165)
+            .width(min: 144, ideal: 164)
 
-            TableColumn("Date Modified", sortUsing: FileListSort.dateModified) { record in
+            TableColumn("Date modified", sortUsing: FileListSort.dateModified) { record in
                 DateCell(date: record.dateModified)
                     .rowHelp(record.downloadSourceTooltip)
             }
-            .width(min: 120, ideal: 165)
+            .width(min: 144, ideal: 164)
 
-            TableColumn("Last Opened", sortUsing: FileListSort.lastOpened) { record in
+            TableColumn("Last opened", sortUsing: FileListSort.lastOpened) { record in
                 LastOpenedCell(record: record)
                     .rowHelp(record.downloadSourceTooltip)
             }
-            .width(min: 120, ideal: 165)
+            .width(min: 144, ideal: 164)
         }
+        // Finder's density, without its stripes: the selected row is the only filled one.
+        .tableStyle(.inset)
+        .alternatingRowBackgrounds(.disabled)
         .contextMenu(forSelectionType: FileRecord.ID.self) { ids in
             Button("Quick Look") {
                 preview(ids)
@@ -142,7 +144,7 @@ struct FileTableView: View {
         .overlay {
             if model.visibleRecords.isEmpty, case .marked(let mark) = model.filter {
                 ContentUnavailableView(
-                    "No Matching Files",
+                    "No matching files",
                     systemImage: "line.3.horizontal.decrease.circle",
                     description: Text(mark.emptyFilterDescription)
                 )

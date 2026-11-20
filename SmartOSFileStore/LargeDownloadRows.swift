@@ -13,7 +13,7 @@ struct LargeDownloadRow: View {
     private var record: FileRecord { change.record }
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Design.Space.s) {
             // The label is hidden but still read by VoiceOver.
             Toggle(isOn: $isTicked) {
                 Text("Move \(record.displayName) to the Trash")
@@ -23,24 +23,24 @@ struct LargeDownloadRow: View {
             .disabled(!isEnabled)
             .focused(focusedCheckbox, equals: record.id)
             // One VoiceOver element after the checkbox: name, reason, facts and size.
-            HStack(spacing: 8) {
+            HStack(spacing: Design.Space.s) {
                 FileIconView(record: record)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Design.Space.tight) {
                     Text(record.displayName)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Text(change.reason.localizedDescription)
-                        .font(.caption)
+                        .font(Design.Typography.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                    HStack(spacing: 10) {
+                    HStack(spacing: Design.Space.s) {
                         Text(record.kindDescription)
                             .lineLimit(1)
-                        HStack(spacing: 3) {
+                        HStack(spacing: Design.Space.xs) {
                             Text("Added")
                             DateCell(date: record.dateAdded)
                         }
-                        HStack(spacing: 3) {
+                        HStack(spacing: Design.Space.xs) {
                             Text("Opened")
                             LastOpenedCell(record: record)
                         }
@@ -50,14 +50,13 @@ struct LargeDownloadRow: View {
                                 .truncationMode(.middle)
                         }
                     }
-                    .font(.caption)
+                    .font(Design.Typography.caption)
                     .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Text((change.reason.sizeOnDisk ?? 0).formattedFileSize)
-                    .monospacedDigit()
                     .foregroundStyle(.secondary)
-                    .frame(minWidth: 72, alignment: .trailing)
+                    .frame(minWidth: Design.Size.sizeColumn, alignment: .trailing)
                     .help(Text("Space on disk"))
             }
             .accessibilityElement(children: .combine)

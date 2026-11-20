@@ -28,13 +28,13 @@ struct ThinkingIndicator: View {
                         }
                     }
                 } animation: { _ in
-                    .smooth(duration: 0.55)
+                    Design.Chat.thinking
                 }
             }
         }
-        .font(.system(size: 14))
+        .font(Design.Chat.thinkingGlyph)
         .foregroundStyle(.secondary)
-        .frame(width: 40, height: 22, alignment: .leading)
+        .frame(width: 40, height: Design.Chat.thinkingHeight, alignment: .leading)
         .accessibilityElement()
         .accessibilityLabel("Looking through your files")
     }

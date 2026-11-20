@@ -14,29 +14,29 @@ struct ActivityLogFailure: Equatable {
     init(_ error: ActivityLogError) {
         switch error {
         case .damaged:
-            title = String(localized: "The Activity Log Is Damaged")
+            title = String(localized: "The activity log is damaged")
             message = String(localized: "Its file can’t be read as a database, so nothing can be cleaned up for now. You can start a fresh log; the damaged file is kept beside it. A fresh log has no history and no files marked Kept.")
             canStartFresh = true
         case .unreadable:
-            title = String(localized: "The Activity Log Can’t Be Opened")
+            title = String(localized: "The activity log can’t be opened")
             message = String(localized: "Its file or folder can’t be read or written, so nothing can be cleaned up for now. Check that the disk isn’t full and try again, or start a fresh log; the existing file is kept beside it. A fresh log has no history and no files marked Kept.")
             canStartFresh = true
         case .newerVersion:
-            title = String(localized: "The Activity Log Is From a Newer Version")
+            title = String(localized: "The activity log is from a newer version")
             message = String(localized: "A newer version of Smart OS File Store made this log, and this version must not change it. Update the app, or start a fresh log; the existing file is kept beside it. A fresh log has no history and no files marked Kept.")
             canStartFresh = true
         case .writeFailed:
             // The file itself is most likely sound: a full disk, or another copy of the app holding
             // it. Setting it aside would hide its history for nothing.
-            title = String(localized: "The Activity Log Can’t Be Written")
+            title = String(localized: "The activity log can’t be written")
             message = String(localized: "A change couldn’t be recorded, so cleanup stopped. Check that the disk isn’t full and that no other copy of the app is running, then try again.")
             canStartFresh = false
         case .inconsistent:
-            title = String(localized: "The Activity Log Can’t Be Trusted")
+            title = String(localized: "The activity log can’t be trusted")
             message = String(localized: "The log no longer holds what was just written to it, so cleanup stopped. Try again, or start a fresh log; the existing file is kept beside it. A fresh log has no history and no files marked Kept.")
             canStartFresh = true
         case .locationUnavailable:
-            title = String(localized: "The Activity Log Has Nowhere to Go")
+            title = String(localized: "The activity log has nowhere to go")
             message = String(localized: "The Application Support folder in your Library couldn’t be found, so nothing can be cleaned up for now. Quit the app and open it again once the folder is back.")
             canStartFresh = false
         }
@@ -51,20 +51,20 @@ extension ActivityRun {
             return UndoPlan.title(undoingCode: undoneActionCode)
         }
         if isTidyNow {
-            return String(localized: "Tidy Now")
+            return String(localized: "Tidy now")
         }
         return action?.title ?? String(localized: "Cleanup")
     }
 
     /// For a run the user confirmed on a card in the chat. Nil for every other run.
     var originLabel: String? {
-        origin == .chat ? String(localized: "From Chat") : nil
+        origin == .chat ? String(localized: "From chat") : nil
     }
 
     /// For a cleanup run some of whose changes were undone since: whether all or some were. Nil otherwise.
     var undoLabel: String? {
         guard !isUndo, undoneCount > 0 else { return nil }
-        return undoneCount >= doneCount ? String(localized: "Undone") : String(localized: "Partly Undone")
+        return undoneCount >= doneCount ? String(localized: "Undone") : String(localized: "Partly undone")
     }
 
     /// True while the run still has a change that was carried out and not undone: what Undo may try.
@@ -78,7 +78,7 @@ extension ActivityRun {
         case .finished:
             nil
         case .running:
-            String(localized: "In Progress")
+            String(localized: "In progress")
         case .cancelled:
             String(localized: "Stopped")
         case .interrupted:
@@ -115,11 +115,11 @@ extension ActivityChange {
         case .moveToTrash:
             String(localized: "Move to Trash")
         case .rename:
-            run.isUndo ? String(localized: "Rename Back") : String(localized: "Rename")
+            run.isUndo ? String(localized: "Rename back") : String(localized: "Rename")
         case .move:
-            run.isUndo ? String(localized: "Move Back") : String(localized: "Move")
+            run.isUndo ? String(localized: "Move back") : String(localized: "Move")
         case .putBackFromTrash:
-            String(localized: "Put Back")
+            String(localized: "Put back")
         case nil:
             String(localized: "Change")
         }

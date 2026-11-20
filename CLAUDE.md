@@ -18,7 +18,7 @@ A native macOS file browser that will replace Finder, starting with a self-clean
 - No App Sandbox (direct download, not the Mac App Store). Hardened Runtime on, so the app can be notarized later.
 - CryptoKit for hashing, Quick Look for previews, UniformTypeIdentifiers for file types.
 - No third-party dependencies without the owner's approval. GRDB (SQLite) is approved and is the only one. It is pinned to the commit of one release in `project.yml` and linked to `FileStoreCore` only; only the activity log's files (`ActivityLog*.swift`) import it, as `internal import GRDB`.
-- Interface uses system colours, fonts and controls only, with light and dark mode. No custom theme yet.
+- Interface uses system colours, fonts and controls only, with light and dark mode, as `docs/design.md` sets out (see Design below). No custom theme yet.
 
 ## Architecture
 
@@ -51,6 +51,14 @@ A native macOS file browser that will replace Finder, starting with a self-clean
 - **Nothing leaves the Mac:** the on-device `SystemLanguageModel` only. No Private Cloud Compute and no third-party models.
 - **Check SDK names before using an API named in a plan.** Read the Foundation Models interface in the installed Xcode SDK first, follow the SDK where it differs, and list each difference in the segment's decision record.
 - Tests and CI never need Apple Intelligence: a scripted model that conforms to the framework's `LanguageModel` drives the real session and tool loop.
+
+## Design
+
+- `docs/design.md` is the source for how the app looks: the rules, the tokens with their values, the standard components and the copy rules. Read it before adding or changing a view.
+- Every view takes its fonts, colours, spacing, radii and animations from `SmartOSFileStore/DesignTokens.swift` (`Design`). `DesignTokenTests` fails on a raw value. When a view needs a value that does not exist, add it to the tokens and to `docs/design.md` first.
+- Animations go through `.motion(_:value:)`, which does nothing when Reduce Motion is on.
+- Text inside windows and sheets is sentence case. Menus (menu bar, toolbar menu, context menus) keep the Mac's Title Case.
+- The chat bar keeps its own values in `Design.Chat`, some of them off the grid. It is the one exception; nothing else uses them.
 
 ## Code standards
 
@@ -100,6 +108,8 @@ And from version 0.3 so far:
 
 10. A chat bar that answers questions about Downloads with the on-device model. It remembers the conversation in app code (`ChatMemory`): follow-ups such as "only the big ones" search inside the last result, and "Continue" asks a stopped question again.
 11. Cleanups from the chat bar: `proposeCleanup` makes a card in the conversation (what the app understood, the actions with counts, Review, Confirm). Confirm asks once, the card becomes the run's summary with Undo, and the run is marked as started from chat in Activity. A card goes out of date when a file of it changes or a newer card replaces it, and then offers Refresh.
+
+12. A design system: tokens, `docs/design.md` and a check that views use them, with the main window's shell (sidebar, toolbar, file table, filter bar, status bar) restyled on it. Sheets, Activity and Settings are on the tokens but not yet redesigned.
 
 Out of scope until the owner asks: watching Downloads automatically, user-defined rules, schedules, folders beyond Downloads, subfolders, the full storage view, search, tags, sharing, AI that makes a change without the user's Confirm, changing a card by talking (`reviseCleanup`), AI that reads file contents, custom theme.
 

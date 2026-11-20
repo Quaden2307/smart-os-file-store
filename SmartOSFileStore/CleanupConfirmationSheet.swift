@@ -27,9 +27,9 @@ struct CleanupConfirmationSheet: View {
     }
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: Design.Space.l) {
             Image(systemName: symbol)
-                .font(.largeTitle)
+                .font(Design.Icon.large)
                 .imageScale(.large)
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
@@ -47,10 +47,10 @@ struct CleanupConfirmationSheet: View {
                     Text("Move ^[\(fileCount) file](inflect: true) (\(bytes.formattedFileSize)) to the Trash?")
                 }
             }
-            .font(.headline)
+            .font(Design.Typography.sectionTitle)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 12) {
+            HStack(spacing: Design.Space.m) {
                 Spacer()
                 if confirmIsDefault {
                     Button("Cancel", role: .cancel) {
@@ -83,8 +83,8 @@ struct CleanupConfirmationSheet: View {
                 }
             }
         }
-        .padding(20)
-        .frame(width: 380)
+        .padding(Design.Space.xl)
+        .frame(width: Design.Size.confirmationSheet)
         .onExitCommand {
             dismiss()
         }

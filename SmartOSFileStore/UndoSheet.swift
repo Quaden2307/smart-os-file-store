@@ -36,15 +36,15 @@ private struct UndoQuestion: View {
     let cancel: @MainActor () -> Void
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: Design.Space.l) {
             Image(systemName: "arrow.uturn.backward")
-                .font(.largeTitle)
+                .font(Design.Icon.large)
                 .imageScale(.large)
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
-            VStack(spacing: 6) {
+            VStack(spacing: Design.Space.s) {
                 Text("\(plan.title)?")
-                    .font(.headline)
+                    .font(Design.Typography.sectionTitle)
                     .accessibilityAddTraits(.isHeader)
                 Text("^[\(plan.steps.count) file](inflect: true) will be put back where they were.")
                     .multilineTextAlignment(.center)
@@ -64,7 +64,7 @@ private struct UndoQuestion: View {
                 .frame(minHeight: 80, maxHeight: 180)
                 .accessibilityLabel("Files that can’t be put back")
             }
-            HStack(spacing: 12) {
+            HStack(spacing: Design.Space.m) {
                 Spacer()
                 Button("Cancel", role: .cancel) {
                     cancel()
@@ -77,8 +77,8 @@ private struct UndoQuestion: View {
                 .help("Put the files back where they were (Return)")
             }
         }
-        .padding(20)
-        .frame(width: 440)
+        .padding(Design.Space.xl)
+        .frame(width: Design.Size.confirmationSheet)
     }
 }
 
@@ -89,11 +89,11 @@ private struct UndoProgressView: View {
     let stop: @MainActor () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Design.Space.m) {
             Text(plan.title)
-                .font(.headline)
+                .font(Design.Typography.sectionTitle)
                 .accessibilityAddTraits(.isHeader)
-            HStack(spacing: 12) {
+            HStack(spacing: Design.Space.m) {
                 ProgressView(value: progress.fractionCompleted)
                     .accessibilityLabel("Progress putting files back")
                 Button("Stop") {
@@ -102,11 +102,10 @@ private struct UndoProgressView: View {
                 .help("Stop after the file being put back now")
             }
             Text("Putting back file \(min(progress.itemsCompleted + 1, progress.itemsTotal)) of \(progress.itemsTotal)…")
-                .monospacedDigit()
                 .foregroundStyle(.secondary)
         }
-        .padding(20)
-        .frame(width: 440)
+        .padding(Design.Space.xl)
+        .frame(width: Design.Size.confirmationSheet)
     }
 }
 
@@ -117,21 +116,21 @@ private struct UndoSummaryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 6) {
+            VStack(spacing: Design.Space.s) {
                 Image(systemName: "arrow.uturn.backward")
-                    .font(.largeTitle)
+                    .font(Design.Icon.large)
                     .imageScale(.large)
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
                 if result.undone.isEmpty {
-                    Text("Nothing Was Put Back")
-                        .font(.title2.weight(.semibold))
+                    Text("Nothing was put back")
+                        .font(Design.Typography.windowTitle)
                         .accessibilityAddTraits(.isHeader)
                     Text("No file was changed.")
                         .foregroundStyle(.secondary)
                 } else {
                     Text("^[\(result.undone.count) file](inflect: true) put back")
-                        .font(.title2.weight(.semibold))
+                        .font(Design.Typography.windowTitle)
                         .accessibilityAddTraits(.isHeader)
                     if result.bytesTakenFromTrash > 0 {
                         Text("\(result.bytesTakenFromTrash.formattedFileSize) taken back out of the Trash.")
@@ -140,25 +139,25 @@ private struct UndoSummaryView: View {
                 }
                 if result.logFailure != nil {
                     Text("The activity log stopped working, so undo stopped. See the message at the bottom of the main window.")
-                        .font(.callout)
+                        .font(Design.Typography.secondary)
                 }
             }
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(24)
+            .padding(Design.Space.xl)
             .frame(maxWidth: .infinity)
             .accessibilityElement(children: .combine)
 
             List {
                 if !result.undone.isEmpty {
-                    Section("Put Back") {
+                    Section("Put back") {
                         ForEach(result.undone) { item in
                             UndoFileRow(name: item.displayName, detail: item.outcome.localizedDescription(for: item.operation))
                         }
                     }
                 }
                 if !result.notUndone.isEmpty {
-                    Section("Not Put Back") {
+                    Section("Not put back") {
                         ForEach(result.notUndone) { item in
                             UndoFileRow(name: item.displayName, detail: item.outcome.localizedDescription(for: item.operation))
                         }
@@ -179,7 +178,7 @@ private struct UndoSummaryView: View {
                 }
                 .keyboardShortcut(.defaultAction)
             }
-            .padding(12)
+            .padding(Design.Space.m)
         }
         .frame(minWidth: 520, idealWidth: 560, minHeight: 360, idealHeight: 420)
     }
@@ -191,11 +190,11 @@ private struct UndoFileRow: View {
     let detail: String
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: Design.Space.s) {
             Text(name)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            Spacer(minLength: 12)
+            Spacer(minLength: Design.Space.m)
             Text(detail)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.trailing)

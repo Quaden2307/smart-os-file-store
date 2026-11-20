@@ -11,7 +11,6 @@ struct ChatSection: View {
     let cardActions: ChatCardActions
 
     @AppStorage(IntelligenceAvailability.enabledKey) private var usesAppleIntelligence = true
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.controlActiveState) private var controlActiveState
 
     /// False until the window has been the key window once. A window gives the keyboard to its
@@ -34,7 +33,7 @@ struct ChatSection: View {
             }
         }
         .clipped()
-        .animation(reduceMotion ? nil : .default, value: chat.isPanelOpen)
+        .motion(Design.Chat.panel, value: chat.isPanelOpen)
         // Escape, with the cursor in the bar or the conversation, puts the conversation away.
         .onExitCommand {
             chat.isPanelOpen = false
@@ -67,8 +66,6 @@ struct ChatBar: View {
     /// False while the window is opening, when the field must not be handed the keyboard.
     var canTakeKeyboard = true
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     private static let examples = [
         String(localized: "What’s taking the most space?"),
         String(localized: "What did I download last week and never open?"),
@@ -76,9 +73,9 @@ struct ChatBar: View {
     ]
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: Design.Space.s) {
             if chat.messages.isEmpty {
-                HStack(spacing: 8) {
+                HStack(spacing: Design.Space.s) {
                     ForEach(Self.examples, id: \.self) { example in
                         Button(example) {
                             chat.ask(example)
@@ -93,33 +90,33 @@ struct ChatBar: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel("Example questions")
             }
-            HStack(alignment: .bottom, spacing: 6) {
+            HStack(alignment: .bottom, spacing: Design.Chat.rowGap) {
                 TextField("Ask about your Downloads", text: $chat.draft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .lineLimit(1...6)
                     .focused(isFocused)
                     .disabled(!canTakeKeyboard)
                     .onSubmit(chat.send)
-                    .padding(.vertical, 5)
+                    .padding(.vertical, Design.Chat.fieldInset)
                     .accessibilityLabel("Question about your Downloads")
                     .help("Ask about the files in this folder (⌘K). Answers are worked out on this Mac.")
                 if !chat.messages.isEmpty, !chat.isPanelOpen {
                     Button {
                         chat.isPanelOpen = true
                     } label: {
-                        Label("Show Conversation", systemImage: "chevron.up")
+                        Label("Show conversation", systemImage: "chevron.up")
                     }
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
-                    .padding(.bottom, 5)
+                    .padding(.bottom, Design.Chat.fieldInset)
                     .help("Show the conversation")
                 }
                 SendButton(chat: chat)
             }
-            .padding(.leading, 14)
-            .padding(.trailing, 5)
-            .padding(.vertical, 4)
-            .background(.background, in: .rect(cornerRadius: 14, style: .continuous))
+            .padding(.leading, Design.Chat.fieldLeading)
+            .padding(.trailing, Design.Chat.fieldInset)
+            .padding(.vertical, Design.Space.xs)
+            .background(.background, in: .rect(cornerRadius: Design.Chat.fieldRadius, style: .continuous))
             .background {
                 ZStack {
                     if chat.isResponding {
@@ -127,22 +124,22 @@ struct ChatBar: View {
                             .transition(.opacity)
                     }
                 }
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: chat.isResponding)
+                .motion(Design.Chat.glowFade, value: chat.isResponding)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: Design.Chat.fieldRadius, style: .continuous)
                     .strokeBorder(isFocused.wrappedValue ? AnyShapeStyle(.secondary) : AnyShapeStyle(.separator))
             }
-            .frame(maxWidth: ChatLayout.columnWidth)
+            .frame(maxWidth: Design.Chat.columnWidth)
             Label("Apple Intelligence", systemImage: "sparkles")
-                .font(.caption)
+                .font(Design.Chat.caption)
                 .foregroundStyle(.secondary)
                 .help("Answers are worked out on this Mac. Nothing you type or any file name leaves it.")
         }
-        .font(.callout)
+        .font(Design.Typography.secondary)
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, Design.Space.l)
+        .padding(.vertical, Design.Chat.barVertical)
         .onChange(of: isFocused.wrappedValue) { _, isFocused in
             if isFocused {
                 chat.prewarm()
@@ -159,9 +156,9 @@ private struct WorkingGlow: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let glow = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        let glow = RoundedRectangle(cornerRadius: Design.Chat.fieldRadius, style: .continuous)
             .stroke(.primary, lineWidth: 3)
-            .blur(radius: 5)
+            .blur(radius: Design.Chat.glowBlur)
         Group {
             if reduceMotion {
                 glow.opacity(0.3)
@@ -169,7 +166,7 @@ private struct WorkingGlow: View {
                 glow.phaseAnimator([0.15, 0.45]) { glow, opacity in
                     glow.opacity(opacity)
                 } animation: { _ in
-                    .easeInOut(duration: 1.2)
+                    Design.Chat.glowPulse
                 }
             }
         }
@@ -199,9 +196,9 @@ private struct SendButton: View {
             }
         } label: {
             Image(systemName: chat.isResponding ? "stop.fill" : "arrow.up")
-                .font(.system(size: 12, weight: .bold))
+                .font(Design.Chat.sendGlyph)
                 .foregroundStyle(.background)
-                .frame(width: 26, height: 26)
+                .frame(width: Design.Chat.sendButton, height: Design.Chat.sendButton)
                 .background(Circle().fill(fill))
                 .contentTransition(.symbolEffect(.replace))
                 .contentShape(.circle)
@@ -224,14 +221,14 @@ struct ChatUnavailableBar: View {
     private static let systemSettingsPane = URL(string: "x-apple.systempreferences:com.apple.Siri-Settings.extension")
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: Design.Space.s) {
             Image(systemName: "sparkles")
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             Text(availability.reason ?? "")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 12)
+            Spacer(minLength: Design.Space.m)
             if availability.isChangedInSystemSettings, let pane = Self.systemSettingsPane {
                 Button("Open System Settings") {
                     openURL(pane)
@@ -244,11 +241,11 @@ struct ChatUnavailableBar: View {
                 .help("Open this app’s Settings (⌘,)")
             }
         }
-        .font(.callout)
-        .frame(maxWidth: ChatLayout.columnWidth)
+        .font(Design.Typography.secondary)
+        .frame(maxWidth: Design.Chat.columnWidth)
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, Design.Space.l)
+        .padding(.vertical, Design.Chat.barVertical)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Chat")
     }

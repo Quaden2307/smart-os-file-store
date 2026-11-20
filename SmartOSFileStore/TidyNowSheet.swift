@@ -68,13 +68,13 @@ struct TidyNowSheet: View {
     private var overview: some View {
         VStack(spacing: 0) {
             header
-                .padding(16)
+                .padding(Design.Space.l)
             Divider()
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
             footer
-                .padding(12)
+                .padding(Design.Space.m)
         }
         .onExitCommand {
             if !model.isExecuting {
@@ -84,9 +84,9 @@ struct TidyNowSheet: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Tidy Now")
-                .font(.title2.weight(.semibold))
+        VStack(alignment: .leading, spacing: Design.Space.xs) {
+            Text("Tidy now")
+                .font(Design.Typography.windowTitle)
                 .accessibilityAddTraits(.isHeader)
             Group {
                 switch model.phase {
@@ -100,11 +100,9 @@ struct TidyNowSheet: View {
                         Text("Nothing ticked yet")
                     } else {
                         Text("Ticked: \(totals.sentence)")
-                            .monospacedDigit()
                     }
                 case .finished(let result):
                     Text("\(result.bytesFreed.formattedFileSize) moved to the Trash")
-                        .monospacedDigit()
                 }
             }
             .foregroundStyle(.secondary)
@@ -128,7 +126,7 @@ struct TidyNowSheet: View {
             }
         case .reviewing where model.isTidy:
             ContentUnavailableView(
-                "This Folder Is Tidy",
+                "This folder is tidy",
                 systemImage: "checkmark.circle",
                 description: Text("No cleanup found anything to do.")
             )
@@ -146,7 +144,7 @@ struct TidyNowSheet: View {
         let toReview = categories.filter(\.isReview)
         return List {
             if !toTidy.isEmpty {
-                Section("To Tidy") {
+                Section("To tidy") {
                     ForEach(toTidy) { category in
                         categoryRow(category)
                     }
@@ -158,7 +156,7 @@ struct TidyNowSheet: View {
                         categoryRow(category)
                     }
                 } header: {
-                    Text("For You to Review")
+                    Text("For you to review")
                 } footer: {
                     Text("Nothing here is ticked. Open a list to tick what you want in the Trash.")
                         .foregroundStyle(.secondary)
@@ -166,7 +164,7 @@ struct TidyNowSheet: View {
             }
             let failed = model.actions.filter(model.failedActions.contains)
             if !failed.isEmpty {
-                Section("Couldn’t Finish Checking") {
+                Section("Couldn’t finish checking") {
                     ForEach(failed, id: \.self) { action in
                         Label(action.title, systemImage: "exclamationmark.triangle")
                             .foregroundStyle(.secondary)
@@ -176,7 +174,7 @@ struct TidyNowSheet: View {
             }
             let nothing = model.actionsWithNothingToDo
             if !nothing.isEmpty {
-                Section("Nothing to Do") {
+                Section("Nothing to do") {
                     ForEach(nothing, id: \.self) { action in
                         Text(action.title)
                             .foregroundStyle(.secondary)
@@ -202,7 +200,6 @@ struct TidyNowSheet: View {
                     .controlSize(.small)
                     .accessibilityLabel(Text("Checking the folder"))
                 Text("Checked by \(model.finishedActions.count) of \(model.actions.count) cleanups")
-                    .monospacedDigit()
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button("Cancel") {
@@ -218,7 +215,7 @@ struct TidyNowSheet: View {
                 }
                 .keyboardShortcut(.cancelAction)
                 if !model.isTidy {
-                    Button("Tidy Up…") {
+                    Button("Tidy up…") {
                         model.confirm()
                     }
                     .keyboardShortcut(.defaultAction)
@@ -232,13 +229,12 @@ struct TidyNowSheet: View {
                 }
             }
         case .executing(let progress):
-            HStack(spacing: 12) {
+            HStack(spacing: Design.Space.m) {
                 let current = min(progress.itemsCompleted + 1, progress.itemsTotal)
                 ProgressView(value: progress.fractionCompleted)
-                    .frame(maxWidth: 240)
+                    .frame(maxWidth: Design.Size.progressBar)
                     .accessibilityLabel(Text("Progress tidying the folder"))
                 Text("Tidying item \(current) of \(progress.itemsTotal)…")
-                    .monospacedDigit()
                 Spacer()
                 Button("Stop") {
                     model.cancel()
@@ -278,7 +274,7 @@ private struct TidyNowPlanningRow: View {
     let failed: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Design.Space.s) {
             Label(action.title, systemImage: action.display.symbol)
             Spacer()
             if failed {
@@ -312,23 +308,21 @@ private struct TidyNowCategoryRow: View {
 
     var body: some View {
         Button(action: open) {
-            HStack(spacing: 10) {
+            HStack(spacing: Design.Space.s) {
                 Image(systemName: category.action.display.symbol)
-                    .frame(width: 20)
+                    .frame(width: Design.Icon.column)
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Design.Space.tight) {
                     Text(category.title)
                     detail
-                        .font(.callout)
+                        .font(Design.Typography.secondary)
                         .foregroundStyle(.secondary)
-                        .monospacedDigit()
                 }
                 Spacer()
                 let bytes = ticked.filter { $0.operation == .moveToTrash }.reduce(Int64(0)) { $0 + $1.sizeInBytes }
                 if bytes > 0 {
                     Text(bytes.formattedFileSize)
-                        .monospacedDigit()
                         .foregroundStyle(.secondary)
                 }
                 Image(systemName: "chevron.right")

@@ -11,22 +11,19 @@ struct CleanupProgressView: View {
 
     var body: some View {
         let display = action.display
-        HStack(spacing: 12) {
+        HStack(spacing: Design.Space.m) {
             switch display.progressStyle {
             case .bytesRead:
                 bar(showing: progress.bytesToRead > 0)
                 Text("Checked \(progress.itemsChecked) of ^[\(progress.itemsToCheck) file](inflect: true), \(progress.bytesRead.formattedFileSize) of \(progress.bytesToRead.formattedFileSize)")
-                    .monospacedDigit()
                     .lineLimit(1)
             case .zipsChecked:
                 bar(showing: progress.itemsToCheck > 0)
                 Text("Checked \(progress.itemsChecked) of ^[\(progress.itemsToCheck) zip](inflect: true)")
-                    .monospacedDigit()
                     .lineLimit(1)
             case .installersChecked:
                 bar(showing: progress.itemsToCheck > 0)
                 Text("Checked \(progress.itemsChecked) of ^[\(progress.itemsToCheck) installer](inflect: true)")
-                    .monospacedDigit()
                     .lineLimit(1)
             case .spinner:
                 spinner
@@ -38,9 +35,8 @@ struct CleanupProgressView: View {
                 .keyboardShortcut(.cancelAction)
                 .help(display.cancelHelp)
         }
-        .font(.callout)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .font(Design.Typography.secondary)
+        .barInset()
         .accessibilityElement(children: .contain)
         .accessibilityLabel(display.progressLabel)
     }
@@ -50,7 +46,7 @@ struct CleanupProgressView: View {
     private func bar(showing hasTotal: Bool) -> some View {
         if hasTotal {
             ProgressView(value: progress.fractionCompleted)
-                .frame(maxWidth: 240)
+                .frame(maxWidth: Design.Size.progressBar)
                 .accessibilityLabel("Progress")
         } else {
             spinner

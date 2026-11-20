@@ -10,23 +10,23 @@ struct StopKeepingAllSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: Design.Space.l) {
             Image(systemName: "pin.slash")
-                .font(.largeTitle)
+                .font(Design.Icon.large)
                 .imageScale(.large)
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
-            VStack(spacing: 6) {
+            VStack(spacing: Design.Space.s) {
                 Text("Stop keeping all ^[\(itemCount) Kept item](inflect: true)?")
-                    .font(.headline)
+                    .font(Design.Typography.sectionTitle)
                 Text("Cleanup actions can then propose changes to them again.")
                     .foregroundStyle(.secondary)
             }
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 12) {
+            HStack(spacing: Design.Space.m) {
                 Spacer()
-                Button("Stop Keeping All", role: .destructive) {
+                Button("Stop keeping all", role: .destructive) {
                     dismiss()
                     onConfirm()
                 }
@@ -38,8 +38,8 @@ struct StopKeepingAllSheet: View {
                 .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(20)
-        .frame(width: 380)
+        .padding(Design.Space.xl)
+        .frame(width: Design.Size.confirmationSheet)
         .onExitCommand {
             dismiss()
         }

@@ -8,7 +8,6 @@ struct DateCell: View {
     var body: some View {
         if let date {
             Text(date, format: .dateTime.year().month(.abbreviated).day().hour().minute())
-                .monospacedDigit()
         } else {
             NoValueCell(label: "No date")
         }

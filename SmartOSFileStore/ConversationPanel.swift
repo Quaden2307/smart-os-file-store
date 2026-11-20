@@ -2,13 +2,6 @@ import FileStoreCore
 import FileStoreIntelligence
 import SwiftUI
 
-/// Sizes the chat shares: one centred column, as wide as reads well.
-enum ChatLayout {
-    static let columnWidth: CGFloat = 720
-    static let bubbleWidth: CGFloat = 520
-    static let cardWidth: CGFloat = 560
-}
-
 /// The conversation above the chat bar: each question in a bubble on the right, the reply under it
 /// on the left, and under a reply a card with what its lookups were and what they found. The card
 /// comes from the app's own code (`TurnEffects`), never from the model's sentence, and clicking a
@@ -50,7 +43,7 @@ struct ConversationPanel: View {
         VStack(spacing: 0) {
             PanelResizeHandle(height: $storedHeight, heights: heights)
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: Design.Chat.messageGap) {
                     ForEach(chat.messages) { message in
                         switch message.role {
                         case .question:
@@ -61,9 +54,9 @@ struct ConversationPanel: View {
                     }
                 }
                 .scrollTargetLayout()
-                .padding(.horizontal, 16)
-                .padding(.bottom, 12)
-                .frame(maxWidth: ChatLayout.columnWidth)
+                .padding(.horizontal, Design.Space.l)
+                .padding(.bottom, Design.Space.m)
+                .frame(maxWidth: Design.Chat.columnWidth)
                 .frame(maxWidth: .infinity)
             }
             .scrollPosition($position)
@@ -93,17 +86,17 @@ struct ConversationPanel: View {
             }
         }
         .frame(height: Self.height(storedHeight, in: heights))
-        .font(.callout)
+        .font(Design.Typography.secondary)
         .overlay(alignment: .topTrailing) {
             Button {
                 chat.isPanelOpen = false
             } label: {
-                Label("Hide Conversation", systemImage: "chevron.down")
+                Label("Hide conversation", systemImage: "chevron.down")
             }
             .labelStyle(.iconOnly)
             .buttonStyle(.borderless)
             .help("Hide the conversation (Esc)")
-            .padding(8)
+            .padding(Design.Space.s)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Conversation")
@@ -113,7 +106,7 @@ struct ConversationPanel: View {
         if reduceMotion {
             change()
         } else {
-            withAnimation(.smooth(duration: 0.3), change)
+            withAnimation(Design.Chat.scroll, change)
         }
     }
 }
@@ -184,10 +177,10 @@ private struct QuestionBubble: View {
         Text(text)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.quaternary, in: .rect(cornerRadius: 16, style: .continuous))
-            .frame(maxWidth: ChatLayout.bubbleWidth, alignment: .trailing)
+            .padding(.horizontal, Design.Space.m)
+            .padding(.vertical, Design.Space.s)
+            .background(.quaternary, in: .rect(cornerRadius: Design.Chat.bubbleRadius, style: .continuous))
+            .frame(maxWidth: Design.Chat.bubbleWidth, alignment: .trailing)
             .frame(maxWidth: .infinity, alignment: .trailing)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text("You asked: \(text)"))
@@ -204,14 +197,12 @@ private struct ChatReplyView: View {
     let showInList: @MainActor (URL) -> Void
     let cardActions: ChatCardActions
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     private var isThinking: Bool {
         message.turn == nil && message.text.isEmpty
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.Space.s) {
             Group {
                 if isThinking {
                     ThinkingIndicator()
@@ -244,7 +235,7 @@ private struct ChatReplyView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: isThinking)
+        .motion(Design.Chat.replyFade, value: isThinking)
     }
 }
 
@@ -273,7 +264,7 @@ private struct LookupCard: View {
     let showInList: @MainActor (URL) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.Space.s) {
             ForEach(Array(results.enumerated()), id: \.offset) { index, result in
                 let isLast = index == results.count - 1
                 if index > 0 {
@@ -292,15 +283,14 @@ private struct LookupCard: View {
                         SummaryFacts(summary: summary, files: files, showInList: showInList)
                     } else {
                         Text("All items: ^[\(summary.all.count) item](inflect: true), \(summary.all.bytes.formattedFileSize)")
-                            .monospacedDigit()
                             .foregroundStyle(.secondary)
                     }
                 }
             }
         }
-        .padding(12)
+        .padding(Design.Space.m)
         .frame(maxWidth: ChatFileRow.maxWidth, alignment: .leading)
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.separator))
+        .overlay(RoundedRectangle(cornerRadius: Design.Radius.card, style: .continuous).strokeBorder(Design.Colour.hairline))
     }
 }
 
@@ -313,7 +303,7 @@ private struct SearchFacts: View {
     let showInList: @MainActor (URL) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Design.Space.tight) {
             // The words may include text the model chose (a name to search for), so they go in
             // verbatim: nothing in them is read as Markdown or as a link.
             let lookedUp = Text(verbatim: result.lookedUp)
@@ -326,7 +316,6 @@ private struct SearchFacts: View {
                     Text("\(lookedUp): ^[\(result.matchCount) file](inflect: true), \(result.totalBytes.formattedFileSize)")
                 }
             }
-            .monospacedDigit()
             .foregroundStyle(.secondary)
             .lineLimit(2)
             if result.query.neverOpened {
@@ -337,7 +326,6 @@ private struct SearchFacts: View {
             }
             if result.unknownOpenCount > 0 {
                 Text("Last opened unknown for ^[\(result.unknownOpenCount) more item](inflect: true), not counted")
-                    .monospacedDigit()
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .help("macOS keeps no last-opened date for folders, apps and links")
@@ -360,7 +348,7 @@ private struct DuplicateFacts: View {
     let showInList: @MainActor (URL) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Design.Space.tight) {
             Group {
                 if scan.copyCount == 0 {
                     Text("Same content: no copies")
@@ -374,7 +362,6 @@ private struct DuplicateFacts: View {
                     Text("^[\(scan.unreadableCount) file](inflect: true) could not be read, so they are not counted")
                 }
             }
-            .monospacedDigit()
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
             if listsFiles {
@@ -382,7 +369,7 @@ private struct DuplicateFacts: View {
                     ChatFileRow(file: group.kept, record: files.record(for: group.kept.id), showInList: showInList)
                     ForEach(group.copies) { copy in
                         ChatFileRow(file: copy, record: files.record(for: copy.id), copyOf: group.kept.name, showInList: showInList)
-                            .padding(.leading, 22)
+                            .padding(.leading, Design.Chat.copyIndent)
                     }
                 }
             }
@@ -398,8 +385,8 @@ private struct SummaryFacts: View {
     let showInList: @MainActor (URL) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 2) {
+        VStack(alignment: .leading, spacing: Design.Space.s) {
+            Grid(alignment: .leading, horizontalSpacing: Design.Space.l, verticalSpacing: Design.Space.tight) {
                 row(Text("All items"), summary.all)
                 ForEach(FileTypeGroup.allCases, id: \.self) { group in
                     if let total = summary.byTypeGroup[group] {
@@ -423,7 +410,7 @@ private struct SummaryFacts: View {
                     .foregroundStyle(.secondary)
             }
             if !summary.largest.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Design.Space.tight) {
                     Text("Largest files")
                         .foregroundStyle(.secondary)
                     ForEach(summary.largest) { file in
@@ -438,10 +425,8 @@ private struct SummaryFacts: View {
         GridRow {
             title
             Text("^[\(total.count) item](inflect: true)")
-                .monospacedDigit()
                 .gridColumnAlignment(.trailing)
             Text(total.bytes.formattedFileSize)
-                .monospacedDigit()
                 .gridColumnAlignment(.trailing)
         }
         // One element for VoiceOver: "Documents, 6 items, 230 MB".
@@ -459,7 +444,7 @@ private struct ChatFileRow: View {
     let showInList: @MainActor (URL) -> Void
 
     /// Keeps a size beside its name in a wide window.
-    static let maxWidth = ChatLayout.cardWidth
+    static let maxWidth = Design.Chat.cardWidth
 
     private var hint: Text {
         if record == nil { return Text("No longer in the list") }
@@ -471,21 +456,20 @@ private struct ChatFileRow: View {
         Button {
             showInList(file.id)
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: Design.Chat.rowGap) {
                 if let record {
                     FileIconView(record: record)
                 } else {
                     Image(systemName: "doc")
-                        .frame(width: 16, height: 16)
+                        .frame(width: Design.Icon.size, height: Design.Icon.size)
                         .accessibilityHidden(true)
                 }
                 Text(file.name)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Spacer(minLength: 12)
+                Spacer(minLength: Design.Space.m)
                 if let size = file.sizeInBytes {
                     Text(size.formattedFileSize)
-                        .monospacedDigit()
                         .foregroundStyle(.secondary)
                 }
             }

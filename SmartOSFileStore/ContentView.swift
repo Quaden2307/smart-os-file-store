@@ -49,12 +49,19 @@ struct ContentView: View {
 
     var body: some View {
         observingChanges(publishingCommandTargets(splitView))
+            // Every number in the window and its sheets, so counts, sizes and dates line up.
+            .monospacedDigit()
     }
 
     private var splitView: some View {
         NavigationSplitView {
-            Sidebar(selection: $section)
-                .navigationSplitViewColumnWidth(min: 150, ideal: 180, max: 260)
+            Sidebar(
+                selection: $section,
+                itemCount: model.itemCount,
+                // A closed log has no count: the list keeps its last runs until a log opens again.
+                cleanupCount: activity.log == nil ? 0 : activityList.runs.count { !$0.isUndo }
+            )
+            .navigationSplitViewColumnWidth(min: 160, ideal: 200, max: 280)
         } detail: {
             detail
         }
@@ -241,9 +248,10 @@ struct ContentView: View {
             Divider()
             ChatSection(chat: chat, files: model, isFocused: $isChatFocused, showInList: showInList, cardActions: cardActions)
         }
-        // Wide enough for all six columns at their ideal widths, so the table never has to
-        // scroll sideways in a window the user has not resized.
-        .frame(minWidth: 1_080, minHeight: 400)
+        // Narrower than the six columns at their ideal widths: the table then scrolls sideways, as
+        // Finder's does, the filter becomes a menu and the toolbar puts what does not fit in its
+        // overflow menu.
+        .frame(minWidth: 720, minHeight: 480)
         // The conversation leaves room for a few rows of the list, the status line and the bar.
         .onGeometryChange(for: CGFloat.self, of: \.size.height) { chat.panelRoom = $0 - 260 }
         .toolbar {
@@ -252,8 +260,11 @@ struct ContentView: View {
                 Button {
                     startTidyNow()
                 } label: {
-                    Label("Tidy Now", systemImage: "sparkles")
+                    Label("Tidy now", systemImage: "checklist")
                 }
+                // The window's one primary action: filled with the accent, its title showing.
+                .labelStyle(.titleAndIcon)
+                .buttonStyle(.borderedProminent)
                 .help(
                     activity.failure == nil
                         ? Text("Check the folder with every cleanup at once (⌘T)")
@@ -275,7 +286,7 @@ struct ContentView: View {
                         .accessibilityHint(display.explanation)
                     }
                 } label: {
-                    Label("Clean Up", systemImage: "wand.and.stars")
+                    Label("Clean up", systemImage: "ellipsis.circle")
                 }
                 .help(
                     activity.failure == nil
@@ -548,7 +559,7 @@ struct ContentView: View {
                 .controlSize(.large)
         } else if model.isEmpty {
             ContentUnavailableView(
-                "Folder Is Empty",
+                "Folder is empty",
                 systemImage: "folder",
                 description: Text("There are no files in this folder.")
             )
@@ -639,6 +650,7 @@ private extension View {
     /// keyboard focus and no VoiceOver attention.
     func placeShown(_ isShown: Bool) -> some View {
         opacity(isShown ? 1 : 0)
+            .motion(Design.Motion.quick, value: isShown)
             .allowsHitTesting(isShown)
             .disabled(!isShown)
             .accessibilityHidden(!isShown)

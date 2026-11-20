@@ -11,25 +11,25 @@ struct TidyNowConfirmationSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "sparkles")
-                .font(.largeTitle)
+        VStack(spacing: Design.Space.l) {
+            Image(systemName: "checklist")
+                .font(Design.Icon.large)
                 .imageScale(.large)
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             Text("\(totals.sentence)?")
-                .font(.headline)
+                .font(Design.Typography.sectionTitle)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
             Text("One Undo puts everything back.")
                 .foregroundStyle(.secondary)
-            HStack(spacing: 12) {
+            HStack(spacing: Design.Space.m) {
                 Spacer()
                 Button(role: .destructive) {
                     dismiss()
                     onConfirm()
                 } label: {
-                    Text("Tidy Up")
+                    Text("Tidy up")
                 }
                 .keyboardShortcut(.delete, modifiers: .command)
                 .help(Text("Carry out everything ticked (⌘⌫)"))
@@ -39,8 +39,8 @@ struct TidyNowConfirmationSheet: View {
                 .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(20)
-        .frame(width: 400)
+        .padding(Design.Space.xl)
+        .frame(width: Design.Size.confirmationSheet)
         .onExitCommand {
             dismiss()
         }
@@ -65,12 +65,10 @@ struct TidyNowSummaryView: View {
             ForEach(result.results, id: \.action) { item in
                 Section(item.action.title) {
                     let done = item.items.filter(\.isDone).count
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: Design.Space.tight) {
                         Text("\(done) done, \(item.skipped.count) skipped, \(item.failed.count) failed")
-                            .monospacedDigit()
                         if item.bytesFreed > 0 {
                             Text("\(item.bytesFreed.formattedFileSize) moved to the Trash")
-                                .monospacedDigit()
                                 .foregroundStyle(.secondary)
                         }
                     }

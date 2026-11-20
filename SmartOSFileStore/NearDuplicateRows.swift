@@ -21,7 +21,7 @@ struct NearDuplicateRow: View {
     private var record: FileRecord { member.record }
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Design.Space.s) {
             // The label is hidden but still read by VoiceOver.
             Toggle(isOn: $isTicked) {
                 Text("Move \(record.displayName) to the Trash")
@@ -32,70 +32,53 @@ struct NearDuplicateRow: View {
             .help(!isTicked && !canTick ? String(localized: "One file of each group always stays, so the last one can’t be ticked.") : "")
             .focused(focusedCheckbox, equals: record.id)
             // One VoiceOver element after the checkbox: name, facts, reason, dates and size.
-            HStack(spacing: 8) {
+            HStack(spacing: Design.Space.s) {
                 FileIconView(record: record)
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
+                VStack(alignment: .leading, spacing: Design.Space.tight) {
+                    HStack(spacing: Design.Space.s) {
                         Text(record.displayName)
                             .lineLimit(1)
                             .truncationMode(.middle)
                         if isNewest {
-                            FactTag(text: Text("Newest"), help: Text("Modified most recently of this group"))
+                            Badge(Text("Newest")).help(Text("Modified most recently of this group"))
                         }
                         if isLargest {
-                            FactTag(text: Text("Largest"), help: Text("The largest file of this group"))
+                            Badge(Text("Largest")).help(Text("The largest file of this group"))
                         }
                     }
                     Text(reason.localizedDescription)
-                        .font(.caption)
+                        .font(Design.Typography.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                    HStack(spacing: 10) {
-                        HStack(spacing: 3) {
+                    HStack(spacing: Design.Space.s) {
+                        HStack(spacing: Design.Space.xs) {
                             Text("Added")
                             DateCell(date: record.dateAdded)
                         }
-                        HStack(spacing: 3) {
+                        HStack(spacing: Design.Space.xs) {
                             Text("Modified")
                             DateCell(date: record.dateModified)
                         }
-                        HStack(spacing: 3) {
+                        HStack(spacing: Design.Space.xs) {
                             Text("Opened")
                             LastOpenedCell(record: record)
                         }
                     }
-                    .font(.caption)
+                    .font(Design.Typography.caption)
                     .foregroundStyle(.secondary)
                     if !member.identicalCopies.isEmpty {
                         Text("^[\(member.identicalCopies.count) identical copy](inflect: true) not listed: Find Duplicates handles those")
-                            .font(.caption)
+                            .font(Design.Typography.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
                 Spacer()
                 Text((record.sizeInBytes ?? 0).formattedFileSize)
-                    .monospacedDigit()
                     .foregroundStyle(.secondary)
-                    .frame(minWidth: 72, alignment: .trailing)
+                    .frame(minWidth: Design.Size.sizeColumn, alignment: .trailing)
             }
             .accessibilityElement(children: .combine)
         }
-    }
-}
-
-/// A small capsule stating a fact about a row.
-private struct FactTag: View {
-    let text: Text
-    let help: Text
-
-    var body: some View {
-        text
-            .font(.caption.weight(.semibold))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .foregroundStyle(.secondary)
-            .background(.quaternary, in: Capsule())
-            .help(help)
     }
 }
 
@@ -129,15 +112,15 @@ struct CompareFilesSheet: View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 ForEach(records) { record in
-                    VStack(spacing: 6) {
+                    VStack(spacing: Design.Space.s) {
                         Text(record.displayName)
-                            .font(.headline)
+                            .font(Design.Typography.sectionTitle)
                             .lineLimit(1)
                             .truncationMode(.middle)
                         QuickLookPane(url: record.url)
                             .accessibilityLabel(Text("Preview of \(record.displayName)"))
                     }
-                    .padding(8)
+                    .padding(Design.Space.s)
                     if record.id != records.last?.id {
                         Divider()
                     }
@@ -151,7 +134,7 @@ struct CompareFilesSheet: View {
                 }
                 .keyboardShortcut(.cancelAction)
             }
-            .padding(12)
+            .padding(Design.Space.m)
         }
         .frame(minWidth: 820, idealWidth: 1000, minHeight: 520, idealHeight: 640)
     }

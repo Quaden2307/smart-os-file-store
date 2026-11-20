@@ -9,30 +9,24 @@ struct KeptFileRow: View {
     let record: FileRecord
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Design.Space.s) {
             // Takes the checkbox's place so the names line up.
             Color.clear
-                .frame(width: DuplicateFileRow.checkboxWidth, height: 1)
+                .frame(width: Design.Size.checkbox, height: 0)
                 .accessibilityHidden(true)
             FileIconView(record: record)
             Text(record.displayName)
-                .font(.body)
+                .font(Design.Typography.body)
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            Text("Keep")
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .foregroundStyle(.secondary)
-                .background(.quaternary, in: Capsule())
+            Badge(Text("Keep"))
             Spacer()
             if let size = record.formattedSize {
                 Text(size)
-                    .font(.body)
-                    .monospacedDigit()
+                    .font(Design.Typography.body)
                     .foregroundStyle(.secondary)
-                    .frame(minWidth: 72, alignment: .trailing)
+                    .frame(minWidth: Design.Size.sizeColumn, alignment: .trailing)
             }
         }
         .accessibilityElement(children: .combine)
@@ -41,9 +35,6 @@ struct KeptFileRow: View {
 
 /// A copy proposed for the Trash: its checkbox, name, reason, Date Added and size.
 struct DuplicateFileRow: View {
-    /// Width of a regular checkbox, which the kept row leaves blank.
-    static let checkboxWidth: CGFloat = 14
-
     let record: FileRecord
     let sizeInBytes: Int64
     let reason: ProposedChange.Reason
@@ -52,7 +43,7 @@ struct DuplicateFileRow: View {
     let focusedCheckbox: FocusState<URL?>.Binding
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Design.Space.s) {
             // The label is hidden but still read by VoiceOver.
             Toggle(isOn: $isTicked) {
                 Text("Move \(record.displayName) to the Trash")
@@ -62,14 +53,14 @@ struct DuplicateFileRow: View {
             .disabled(!isEnabled)
             .focused(focusedCheckbox, equals: record.id)
             // One VoiceOver element after the checkbox: name, reason, date and size in one breath.
-            HStack(spacing: 8) {
+            HStack(spacing: Design.Space.s) {
                 FileIconView(record: record)
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: Design.Space.tight) {
                     Text(record.displayName)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Text(reason.localizedDescription)
-                        .font(.caption)
+                        .font(Design.Typography.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -77,9 +68,8 @@ struct DuplicateFileRow: View {
                 DateCell(date: record.dateAdded)
                     .foregroundStyle(.secondary)
                 Text(sizeInBytes.formattedFileSize)
-                    .monospacedDigit()
                     .foregroundStyle(.secondary)
-                    .frame(minWidth: 72, alignment: .trailing)
+                    .frame(minWidth: Design.Size.sizeColumn, alignment: .trailing)
             }
             .accessibilityElement(children: .combine)
         }
@@ -97,7 +87,7 @@ struct ChangeRow: View {
     let focusedCheckbox: FocusState<URL?>.Binding
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Design.Space.s) {
             // The label is hidden but still read by VoiceOver.
             Toggle(isOn: $isTicked) {
                 Text(change.checkboxLabel(in: folderURL))
@@ -107,24 +97,19 @@ struct ChangeRow: View {
             .disabled(!isEnabled)
             .focused(focusedCheckbox, equals: change.id)
             // One VoiceOver element after the checkbox: names, reason, date and size in one breath.
-            HStack(spacing: 8) {
+            HStack(spacing: Design.Space.s) {
                 FileIconView(record: change.record)
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) {
+                VStack(alignment: .leading, spacing: Design.Space.tight) {
+                    HStack(spacing: Design.Space.s) {
                         names
                         if change.reason.isPossibleMatch {
                             // Left unticked: only the name matches, so the user decides.
-                            Text("Possible match")
-                                .font(.caption.weight(.semibold))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .foregroundStyle(.secondary)
-                                .background(.quaternary, in: Capsule())
+                            Badge(Text("Possible match"))
                         }
                     }
                     // Two lines, so a reason's second sentence ("movie.mp4 is next to it.") shows.
                     Text(change.reason.localizedDescription)
-                        .font(.caption)
+                        .font(Design.Typography.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
@@ -132,9 +117,8 @@ struct ChangeRow: View {
                 DateCell(date: change.record.dateAdded)
                     .foregroundStyle(.secondary)
                 Text(change.sizeInBytes.formattedFileSize)
-                    .monospacedDigit()
                     .foregroundStyle(.secondary)
-                    .frame(minWidth: 72, alignment: .trailing)
+                    .frame(minWidth: Design.Size.sizeColumn, alignment: .trailing)
             }
             .accessibilityElement(children: .combine)
         }
@@ -147,7 +131,7 @@ struct ChangeRow: View {
         if case .rename(to: let newName) = change.operation {
             let difference = NameDifference(from: change.record.displayName, to: newName)
             // Two lines each before truncating, so the marked part is rarely cut out of view.
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: Design.Space.xs) {
                 Text(Self.marked(difference, old: true))
                     .lineLimit(2)
                     .truncationMode(.middle)
@@ -158,7 +142,7 @@ struct ChangeRow: View {
             }
             .layoutPriority(1)
         } else if let destination = change.destinationDisplayName(in: folderURL) {
-            HStack(spacing: 4) {
+            HStack(spacing: Design.Space.xs) {
                 Text(change.record.displayName)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -176,7 +160,7 @@ struct ChangeRow: View {
 
     private var arrow: some View {
         Image(systemName: "arrow.right")
-            .font(.caption)
+            .font(Design.Typography.caption)
             .foregroundStyle(.secondary)
             .accessibilityLabel(Text("to", comment: "Read by VoiceOver between a file’s current name and where a rename or a move would put it"))
     }
@@ -202,7 +186,7 @@ struct SkippedFileRow: View {
     let action: CleanupAction
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Design.Space.s) {
             Image(systemName: "exclamationmark.triangle")
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)

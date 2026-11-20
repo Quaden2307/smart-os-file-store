@@ -52,3 +52,4 @@ One short record per segment for each decision a reader of the code would otherw
 - [0021. Chat context, duplicates and the chat's look](0021-chat-context-and-duplicates.md)
 - [0022. Chat memory, "no open recorded" and the Apple Intelligence label](0022-chat-memory.md)
 - [0023. Cleanups from the chat bar](0023-cleanups-from-the-chat-bar.md)
+- [0024. The design system and the window shell](0024-design-system-and-window-shell.md)

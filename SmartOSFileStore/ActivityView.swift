@@ -65,7 +65,7 @@ struct ActivityView: View {
                 .controlSize(.large)
         } else if model.runs.isEmpty {
             ContentUnavailableView(
-                "No Activity Yet",
+                "No activity yet",
                 systemImage: "clock",
                 description: Text("Each cleanup you confirm is listed here, with what happened to every file.")
             )
@@ -110,6 +110,7 @@ struct ActivityView: View {
                 }
             }
         }
+        .motion(Design.Motion.standard, value: model.expanded)
         .contextMenu(forSelectionType: ActivityRowID.self) { rows in
             let urls = model.revealableURLs(for: rows)
             Button("Reveal in Finder") {

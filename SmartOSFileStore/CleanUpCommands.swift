@@ -29,7 +29,7 @@ struct CleanUpCommands: Commands {
             Button {
                 target?.startTidyNow()
             } label: {
-                Label("Tidy Now", systemImage: "sparkles")
+                Label("Tidy Now", systemImage: "checklist")
             }
             .keyboardShortcut("t", modifiers: .command)
             .disabled(target?.canStart != true)

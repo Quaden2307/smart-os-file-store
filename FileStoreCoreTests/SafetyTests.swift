@@ -14,7 +14,7 @@ struct SafetyTests {
 
     /// A Swift source file of a production target, with comments removed so that a word in a doc
     /// comment never counts as a call.
-    private struct Source {
+    struct Source {
         let target: String
         let name: String
         let code: String
@@ -111,7 +111,7 @@ struct SafetyTests {
         throw SourceScanError.projectRootNotFound
     }
 
-    private static func sources(of target: String) throws -> [Source] {
+    static func sources(of target: String) throws -> [Source] {
         let folder = try projectRoot().appending(path: target, directoryHint: .isDirectory)
         let names = try FileManager.default.contentsOfDirectory(atPath: folder.path(percentEncoded: false))
             .filter { $0.hasSuffix(".swift") }
@@ -131,7 +131,7 @@ struct SafetyTests {
 
     /// `\b` with simple word boundaries. Under the default Unicode rules `default.trashItem` is one
     /// word, so no boundary would sit before the call.
-    private static func regex(_ pattern: String) throws -> Regex<AnyRegexOutput> {
+    static func regex(_ pattern: String) throws -> Regex<AnyRegexOutput> {
         try Regex(pattern).wordBoundaryKind(.simple)
     }
 

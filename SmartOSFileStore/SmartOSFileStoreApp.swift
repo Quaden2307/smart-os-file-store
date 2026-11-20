@@ -10,8 +10,9 @@ struct SmartOSFileStoreApp: App {
             ContentView()
                 .environment(activity)
         }
-        // The six columns at their ideal widths, plus the sidebar.
-        .defaultSize(width: 1_320, height: 640)
+        // The six columns at their ideal widths, plus the sidebar. The system keeps the size and the
+        // sidebar's width the user leaves it at.
+        .defaultSize(width: 1_280, height: 720)
         .commands {
             UndoCommands()
             RevealInFinderCommands()

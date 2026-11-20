@@ -10,7 +10,7 @@ struct FileIconView: View {
     var body: some View {
         Image(nsImage: FileIconCache.shared.icon(for: record))
             .resizable()
-            .frame(width: 16, height: 16)
+            .frame(width: Design.Icon.size, height: Design.Icon.size)
             .accessibilityHidden(true)
     }
 }

@@ -25,10 +25,10 @@ struct ChatCleanupCard: View {
     @Environment(ActivityLogModel.self) private var activity
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Design.Chat.cardGap) {
+            VStack(alignment: .leading, spacing: Design.Space.tight) {
                 Text("What I understood")
-                    .font(.caption)
+                    .font(Design.Chat.caption)
                     .foregroundStyle(.secondary)
                 // The words may include text the model chose (a name to look for), so they go in
                 // verbatim: nothing in them is read as Markdown or as a link.
@@ -51,9 +51,9 @@ struct ChatCleanupCard: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(12)
-        .frame(maxWidth: ChatLayout.cardWidth, alignment: .leading)
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.separator))
+        .padding(Design.Space.m)
+        .frame(maxWidth: Design.Chat.cardWidth, alignment: .leading)
+        .overlay(RoundedRectangle(cornerRadius: Design.Radius.card, style: .continuous).strokeBorder(Design.Colour.hairline))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("Cleanup preview"))
     }
@@ -88,11 +88,10 @@ struct ChatCleanupCard: View {
                     Text("Ticked: \(model.totals.sentence). Nothing changes until you confirm.")
                 }
             }
-            .monospacedDigit()
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
         }
-        HStack(spacing: 8) {
+        HStack(spacing: Design.Space.s) {
             if isOutOfDate {
                 if chat.refreshing.contains(proposal.id) {
                     ProgressView()
@@ -122,13 +121,12 @@ struct ChatCleanupCard: View {
     // MARK: - Running
 
     private func running(_ model: TidyNowModel, _ progress: CleanupExecutionProgress) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Design.Space.m) {
             let current = min(progress.itemsCompleted + 1, progress.itemsTotal)
             ProgressView(value: progress.fractionCompleted)
                 .frame(maxWidth: 200)
                 .accessibilityLabel(Text("Progress cleaning up"))
             Text("Cleaning up item \(current) of \(progress.itemsTotal)…")
-                .monospacedDigit()
             Spacer()
             Button("Stop") {
                 model.cancel()
@@ -157,21 +155,19 @@ struct ChatCleanupCard: View {
         ForEach(result.results, id: \.action) { item in
             HStack(alignment: .firstTextBaseline) {
                 Label(item.action.title, systemImage: item.action.display.symbol)
-                Spacer(minLength: 12)
+                Spacer(minLength: Design.Space.m)
                 Text("\(item.items.filter(\.isDone).count) done, \(item.skipped.count) skipped, \(item.failed.count) failed")
-                    .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
             .accessibilityElement(children: .combine)
         }
-        HStack(spacing: 8) {
+        HStack(spacing: Design.Space.s) {
             Text(result.bytesFreed > 0
                 ? "\(result.bytesFreed.formattedFileSize) moved to the Trash. Every file is listed in Activity."
                 : "Every file is listed in Activity.")
-                .monospacedDigit()
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 12)
+            Spacer(minLength: Design.Space.m)
             // The log's own record of the run decides, so an undo from Edit > Undo or from Activity
             // shows here too. Only the newest cleanup is offered, as Edit > Undo offers it.
             if let runID = result.runID, let run = activity.latestCleanupRun, run.id == runID {
@@ -202,7 +198,7 @@ private struct CardCategoryRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             Label(category.title, systemImage: category.action.display.symbol)
-            Spacer(minLength: 12)
+            Spacer(minLength: Design.Space.m)
             Group {
                 if bytes > 0 {
                     Text("^[\(category.changes.count) item](inflect: true), \(bytes.formattedFileSize)")
@@ -210,12 +206,10 @@ private struct CardCategoryRow: View {
                     Text("^[\(category.changes.count) item](inflect: true)")
                 }
             }
-            .monospacedDigit()
             .foregroundStyle(.secondary)
             if tickedCount < category.changes.count {
                 Text(tickedCount == 0 ? "for you to review" : "\(tickedCount) ticked")
-                    .font(.caption)
-                    .monospacedDigit()
+                    .font(Design.Chat.caption)
                     .foregroundStyle(.secondary)
             }
         }

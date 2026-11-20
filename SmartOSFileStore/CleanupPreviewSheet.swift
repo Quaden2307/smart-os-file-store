@@ -68,13 +68,13 @@ struct CleanupPreviewSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-                .padding(16)
+                .padding(Design.Space.l)
             Divider()
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
             footer
-                .padding(12)
+                .padding(Design.Space.m)
         }
         .frame(minWidth: 620, idealWidth: 700, minHeight: 420, idealHeight: 540)
         .sheet(item: Binding(
@@ -115,9 +115,9 @@ struct CleanupPreviewSheet: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Design.Space.xs) {
             Text(plan.action.title)
-                .font(.title2.weight(.semibold))
+                .font(Design.Typography.windowTitle)
                 .accessibilityAddTraits(.isHeader)
             if plan.archiveProblem != nil {
                 Text("Nothing was archived")
@@ -157,13 +157,13 @@ struct CleanupPreviewSheet: View {
             CleanupSummaryView(result: result)
         } else if let problem = plan.archiveProblem {
             ContentUnavailableView(
-                "Old downloads Can’t Be Used",
+                "Old downloads can’t be used",
                 systemImage: "exclamationmark.triangle",
                 description: Text(problem.localizedDescription)
             )
         } else if plan.isEmpty, plan.skippedItems.isEmpty, model.keptCount > 0 {
             ContentUnavailableView(
-                "Nothing Left to Clean Up",
+                "Nothing left to clean up",
                 systemImage: "checkmark.circle",
                 description: Text("You kept every file this cleanup proposed.")
             )
@@ -202,7 +202,7 @@ struct CleanupPreviewSheet: View {
                         Text(group.cleanedName)
                     } footer: {
                         Text("One file of each group always stays, so the last one can’t be ticked.")
-                            .font(.caption)
+                            .font(Design.Typography.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -251,7 +251,7 @@ struct CleanupPreviewSheet: View {
                 }
             }
             if !plan.skippedItems.isEmpty {
-                Section("Not Checked") {
+                Section("Not checked") {
                     ForEach(plan.skippedItems) { item in
                         SkippedFileRow(item: item, action: plan.action)
                     }
@@ -352,10 +352,9 @@ struct CleanupPreviewSheet: View {
     }
 
     private var footer: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Design.Space.s) {
             if model.isReviewing, let share = plan.largeDownloadsShare {
                 Text("These take up \(share.listed.formattedFileSize) on disk, \(share.fraction.formatted(.percent.precision(.fractionLength(0)))) of the \(share.total.formattedFileSize) taken by the files at the top of this folder.")
-                    .monospacedDigit()
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -367,16 +366,15 @@ struct CleanupPreviewSheet: View {
     private var footerControls: some View {
         switch model.phase {
         case .reviewing where onChoose != nil:
-            HStack(spacing: 12) {
+            HStack(spacing: Design.Space.m) {
                 if !plan.isEmpty {
                     selectButtons
                     Text("^[\(model.tickedCount) change](inflect: true) ticked")
-                        .monospacedDigit()
                         .foregroundStyle(.secondary)
                 }
                 skippedNote
                 Spacer()
-                Button("Back to Tidy Now") {
+                Button("Back to Tidy now") {
                     close()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -389,7 +387,7 @@ struct CleanupPreviewSheet: View {
                 doneButton
             }
         case .reviewing where model.canBeApplied:
-            HStack(spacing: 12) {
+            HStack(spacing: Design.Space.m) {
                 selectButtons
                 Group {
                     if model.operation == .rename {
@@ -398,7 +396,6 @@ struct CleanupPreviewSheet: View {
                         Text("^[\(model.tickedCount) file](inflect: true) (\(model.tickedBytes.formattedFileSize)) selected")
                     }
                 }
-                .monospacedDigit()
                 .foregroundStyle(.secondary)
                 skippedNote
                 Spacer()
@@ -423,23 +420,21 @@ struct CleanupPreviewSheet: View {
             }
         case .reviewing:
             // A plan with a change its action may not make: previewed only, and Done closes.
-            HStack(spacing: 12) {
+            HStack(spacing: Design.Space.m) {
                 selectButtons
                 Text("^[\(model.tickedCount) change](inflect: true) selected")
-                    .monospacedDigit()
                     .foregroundStyle(.secondary)
                 skippedNote
                 Spacer()
                 doneButton
             }
         case .executing(let progress):
-            HStack(spacing: 12) {
+            HStack(spacing: Design.Space.m) {
                 let current = min(progress.itemsCompleted + 1, progress.itemsTotal)
                 ProgressView(value: progress.fractionCompleted)
-                    .frame(maxWidth: 240)
+                    .frame(maxWidth: Design.Size.progressBar)
                     .accessibilityLabel(progressLabel)
                 progressText(current: current, total: progress.itemsTotal)
-                    .monospacedDigit()
                 Spacer()
             }
         case .finished(let result):
@@ -500,13 +495,13 @@ struct CleanupPreviewSheet: View {
         // Near-duplicates and large downloads are ticked one by one, after looking: Select All would
         // tick none of them.
         if !plan.changes.contains(where: \.reason.isReviewOnly) {
-            Button("Select All") {
+            Button("Select all") {
                 model.selectAll()
             }
             .keyboardShortcut("a", modifiers: .command)
             .help(model.isGroupedByDuplicates ? Text("Tick every duplicate (⌘A)") : Text("Tick every change (⌘A)"))
         }
-        Button("Select None") {
+        Button("Select none") {
             model.selectNone()
         }
         // Finder's shortcut for Deselect All. Shift-Command-A shows Activity.

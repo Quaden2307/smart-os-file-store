@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The places the main window can show, listed in its sidebar.
-enum SidebarSection: Hashable, CaseIterable {
+enum SidebarSection: Hashable {
     /// The scanned folder's files.
     case downloads
 
@@ -27,19 +27,35 @@ enum SidebarSection: Hashable, CaseIterable {
     }
 }
 
-/// The main window's sidebar: one row per place. Arrow keys move between them once the sidebar has
-/// keyboard focus (Tab), as in Finder.
+/// The main window's sidebar: one row per place, each with a count on its right, under a quiet
+/// heading. Arrow keys move between them once the sidebar has keyboard focus (Tab), as in Finder.
 struct Sidebar: View {
     @Binding var selection: SidebarSection
 
+    /// Items at the top level of the scanned folder.
+    let itemCount: Int
+
+    /// Cleanups in the activity log, undone or not.
+    let cleanupCount: Int
+
     var body: some View {
         List(selection: rowSelection) {
-            ForEach(SidebarSection.allCases, id: \.self) { section in
-                Label(section.title, systemImage: section.systemImage)
-                    .tag(section)
+            Section("Folders") {
+                row(.downloads, count: itemCount, spoken: Text("^[\(itemCount) item](inflect: true)"))
+            }
+            Section("History") {
+                row(.activity, count: cleanupCount, spoken: Text("^[\(cleanupCount) cleanup](inflect: true)"))
             }
         }
         .accessibilityLabel("Places")
+    }
+
+    /// A count of zero shows nothing, as the system's badges do.
+    private func row(_ section: SidebarSection, count: Int, spoken: Text) -> some View {
+        Label(section.title, systemImage: section.systemImage)
+            .badge(count)
+            .accessibilityValue(spoken)
+            .tag(section)
     }
 
     /// A list may report no selection (Command-click on the selected row); one place is always shown.

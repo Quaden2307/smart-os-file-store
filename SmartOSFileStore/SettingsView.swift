@@ -59,7 +59,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("Activity Log") {
+            Section("Activity log") {
                 if let databaseURL = activity.location?.databaseURL {
                     LabeledContent("Stored in") {
                         Text((databaseURL.path(percentEncoded: false) as NSString).abbreviatingWithTildeInPath)
@@ -80,6 +80,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .monospacedDigit()
         .frame(width: 520)
         .fixedSize(horizontal: false, vertical: true)
         .task {

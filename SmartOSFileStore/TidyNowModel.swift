@@ -39,7 +39,7 @@ final class TidyNowModel {
         }
 
         var title: String {
-            kind == .possibleInstallers ? String(localized: "Possible Installer Matches") : action.title
+            kind == .possibleInstallers ? String(localized: "Possible installer matches") : action.title
         }
     }
 

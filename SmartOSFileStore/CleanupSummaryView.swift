@@ -11,33 +11,33 @@ struct CleanupSummaryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 6) {
+            VStack(spacing: Design.Space.s) {
                 Image(systemName: isRename ? "pencil" : isArchive ? "archivebox" : "trash")
-                    .font(.largeTitle)
+                    .font(Design.Icon.large)
                     .imageScale(.large)
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
                 if isRename, !result.renamed.isEmpty {
                     Text("^[\(result.renamed.count) file](inflect: true) renamed")
-                        .font(.title2.weight(.semibold))
+                        .font(Design.Typography.windowTitle)
                         .accessibilityAddTraits(.isHeader)
                     Text("Undo gives the files their old names back.")
                         .foregroundStyle(.secondary)
                 } else if isRename {
-                    Text("No Files Were Renamed")
-                        .font(.title2.weight(.semibold))
+                    Text("No files were renamed")
+                        .font(Design.Typography.windowTitle)
                         .accessibilityAddTraits(.isHeader)
                     Text("Nothing in the folder was changed.")
                         .foregroundStyle(.secondary)
                 } else if isArchive, result.moved.isEmpty, result.trashedCount > 0 {
                     Text("^[\(result.trashedCount) identical copy](inflect: true) moved to the Trash")
-                        .font(.title2.weight(.semibold))
+                        .font(Design.Typography.windowTitle)
                         .accessibilityAddTraits(.isHeader)
                     Text("Old downloads already held them. Undo puts them back where they were.")
                         .foregroundStyle(.secondary)
                 } else if isArchive, !result.moved.isEmpty {
                     Text("^[\(result.moved.count) file](inflect: true) moved into Old downloads")
-                        .font(.title2.weight(.semibold))
+                        .font(Design.Typography.windowTitle)
                         .accessibilityAddTraits(.isHeader)
                     if result.trashedCount > 0 {
                         Text("^[\(result.trashedCount) identical copy](inflect: true) moved to the Trash. Undo puts every file back where it was.")
@@ -48,27 +48,27 @@ struct CleanupSummaryView: View {
                     }
                 } else if result.trashedCount > 0 {
                     Text("^[\(result.trashedCount) file](inflect: true) moved to the Trash")
-                        .font(.title2.weight(.semibold))
+                        .font(Design.Typography.windowTitle)
                         .accessibilityAddTraits(.isHeader)
                     Text("\(result.bytesFreed.formattedFileSize) moved to the Trash. The space is free once you empty the Trash; until then you can put the files back.")
                         .foregroundStyle(.secondary)
                 } else {
-                    Text("No Files Were Moved")
-                        .font(.title2.weight(.semibold))
+                    Text("No files were moved")
+                        .font(Design.Typography.windowTitle)
                         .accessibilityAddTraits(.isHeader)
                     Text("Nothing in the folder was changed.")
                         .foregroundStyle(.secondary)
                 }
             }
             .multilineTextAlignment(.center)
-            .padding(24)
+            .padding(Design.Space.xl)
             .frame(maxWidth: .infinity)
             .accessibilityElement(children: .combine)
 
             if let logFailure = result.logFailure {
                 LogFailureNotice(failure: logFailure, result: result)
-                    .padding(.horizontal, 24)
-                    .padding(.bottom, 16)
+                    .padding(.horizontal, Design.Space.xl)
+                    .padding(.bottom, Design.Space.l)
             }
 
             if result.leftAlone.isEmpty {
@@ -80,7 +80,7 @@ struct CleanupSummaryView: View {
                             NotMovedRow(item: item, action: result.action)
                         }
                     } header: {
-                        isRename ? Text("Not Renamed") : Text("Not Moved")
+                        isRename ? Text("Not renamed") : Text("Not moved")
                     }
                 }
                 .accessibilityLabel(isRename ? Text("Files not renamed") : Text("Files not moved"))
@@ -95,7 +95,7 @@ struct NotMovedRow: View {
     let action: CleanupAction
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: Design.Space.s) {
             FileIconView(record: item.change.record)
             Text(item.change.record.displayName)
                 .lineLimit(1)
@@ -117,11 +117,11 @@ private struct LogFailureNotice: View {
     let result: CleanupResult
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: Design.Space.s) {
             Image(systemName: "exclamationmark.triangle")
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Design.Space.tight) {
                 if untouchedCount == result.items.count {
                     Text("The activity log couldn’t be written, so nothing was changed.")
                         .fontWeight(.semibold)
@@ -143,7 +143,7 @@ private struct LogFailureNotice: View {
             .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
-        .font(.callout)
+        .font(Design.Typography.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
     }

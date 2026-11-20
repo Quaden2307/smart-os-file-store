@@ -6,19 +6,28 @@ struct FileFilterBar: View {
 
     var body: some View {
         HStack {
-            Picker("Filter", selection: $filter) {
-                ForEach(FileListFilter.options) { option in
-                    Text(option.title)
-                        .tag(option)
-                }
+            // Segments while the window has room for all of them, a pop-up menu when it does not.
+            ViewThatFits(in: .horizontal) {
+                picker
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+                picker
+                    .pickerStyle(.menu)
+                    .fixedSize()
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-            .help("Show only the files with a mark")
-            Spacer()
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .barInset()
+    }
+
+    private var picker: some View {
+        Picker("Filter", selection: $filter) {
+            ForEach(FileListFilter.options) { option in
+                Text(option.title)
+                    .tag(option)
+            }
+        }
+        .labelsHidden()
+        .help("Show only the files with a mark")
     }
 }

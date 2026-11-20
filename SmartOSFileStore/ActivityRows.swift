@@ -6,7 +6,7 @@ import SwiftUI
 /// run it undid, with no button.
 struct ActivityRunRow: View {
     /// How far a cleanup's files are set in under it.
-    static let itemIndent: CGFloat = 22
+    static let itemIndent = Design.Icon.size + Design.Space.s
 
     let run: ActivityRun
     let isExpanded: Bool
@@ -15,58 +15,58 @@ struct ActivityRunRow: View {
     let undo: @MainActor () -> Void
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: Design.Space.s) {
             Button(action: toggle) {
                 Text(Image(systemName: "chevron.right"))
                     .fontWeight(.semibold)
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    .frame(width: 14)
+                    .motion(Design.Motion.quick, value: isExpanded)
+                    .frame(width: Design.Icon.size)
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
             .help(isExpanded ? Text("Hide the files") : Text("Show the files"))
             // VoiceOver offers the same through the row's own action, below.
             .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
+            VStack(alignment: .leading, spacing: Design.Space.tight) {
+                HStack(alignment: .firstTextBaseline, spacing: Design.Space.s) {
                     Text(run.title)
                         .fontWeight(.semibold)
                     if let stateLabel = run.stateLabel {
                         Text(stateLabel)
-                            .font(.caption)
+                            .font(Design.Typography.caption)
                             .foregroundStyle(.secondary)
                     }
                     if let originLabel = run.originLabel {
                         Text(originLabel)
-                            .font(.caption)
+                            .font(Design.Typography.caption)
                             .foregroundStyle(.secondary)
                     }
                     if let undoLabel = run.undoLabel {
                         Text(undoLabel)
-                            .font(.caption)
+                            .font(Design.Typography.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
                 counts
-                    .font(.callout)
+                    .font(Design.Typography.secondary)
                     .foregroundStyle(.secondary)
-                    .monospacedDigit()
             }
-            Spacer(minLength: 12)
+            Spacer(minLength: Design.Space.m)
             UndoButton(availability: undoAvailability, help: Text("Put this cleanup’s files back where they were"), undo: undo)
             DateCell(date: run.startedAt)
                 .foregroundStyle(.secondary)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, Design.Space.tight)
         .accessibilityElement(children: .combine)
-        .accessibilityAction(named: isExpanded ? Text("Hide Files") : Text("Show Files"), toggle)
+        .accessibilityAction(named: isExpanded ? Text("Hide files") : Text("Show files"), toggle)
         .modifier(UndoAccessibilityAction(availability: undoAvailability, undo: undo))
     }
 
     @ViewBuilder
     private var counts: some View {
         if run.isUndo {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: Design.Space.s) {
                 Text("^[\(run.doneCount) file](inflect: true) put back")
                 if run.leftAloneCount > 0 {
                     separator
@@ -78,7 +78,7 @@ struct ActivityRunRow: View {
                 }
             }
         } else {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: Design.Space.s) {
                 Text("^[\(run.doneCount) file](inflect: true) cleaned up")
                 if run.leftAloneCount > 0 {
                     separator
@@ -107,16 +107,16 @@ struct ActivityChangeRow: View {
     let undo: @MainActor () -> Void
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: Design.Space.s) {
             Image(systemName: change.symbolName)
                 .foregroundStyle(.secondary)
-                .frame(width: 18)
+                .frame(width: Design.Icon.column)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Design.Space.tight) {
                 Text(change.displayName(in: run))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: Design.Space.s) {
                     Text(change.operationTitle(in: run))
                     if let reason = change.reason {
                         Text(verbatim: "·")
@@ -127,11 +127,11 @@ struct ActivityChangeRow: View {
                             .truncationMode(.middle)
                     }
                 }
-                .font(.callout)
+                .font(Design.Typography.secondary)
                 .foregroundStyle(.secondary)
             }
-            Spacer(minLength: 12)
-            VStack(alignment: .trailing, spacing: 2) {
+            Spacer(minLength: Design.Space.m)
+            VStack(alignment: .trailing, spacing: Design.Space.tight) {
                 Text(change.outcomeDescription(in: run))
                     .multilineTextAlignment(.trailing)
                 if let undoneAt = change.undoneAt {
@@ -139,14 +139,13 @@ struct ActivityChangeRow: View {
                         .foregroundStyle(.secondary)
                 }
                 Text(change.attemptedAt, format: .dateTime.hour().minute().second())
-                    .font(.caption)
-                    .monospacedDigit()
+                    .font(Design.Typography.caption)
                     .foregroundStyle(.secondary)
             }
-            .font(.callout)
+            .font(Design.Typography.secondary)
             UndoButton(availability: undoAvailability, help: Text("Put this file back where it was"), undo: undo)
         }
-        .padding(.vertical, 1)
+        .padding(.vertical, Design.Space.tight)
         .help(change.originalPath)
         .accessibilityElement(children: .combine)
         .modifier(UndoAccessibilityAction(availability: undoAvailability, undo: undo))
@@ -161,7 +160,7 @@ private struct UndoButton: View {
     let undo: @MainActor () -> Void
 
     /// Wide enough for a short reason, so the rows' dates stay lined up.
-    private static let width: CGFloat = 170
+    private static let width: CGFloat = 172
 
     var body: some View {
         switch availability {
@@ -178,12 +177,12 @@ private struct UndoButton: View {
                 .help(help)
                 .frame(width: Self.width, alignment: .trailing)
         case .unavailable(let reason):
-            VStack(alignment: .trailing, spacing: 2) {
+            VStack(alignment: .trailing, spacing: Design.Space.tight) {
                 Button("Undo") {}
                     .controlSize(.small)
                     .disabled(true)
                 Text(reason)
-                    .font(.caption)
+                    .font(Design.Typography.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.trailing)
                     .fixedSize(horizontal: false, vertical: true)

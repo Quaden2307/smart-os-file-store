@@ -23,7 +23,7 @@ struct ScanErrorView: View {
             if let privacySettingsURL {
                 // The way out of a permission problem, so it answers Return; Try Again keeps the
                 // toolbar's Command-R.
-                Button("Open Privacy Settings") {
+                Button("Open privacy settings") {
                     openURL(privacySettingsURL)
                 }
                 .buttonStyle(.borderedProminent)
@@ -31,7 +31,7 @@ struct ScanErrorView: View {
                 .help("Open the Files & Folders privacy settings in System Settings (Return)")
             }
             if let retry {
-                let button = Button("Try Again", action: retry)
+                let button = Button("Try again", action: retry)
                     .help("Scan the folder again (⌘R)")
                 if privacySettingsURL == nil {
                     button.keyboardShortcut(.defaultAction)

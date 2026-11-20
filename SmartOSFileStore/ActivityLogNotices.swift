@@ -14,13 +14,13 @@ struct ActivityLogNotices: View {
         }
         if let setAsideURL = activity.setAsideURL {
             Divider()
-            HStack(spacing: 10) {
+            HStack(spacing: Design.Space.s) {
                 Image(systemName: "checkmark.circle")
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
                 Text("The old activity log is kept as \(setAsideURL.lastPathComponent).")
                 Spacer()
-                Button("Show in Finder") {
+                Button("Reveal in Finder") {
                     RevealInFinder.reveal([setAsideURL])
                 }
                 .help("Show the old activity log in Finder")
@@ -29,9 +29,8 @@ struct ActivityLogNotices: View {
                 }
                 .help("Hide this message")
             }
-            .font(.callout)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .font(Design.Typography.secondary)
+            .barInset()
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Activity log notice")
         }
@@ -45,14 +44,14 @@ struct ActivityLogRecoveryButtons: View {
 
     var body: some View {
         if activity.canRetry {
-            Button("Try Again") {
+            Button("Try again") {
                 activity.retry()
             }
             .help("Open the activity log again")
             .disabled(activity.isRecovering)
         }
         if failure.canStartFresh {
-            Button("Start a Fresh Log") {
+            Button("Start a fresh log") {
                 activity.startFresh()
             }
             .help("Keep the existing log file under a new name and start an empty one. The total moved to the Trash starts again from zero.")
@@ -67,23 +66,23 @@ struct ActivityLogProblemBanner: View {
     let failure: ActivityLogFailure
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .firstTextBaseline, spacing: Design.Space.s) {
             Image(systemName: "exclamationmark.triangle")
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Design.Space.tight) {
                 Text(failure.title)
                     .fontWeight(.semibold)
                 Text(failure.message)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 12)
+            Spacer(minLength: Design.Space.m)
             ActivityLogRecoveryButtons(activity: activity, failure: failure)
         }
-        .font(.callout)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .font(Design.Typography.secondary)
+        .padding(.horizontal, Design.Space.m)
+        .padding(.vertical, Design.Space.s)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Activity log problem")
     }
@@ -99,7 +98,7 @@ struct ActivityLogUnavailableSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             ContentUnavailableView {
-                Label("Nothing Can Be Cleaned Up Right Now", systemImage: "exclamationmark.triangle")
+                Label("Nothing can be cleaned up right now", systemImage: "exclamationmark.triangle")
             } description: {
                 Text("The activity log isn’t working, and nothing is changed that can’t be recorded. Close this and see the message at the bottom of the window.")
             }
@@ -111,7 +110,7 @@ struct ActivityLogUnavailableSheet: View {
                 }
                 .keyboardShortcut(.defaultAction)
             }
-            .padding(12)
+            .padding(Design.Space.m)
         }
         .frame(minWidth: 460, minHeight: 260)
         .onExitCommand {

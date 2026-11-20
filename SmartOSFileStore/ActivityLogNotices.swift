@@ -14,12 +14,10 @@ struct ActivityLogNotices: View {
         }
         if let setAsideURL = activity.setAsideURL {
             Divider()
-            HStack(spacing: Design.Space.s) {
-                Image(systemName: "checkmark.circle")
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                Text("The old activity log is kept as \(setAsideURL.lastPathComponent).")
-                Spacer()
+            StateBar(
+                symbol: "checkmark.circle",
+                message: Text("The old activity log was saved as \(setAsideURL.lastPathComponent).")
+            ) {
                 Button("Reveal in Finder") {
                     RevealInFinder.reveal([setAsideURL])
                 }
@@ -29,7 +27,6 @@ struct ActivityLogNotices: View {
                 }
                 .help("Hide this message")
             }
-            .font(Design.Typography.secondary)
             .barInset()
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Activity log notice")
@@ -54,7 +51,7 @@ struct ActivityLogRecoveryButtons: View {
             Button("Start a fresh log") {
                 activity.startFresh()
             }
-            .help("Keep the existing log file under a new name and start an empty one. The total moved to the Trash starts again from zero.")
+            .help("Save the existing log file under a new name and start an empty one. The total moved to the Trash starts again from zero.")
             .disabled(activity.isRecovering)
         }
     }
@@ -66,21 +63,10 @@ struct ActivityLogProblemBanner: View {
     let failure: ActivityLogFailure
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: Design.Space.s) {
-            Image(systemName: "exclamationmark.triangle")
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: Design.Space.tight) {
-                Text(failure.title)
-                    .fontWeight(.semibold)
-                Text(failure.message)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: Design.Space.m)
+        // Two buttons, where every other state has one: both are real ways out (docs/design.md).
+        StateBar(symbol: "exclamationmark.triangle", title: Text(failure.title), message: Text(failure.message)) {
             ActivityLogRecoveryButtons(activity: activity, failure: failure)
         }
-        .font(Design.Typography.secondary)
         .padding(.horizontal, Design.Space.m)
         .padding(.vertical, Design.Space.s)
         .accessibilityElement(children: .contain)
@@ -96,23 +82,17 @@ struct ActivityLogUnavailableSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(spacing: 0) {
-            ContentUnavailableView {
-                Label("Nothing can be cleaned up right now", systemImage: "exclamationmark.triangle")
-            } description: {
-                Text("The activity log isn’t working, and nothing is changed that can’t be recorded. Close this and see the message at the bottom of the window.")
+        SheetScaffold(
+            title: Text("Nothing can be cleaned up right now"),
+            subtitle: Text("The activity log isn’t working, and nothing is changed that can’t be recorded. See the message at the bottom of the window."),
+            size: .small
+        ) {
+        } buttons: {
+            Button("Close") {
+                dismiss()
             }
-            Divider()
-            HStack {
-                Spacer()
-                Button("Close") {
-                    dismiss()
-                }
-                .keyboardShortcut(.defaultAction)
-            }
-            .padding(Design.Space.m)
+            .keyboardShortcut(.defaultAction)
         }
-        .frame(minWidth: 460, minHeight: 260)
         .onExitCommand {
             dismiss()
         }

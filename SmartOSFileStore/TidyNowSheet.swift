@@ -56,7 +56,6 @@ struct TidyNowSheet: View {
                 overview
             }
         }
-        .frame(minWidth: 620, idealWidth: 700, minHeight: 420, idealHeight: 540)
         .interactiveDismissDisabled(model.isExecuting)
         .sheet(isPresented: $model.isConfirming) {
             TidyNowConfirmationSheet(totals: model.totals) {
@@ -66,15 +65,12 @@ struct TidyNowSheet: View {
     }
 
     private var overview: some View {
-        VStack(spacing: 0) {
-            header
-                .padding(Design.Space.l)
-            Divider()
+        SheetScaffold(title: Text("Tidy Now"), subtitle: subtitle) {
             content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            Divider()
-            footer
-                .padding(Design.Space.m)
+        } status: {
+            footerStatus
+        } buttons: {
+            footerButtons
         }
         .onExitCommand {
             if !model.isExecuting {
@@ -83,31 +79,17 @@ struct TidyNowSheet: View {
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: Design.Space.xs) {
-            Text("Tidy now")
-                .font(Design.Typography.windowTitle)
-                .accessibilityAddTraits(.isHeader)
-            Group {
-                switch model.phase {
-                case .planning:
-                    Text("Checking the folder with every cleanup…")
-                case .reviewing where model.isTidy:
-                    Text("Nothing to tidy")
-                case .reviewing, .executing:
-                    let totals = model.totals
-                    if totals.isEmpty {
-                        Text("Nothing ticked yet")
-                    } else {
-                        Text("Ticked: \(totals.sentence)")
-                    }
-                case .finished(let result):
-                    Text("\(result.bytesFreed.formattedFileSize) moved to the Trash")
-                }
-            }
-            .foregroundStyle(.secondary)
+    private var subtitle: Text {
+        switch model.phase {
+        case .planning:
+            Text("Checking the folder with every cleanup…")
+        case .reviewing where model.isTidy:
+            Text("Nothing to tidy")
+        case .reviewing, .executing:
+            Text("Everything ticked is carried out as one cleanup. One Undo puts it all back.")
+        case .finished:
+            Text("What each cleanup did. Every file is listed in Activity.")
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -125,16 +107,36 @@ struct TidyNowSheet: View {
                 }
             }
         case .reviewing where model.isTidy:
-            ContentUnavailableView(
-                "This folder is tidy",
-                systemImage: "checkmark.circle",
-                description: Text("No cleanup found anything to do.")
+            StateView(
+                title: Text("This folder is tidy"),
+                symbol: "checkmark.circle",
+                message: Text("No cleanup found anything to do.")
             )
         case .reviewing, .executing:
-            categoryList
-                .disabled(!model.isReviewing)
+            VStack(spacing: 0) {
+                summaryCard
+                    .padding([.horizontal, .top], Design.Space.l)
+                categoryList
+                    .disabled(!model.isReviewing)
+            }
         case .finished(let result):
             TidyNowSummaryView(result: result)
+        }
+    }
+
+    /// What is ticked across every cleanup, and that nothing changes yet.
+    private var summaryCard: some View {
+        Card {
+            let totals = model.totals
+            if totals.isEmpty {
+                Text("Nothing is ticked. Open a list to choose files.")
+                    .foregroundStyle(.secondary)
+            } else {
+                TidyNowFigures(totals: totals)
+                Text(model.isReviewing ? "Nothing changes until you click Tidy up." : "Carrying out what is ticked.")
+                    .font(Design.Typography.secondary)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -191,72 +193,74 @@ struct TidyNowSheet: View {
         }
     }
 
+    /// The footer's left side: the progress while the folder is checked or tidied.
     @ViewBuilder
-    private var footer: some View {
+    private var footerStatus: some View {
         switch model.phase {
         case .planning:
-            HStack {
-                ProgressView()
-                    .controlSize(.small)
-                    .accessibilityLabel(Text("Checking the folder"))
-                Text("Checked by \(model.finishedActions.count) of \(model.actions.count) cleanups")
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button("Cancel") {
-                    close()
-                }
-                .keyboardShortcut(.cancelAction)
-            }
-        case .reviewing:
-            HStack {
-                Spacer()
-                Button("Cancel") {
-                    close()
-                }
-                .keyboardShortcut(.cancelAction)
-                if !model.isTidy {
-                    Button("Tidy up…") {
-                        model.confirm()
-                    }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!model.canTidyUp || model.isConfirming)
-                    .help(Text("Carry out everything ticked, after one confirmation"))
-                } else {
-                    Button("Done") {
-                        close()
-                    }
-                    .keyboardShortcut(.defaultAction)
-                }
-            }
+            ProgressLine(
+                fraction: nil,
+                text: Text("Checked by \(model.finishedActions.count) of \(model.actions.count) cleanups"),
+                label: Text("Checking the folder")
+            )
         case .executing(let progress):
-            HStack(spacing: Design.Space.m) {
-                let current = min(progress.itemsCompleted + 1, progress.itemsTotal)
-                ProgressView(value: progress.fractionCompleted)
-                    .frame(maxWidth: Design.Size.progressBar)
-                    .accessibilityLabel(Text("Progress tidying the folder"))
-                Text("Tidying item \(current) of \(progress.itemsTotal)…")
-                Spacer()
+            let current = min(progress.itemsCompleted + 1, progress.itemsTotal)
+            ProgressLine(
+                fraction: progress.fractionCompleted,
+                text: Text("Cleaning up item \(current) of \(progress.itemsTotal)…"),
+                label: Text("Progress cleaning up")
+            ) {
                 Button("Stop") {
                     model.cancel()
                 }
                 .keyboardShortcut(.cancelAction)
                 .help(Text("Stop after the item being changed now; everything done so far stays and can be undone"))
             }
-        case .finished(let result):
-            HStack {
-                Spacer()
-                if let runID = result.runID, result.hasDoneItems, result.logFailure == nil {
-                    Button("Undo") {
-                        onUndo(runID)
-                        close()
-                    }
-                    .help(Text("Put everything this tidy changed back as it was"))
+        case .reviewing, .finished:
+            EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var footerButtons: some View {
+        switch model.phase {
+        case .planning:
+            Button("Cancel") {
+                close()
+            }
+            .keyboardShortcut(.cancelAction)
+        case .reviewing:
+            Button("Cancel") {
+                close()
+            }
+            .keyboardShortcut(.cancelAction)
+            if !model.isTidy {
+                Button("Tidy up…") {
+                    model.confirm()
                 }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!model.canTidyUp || model.isConfirming)
+                .help(Text("Carry out everything ticked, after one confirmation"))
+            } else {
                 Button("Done") {
                     close()
                 }
                 .keyboardShortcut(.defaultAction)
             }
+        case .executing:
+            EmptyView()
+        case .finished(let result):
+            if let runID = result.runID, result.hasDoneItems, result.logFailure == nil {
+                Button("Undo") {
+                    onUndo(runID)
+                    close()
+                }
+                .help(Text("Put everything this cleanup changed back as it was"))
+            }
+            Button("Done") {
+                close()
+            }
+            .keyboardShortcut(.defaultAction)
         }
     }
 
@@ -287,7 +291,7 @@ private struct TidyNowPlanningRow: View {
                     .accessibilityLabel(Text("Checked"))
             } else if let progress, progress.itemsToCheck > 0 {
                 ProgressView(value: progress.fractionCompleted)
-                    .frame(width: 120)
+                    .frame(width: Design.Size.progressBarCompact)
                     .accessibilityLabel(Text("Checking"))
             } else {
                 ProgressView()

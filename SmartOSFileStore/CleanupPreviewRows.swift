@@ -4,7 +4,7 @@ import SwiftUI
 // The rows of the cleanup preview: the kept copy and its duplicates for a plan with groups, one row
 // per change for any other plan, and the files the action could not check.
 
-/// The copy that stays, marked Keep. Selectable and previewable like any row, but with no checkbox.
+/// The copy that stays, marked Stays. Selectable and previewable like any row, but with no checkbox.
 struct KeptFileRow: View {
     let record: FileRecord
 
@@ -20,7 +20,7 @@ struct KeptFileRow: View {
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            Badge(Text("Keep"))
+            Badge(Text("Stays"))
             Spacer()
             if let size = record.formattedSize {
                 Text(size)

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A quiet tag after a name: a file's mark, "Keep", "Possible match". The text carries the
+/// A quiet tag after a name: a file's mark, "Stays", "Possible match". The text carries the
 /// meaning, so it reads the same in light and dark mode and to VoiceOver.
 struct Badge: View {
     let text: Text

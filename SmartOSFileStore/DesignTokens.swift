@@ -49,17 +49,40 @@ enum Design {
         static let size: CGFloat = 16
         /// The column a row's symbol sits in, so the text after it starts on one edge.
         static let column: CGFloat = 20
-        /// The one symbol at the top of a confirmation or a result.
-        static let large = Font.largeTitle
     }
 
     enum Size {
-        static let confirmationSheet: CGFloat = 400
         static let progressBar: CGFloat = 240
+        /// The bar of one row in a list of several things in progress.
+        static let progressBarCompact: CGFloat = 120
         /// A size at the end of a row, wide enough for "999.9 MB".
         static let sizeColumn: CGFloat = 72
         /// The width the system's checkbox takes in a row, for rows that leave its place empty.
         static let checkbox: CGFloat = 16
+    }
+
+    /// The About window is the system's own, and its one line of ours is AppKit text, not a view:
+    /// the small system font, centred, in the label colour so it reads in light and dark mode.
+    enum About {
+        static var creditsAttributes: [NSAttributedString.Key: Any] {
+            let centred = NSMutableParagraphStyle()
+            centred.alignment = .center
+            return [
+                .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+                .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: centred,
+            ]
+        }
+    }
+
+    /// The three sizes a sheet comes in. Apply with `sheetSize(_:)`.
+    enum Sheet {
+        /// A question, a short notice, the welcome: a fixed width, as tall as its content.
+        case small
+        /// A list to review and its result.
+        case medium
+        /// Two files side by side.
+        case large
     }
 
     /// Use through `motion(_:value:)`, which honours Reduce Motion, as the chat's animations do.
@@ -85,7 +108,6 @@ enum Design {
         static let fieldLeading: CGFloat = 14
         static let fieldInset: CGFloat = 5
         static let rowGap: CGFloat = 6
-        static let cardGap: CGFloat = 10
         static let messageGap: CGFloat = 18
         static let copyIndent: CGFloat = 22
         static let sendButton: CGFloat = 26
@@ -109,6 +131,19 @@ extension View {
     /// asked for reduced motion.
     func motion(_ animation: Animation, value: some Equatable) -> some View {
         modifier(MotionModifier(animation: animation, value: value))
+    }
+
+    /// Gives a sheet one of the three sizes every sheet uses.
+    @ViewBuilder
+    func sheetSize(_ size: Design.Sheet) -> some View {
+        switch size {
+        case .small:
+            frame(width: 400)
+        case .medium:
+            frame(minWidth: 620, idealWidth: 700, minHeight: 420, idealHeight: 540)
+        case .large:
+            frame(minWidth: 820, idealWidth: 1_000, minHeight: 520, idealHeight: 640)
+        }
     }
 
     /// The inset every bar of the window shares: filter bar, progress line, notices, status bar.

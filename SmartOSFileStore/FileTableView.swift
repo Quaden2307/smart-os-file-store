@@ -143,10 +143,10 @@ struct FileTableView: View {
         .accessibilityLabel("Files")
         .overlay {
             if model.visibleRecords.isEmpty, case .marked(let mark) = model.filter {
-                ContentUnavailableView(
-                    "No matching files",
-                    systemImage: "line.3.horizontal.decrease.circle",
-                    description: Text(mark.emptyFilterDescription)
+                StateView(
+                    title: Text("No matching files"),
+                    symbol: "line.3.horizontal.decrease.circle",
+                    message: Text(mark.emptyFilterDescription)
                 )
             }
         }

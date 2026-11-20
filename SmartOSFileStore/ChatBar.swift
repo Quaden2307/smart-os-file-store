@@ -221,14 +221,7 @@ struct ChatUnavailableBar: View {
     private static let systemSettingsPane = URL(string: "x-apple.systempreferences:com.apple.Siri-Settings.extension")
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: Design.Space.s) {
-            Image(systemName: "sparkles")
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            Text(availability.reason ?? "")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: Design.Space.m)
+        StateBar(symbol: "sparkles", message: Text(availability.reason ?? "")) {
             if availability.isChangedInSystemSettings, let pane = Self.systemSettingsPane {
                 Button("Open System Settings") {
                     openURL(pane)
@@ -241,7 +234,6 @@ struct ChatUnavailableBar: View {
                 .help("Open this app’s Settings (⌘,)")
             }
         }
-        .font(Design.Typography.secondary)
         .frame(maxWidth: Design.Chat.columnWidth)
         .frame(maxWidth: .infinity)
         .padding(.horizontal, Design.Space.l)

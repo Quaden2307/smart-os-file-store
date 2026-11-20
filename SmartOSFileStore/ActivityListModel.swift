@@ -184,7 +184,7 @@ final class ActivityListModel {
             return .none
         }
         guard run.doneCount > 0 else {
-            return .unavailable(reason: String(localized: "Nothing was changed"))
+            return .unavailable(reason: String(localized: "Nothing changed, so there is nothing to undo."))
         }
         guard run.hasChangesLeftToUndo else {
             return .unavailable(reason: String(localized: "Already undone"))

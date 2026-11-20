@@ -109,7 +109,11 @@ struct CompareFilesSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(spacing: 0) {
+        SheetScaffold(
+            title: Text("Compare files"),
+            subtitle: Text("The two selected files, side by side. Nothing changes here."),
+            size: .large
+        ) {
             HStack(spacing: 0) {
                 ForEach(records) { record in
                     VStack(spacing: Design.Space.s) {
@@ -126,17 +130,12 @@ struct CompareFilesSheet: View {
                     }
                 }
             }
-            Divider()
-            HStack {
-                Spacer()
-                Button("Close") {
-                    dismiss()
-                }
-                .keyboardShortcut(.cancelAction)
+        } buttons: {
+            Button("Close") {
+                dismiss()
             }
-            .padding(Design.Space.m)
+            .keyboardShortcut(.cancelAction)
         }
-        .frame(minWidth: 820, idealWidth: 1000, minHeight: 520, idealHeight: 640)
     }
 }
 

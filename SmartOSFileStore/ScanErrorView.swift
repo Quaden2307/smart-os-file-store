@@ -15,29 +15,23 @@ struct ScanErrorView: View {
     )
 
     var body: some View {
-        ContentUnavailableView {
-            Label(failure.title, systemImage: failure.isPermissionDenied ? "lock.fill" : "exclamationmark.triangle")
-        } description: {
-            Text(failure.message)
-        } actions: {
+        StateView(
+            title: Text(failure.title),
+            symbol: failure.isPermissionDenied ? "lock" : "exclamationmark.triangle",
+            message: Text(failure.message)
+        ) {
+            // One way out. For a permission problem that is the privacy settings: the folder is
+            // read again when the app comes back to the front, and Command-R still tries again.
             if let privacySettingsURL {
-                // The way out of a permission problem, so it answers Return; Try Again keeps the
-                // toolbar's Command-R.
                 Button("Open privacy settings") {
                     openURL(privacySettingsURL)
                 }
-                .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
                 .help("Open the Files & Folders privacy settings in System Settings (Return)")
-            }
-            if let retry {
-                let button = Button("Try again", action: retry)
+            } else if let retry {
+                Button("Try again", action: retry)
+                    .keyboardShortcut(.defaultAction)
                     .help("Scan the folder again (⌘R)")
-                if privacySettingsURL == nil {
-                    button.keyboardShortcut(.defaultAction)
-                } else {
-                    button
-                }
             }
         }
     }

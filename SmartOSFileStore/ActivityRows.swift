@@ -28,34 +28,18 @@ struct ActivityRunRow: View {
             .help(isExpanded ? Text("Hide the files") : Text("Show the files"))
             // VoiceOver offers the same through the row's own action, below.
             .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: Design.Space.tight) {
-                HStack(alignment: .firstTextBaseline, spacing: Design.Space.s) {
-                    Text(run.title)
-                        .fontWeight(.semibold)
-                    if let stateLabel = run.stateLabel {
-                        Text(stateLabel)
-                            .font(Design.Typography.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    if let originLabel = run.originLabel {
-                        Text(originLabel)
-                            .font(Design.Typography.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    if let undoLabel = run.undoLabel {
-                        Text(undoLabel)
-                            .font(Design.Typography.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+            // A run is a result summarised: the card's header layout, without the outline a list
+            // cannot draw around its rows (docs/design.md, Card).
+            CardHeader(title: Text(run.title), isHeading: false) {
                 counts
-                    .font(Design.Typography.secondary)
+            } trailing: {
+                ForEach([run.stateLabel, run.originLabel, run.undoLabel].compactMap(\.self), id: \.self) { label in
+                    Badge(Text(label))
+                }
+                UndoButton(availability: undoAvailability, help: Text("Put this cleanup’s files back where they were"), undo: undo)
+                DateCell(date: run.startedAt)
                     .foregroundStyle(.secondary)
             }
-            Spacer(minLength: Design.Space.m)
-            UndoButton(availability: undoAvailability, help: Text("Put this cleanup’s files back where they were"), undo: undo)
-            DateCell(date: run.startedAt)
-                .foregroundStyle(.secondary)
         }
         .padding(.vertical, Design.Space.tight)
         .accessibilityElement(children: .combine)
@@ -74,7 +58,7 @@ struct ActivityRunRow: View {
                 }
                 if run.bytesTakenFromTrash > 0 {
                     separator
-                    Text("\(run.bytesTakenFromTrash.formattedFileSize) taken out of the Trash")
+                    Text("\(run.bytesTakenFromTrash.formattedFileSize) put back from the Trash")
                 }
             }
         } else {

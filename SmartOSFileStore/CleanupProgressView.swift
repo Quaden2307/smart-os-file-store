@@ -11,51 +11,38 @@ struct CleanupProgressView: View {
 
     var body: some View {
         let display = action.display
-        HStack(spacing: Design.Space.m) {
-            switch display.progressStyle {
-            case .bytesRead:
-                bar(showing: progress.bytesToRead > 0)
-                Text("Checked \(progress.itemsChecked) of ^[\(progress.itemsToCheck) file](inflect: true), \(progress.bytesRead.formattedFileSize) of \(progress.bytesToRead.formattedFileSize)")
-                    .lineLimit(1)
-            case .zipsChecked:
-                bar(showing: progress.itemsToCheck > 0)
-                Text("Checked \(progress.itemsChecked) of ^[\(progress.itemsToCheck) zip](inflect: true)")
-                    .lineLimit(1)
-            case .installersChecked:
-                bar(showing: progress.itemsToCheck > 0)
-                Text("Checked \(progress.itemsChecked) of ^[\(progress.itemsToCheck) installer](inflect: true)")
-                    .lineLimit(1)
-            case .spinner:
-                spinner
-                Text("\(display.progressLabel)…")
-                    .lineLimit(1)
-            }
-            Spacer()
-            Button("Cancel", action: cancel)
+        ProgressLine(fraction: fraction(display.progressStyle), text: text(display), label: Text("Progress")) {
+            Button("Stop", action: cancel)
                 .keyboardShortcut(.cancelAction)
                 .help(display.cancelHelp)
         }
-        .font(Design.Typography.secondary)
         .barInset()
         .accessibilityElement(children: .contain)
         .accessibilityLabel(display.progressLabel)
     }
 
-    /// The bar once there is a total to measure against; until then, the spinner.
-    @ViewBuilder
-    private func bar(showing hasTotal: Bool) -> some View {
-        if hasTotal {
-            ProgressView(value: progress.fractionCompleted)
-                .frame(maxWidth: Design.Size.progressBar)
-                .accessibilityLabel("Progress")
-        } else {
-            spinner
+    /// The bar's fill once there is a total to measure against; until then nil, the spinner.
+    private func fraction(_ style: CleanupActionDisplay.ProgressStyle) -> Double? {
+        switch style {
+        case .bytesRead:
+            progress.bytesToRead > 0 ? progress.fractionCompleted : nil
+        case .zipsChecked, .installersChecked:
+            progress.itemsToCheck > 0 ? progress.fractionCompleted : nil
+        case .spinner:
+            nil
         }
     }
 
-    private var spinner: some View {
-        ProgressView()
-            .controlSize(.small)
-            .accessibilityLabel("Progress")
+    private func text(_ display: CleanupActionDisplay) -> Text {
+        switch display.progressStyle {
+        case .bytesRead:
+            Text("Checked \(progress.itemsChecked) of ^[\(progress.itemsToCheck) file](inflect: true), \(progress.bytesRead.formattedFileSize) of \(progress.bytesToRead.formattedFileSize)")
+        case .zipsChecked:
+            Text("Checked \(progress.itemsChecked) of ^[\(progress.itemsToCheck) zip](inflect: true)")
+        case .installersChecked:
+            Text("Checked \(progress.itemsChecked) of ^[\(progress.itemsToCheck) installer](inflect: true)")
+        case .spinner:
+            Text("\(display.progressLabel)…")
+        }
     }
 }

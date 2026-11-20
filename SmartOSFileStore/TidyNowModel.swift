@@ -376,20 +376,4 @@ struct TidyNowTotals: Equatable {
     }
 
     var isEmpty: Bool { trashCount + archiveCount + renameCount == 0 }
-
-    /// "Move 14 items to the Trash, archive 9, rename 6", leaving out what is zero.
-    var sentence: String {
-        var parts: [String] = []
-        if trashCount > 0 {
-            parts.append(String(localized: "move ^[\(trashCount) item](inflect: true) (\(trashBytes.formattedFileSize)) to the Trash"))
-        }
-        if archiveCount > 0 {
-            parts.append(String(localized: "archive \(archiveCount)"))
-        }
-        if renameCount > 0 {
-            parts.append(String(localized: "rename \(renameCount)"))
-        }
-        let joined = parts.formatted(.list(type: .and, width: .narrow))
-        return joined.prefix(1).uppercased() + joined.dropFirst()
-    }
 }

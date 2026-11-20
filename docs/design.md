@@ -24,8 +24,8 @@ Built on the system's text styles, so they follow the user's text size. Each rol
 
 | Role | Size | Use |
 |---|---|---|
-| `windowTitle` | 17 pt semibold | The title of a sheet or a result |
-| `sectionTitle` | 13 pt semibold | The question of a confirmation, a group's heading |
+| `windowTitle` | 17 pt semibold | The title of a sheet; a card's figures |
+| `sectionTitle` | 13 pt semibold | A card's or a group's heading |
 | `body` | 13 pt | File names, and everything with no other role (the default: no modifier needed) |
 | `secondary` | 12 pt | Status lines, explanations, the second line of a row |
 | `caption` | 11 pt | Badges, notes beside a value. Nothing is smaller |
@@ -41,7 +41,7 @@ A weight may be added to a role (`Design.Typography.caption.weight(.semibold)`, 
 | `s` | 8 | An icon and its label; items in a row |
 | `m` | 12 | Horizontal inset of a bar; a card's padding; a sheet's footer |
 | `l` | 16 | A sheet's header; groups inside a sheet |
-| `xl` | 24 | A confirmation's or a result's padding |
+| `xl` | 24 | Between the figures of a card |
 
 A fixed size (`.frame`, a table column's `.width`, a view's own `CGFloat` constant) may be a number, and must be a multiple of 4.
 
@@ -71,11 +71,26 @@ SF Symbols, outline variants, regular weight. A filled variant only where the ou
 |---|---|---|
 | `size` | 16 pt | A file's icon; a symbol in a row |
 | `column` | 20 pt | The width a row's symbol sits in, so the text after it starts on one edge |
-| `large` | Large title | The one symbol at the top of a confirmation or a result |
+
+The one large symbol is the system's, in a state (`StateView`). No sheet has a symbol at its top.
 
 ### Sizes: `Design.Size`
 
-`confirmationSheet` 400 · `progressBar` 240 · `sizeColumn` 72 (a size at the end of a row) · `checkbox` 16 (the width the system checkbox takes in a row).
+`progressBar` 240 · `progressBarCompact` 120 (one row in a list of several things in progress) · `sizeColumn` 72 (a size at the end of a row) · `checkbox` 16 (the width the system checkbox takes in a row).
+
+### Sheets: `Design.Sheet`
+
+Every sheet is one of three sizes, set with `.sheetSize(_:)`. A sheet does not write its own frame.
+
+| Size | Points | Use |
+|---|---|---|
+| `small` | 400 wide, as tall as its content | A question, a short notice, the welcome |
+| `medium` | 620 to 700 × 420 to 540 | A list to review and its result: the preview, Tidy Now, an undo's summary |
+| `large` | 820 to 1,000 × 520 to 640 | Two files side by side |
+
+### About: `Design.About`
+
+The About window is the system's standard one. Its one line of ours is AppKit text, so its font (small system) and colour (label) are here and nowhere else.
 
 ### Motion: `Design.Motion`
 
@@ -88,7 +103,7 @@ Always through `.motion(_:value:)`, which animates nothing when Reduce Motion is
 
 ### The chat bar: `Design.Chat`
 
-The chat bar was designed before the tokens and keeps its exact look. Its values sit in `Design.Chat`, some of them off the grid (5, 6, 10, 14, 18 and 22 points; radii 14 and 16; a 10 pt caption; its own six animations). This is the one exception. Nothing outside the chat files uses `Design.Chat` (the check fails if one does), and a new chat view uses the main tokens wherever one fits.
+The chat bar was designed before the tokens and keeps its exact look. Its values sit in `Design.Chat`, some of them off the grid (5, 6, 14, 18 and 22 points; radii 14 and 16; a 10 pt caption; its own six animations). This is the one exception. Nothing outside the chat files uses `Design.Chat` (the check fails if one does), and a new chat view uses the main tokens wherever one fits.
 
 ## Components
 
@@ -108,24 +123,46 @@ A SwiftUI `Table`, inset style, no alternating stripes. The system's row height 
 
 ### Badge
 
-`Badge(Text("Keep"))`: caption, secondary text, `badgeFill`, radius 4. Custom because the system has no quiet inline tag.
+`Badge(Text("Kept"))`: caption, secondary text, `badgeFill`, radius 4. Custom because the system has no quiet inline tag.
 
-- Do: one or two words that state a fact about the row. The words carry the meaning.
+- Do: one or two words that state a fact about the row ("Kept", "Stays", "Undone"). The words carry the meaning.
 - Do not: colour it, use it as a button, put it above a heading, or rebuild it by hand in a view.
 
 ### Card
 
-Padding `m`, an outline of `hairline` at radius `card`, no fill and no shadow. Used for a result inside the conversation.
+`Card` (`Card.swift`): padding `m`, an outline of `hairline` at radius `card`, no fill and no shadow. It is the one way a result is summarised: what a cleanup would do, what it did, what an undo put back, what the chat found. Its parts, top to bottom, each optional:
 
-- Do: use a card only for a self-contained result that sits in a flow of other content.
-- Do not: put a card inside a card, or box a region of the window (use `Divider()`).
+- `CardHeader`: a title in `sectionTitle`, one line under it in `secondary`, and at the far end a number, a date or a button.
+- `CardFigures` of `CardFigure`: each number in `windowTitle` with what it counts under it in `caption`, `xl` apart. VoiceOver reads a number and its label as one.
+- One sentence in `secondary`.
+- `CardActions`: a sentence on the left, the buttons at the far end, the main one last.
 
-### Sheet header
+Where it is used: one card at the top of the preview, of each confirmation, of each result (a cleanup's, Tidy Now's, an undo's), and each result and cleanup in the conversation.
 
-Title in `windowTitle` with the header trait, one line under it in `.secondary`, padding `l`, then a `Divider()`. Left-aligned.
+- Do: one card per sheet, above the list it sums up. Say the number once: in the card, not again in the title or the footer.
+- Do: in a list, give a group or a run the card's layout without its outline: `CardHeader` as the section's heading (the preview's groups) or as the row (a run in Activity), with the list's own separators. The Mac's list cannot put a gap between rows, so an outline there would sit against the selection as a box in a box.
+- Do not: put a card inside a card, box a region of the window (use `Divider()`), or draw the outline by hand.
 
-- Do: say in the subtitle what is in the list and what will happen, with the numbers.
-- Do not: centre it, add a symbol, or repeat the title in the content.
+### Sheet
+
+`SheetScaffold` (`SheetScaffold.swift`), in one of the three sizes.
+
+- Header: the title in `windowTitle` with the header trait, one line under it in `.secondary` saying what will happen, padding `l`, then a `Divider()`. Left-aligned, no symbol.
+- Content: usually one card, then a list. A sheet with nothing to list has no content, and the header's divider is its only one.
+- Footer: a `Divider()`, padding `m`. On the left, what belongs to the list: Tick all and Tick none, a progress line, a note. On the right the buttons, Cancel before the main one.
+- The main button is the default action. A button that sends files to the Trash is `role: .destructive` with ⌘⌫, and then Cancel is the default, so Return and Escape both decline (`CleanupConfirmationSheet`).
+- A sheet named after a command carries the command's name ("Find Duplicates", "Tidy Now"). A question is a short question ("Move what is ticked to the Trash?"), with its numbers in the card.
+
+- Do: make three things plain in a preview without reading the list: how many files, how much space, and that nothing changes until the main button. The card says all three.
+- Do not: centre a header, give a sheet its own frame, repeat the title in the content, or make a destructive button the default.
+
+### Progress
+
+`ProgressLine` (`ProgressLine.swift`): a bar of `progressBar` once the total is known and a small spinner until then, the count in words in `secondary` ("Moving file 3 of 12 to the Trash…"), and at the far end the work's own Stop button where the work can be stopped.
+
+- Where: the bar above the status bar while a cleanup looks for files, a sheet's footer while files move, a card in the conversation.
+- Stop ends work in progress and keeps what is done. Cancel leaves before anything started. Reading the folder and carrying out one cleanup cannot be stopped, so they have no button.
+- Do not: show a bar without its count, stack the text under the bar, or add a second spinner beside it.
 
 ### Primary and secondary buttons
 
@@ -136,12 +173,34 @@ System button styles only.
 - Destructive: `role: .destructive`. Never the default action without a confirmation that names what goes.
 - Do not: two filled buttons side by side, a custom `ButtonStyle`, a tinted secondary button.
 
-### Empty state
+### States
 
-`ContentUnavailableView`: a title in sentence case, one outline symbol, one sentence that says what would be here or what to do.
+A screen with nothing to list says why, the same way each time. `StateView` (`StateView.swift`, on the system's `ContentUnavailableView`): one outline symbol at the system's weight, a title in sentence case, one sentence, and at most one action. `StateView.loading` has a spinner where the symbol is. `StateBar` is the same in one line, for a bar of the window, a card or the chat.
 
-- Do: keep the surrounding frame (bars, toolbar) in place.
-- Do not: illustrate it, add an exclamation mark, or leave it without the next step when there is one.
+| Screen | State | Symbol | Action |
+|---|---|---|---|
+| Downloads | Loading | spinner | none |
+| Downloads | Folder is empty | `folder` | none |
+| Downloads | No matching files (a filter) | `line.3.horizontal.decrease.circle` | none |
+| Downloads | The folder can't be read | `exclamationmark.triangle` | Try again |
+| Downloads | Access is blocked | `lock` | Open privacy settings |
+| Activity | Loading | spinner | none |
+| Activity | No activity yet | `clock` | none |
+| Activity | The log can't be used | `exclamationmark.triangle` | in the bar below |
+| Preview, Tidy Now | Nothing to clean up | `checkmark.circle` | none (Done is in the footer) |
+| Preview | Old downloads can't be used | `exclamationmark.triangle` | none |
+| Chat bar | Apple Intelligence is unavailable | `sparkles` | Open System Settings, Open Settings, or none |
+
+- Do: keep the surrounding frame (bars, toolbar) in place, and say what would be here or what to do.
+- Do: when the one action leaves the app (the privacy settings), look again when the app comes back to the front, so no second button is needed.
+- Do not: illustrate it, use a filled symbol, add an exclamation mark, or offer a button that leads nowhere new. An empty folder and an empty Activity have no next step, so they have no button.
+- The one exception: the activity log's bar has two buttons, Try again and Start a fresh log. Both are real ways out, and the second sets the damaged file aside.
+
+### First run
+
+`WelcomeSheet`, a small sheet over the main window, once: what the app does in three lines, the promise in four (a preview first, the Trash, undo, nothing leaves the Mac), one button. The folder is read when it closes, so the Mac's question about Downloads comes after the promise. `FirstRun` (in `FileStoreCore`, with its tests) keeps whether it was shown.
+
+- Do not: add a tour, a second page, a sign-up or a setting to show it again.
 
 ### Bars
 
@@ -149,12 +208,21 @@ Filter bar, progress line, notices and status bar share `.barInset()` (12 across
 
 ## Copy
 
-- Sentence case for everything in a window or sheet: titles, buttons, column headings, badges, empty states. "Tidy now", "Date added", "No matching files".
+- Sentence case for everything in a window or sheet: titles, buttons, column headings, badges, empty states. "Tidy now", "Date added", "No matching files". The one exception is a sheet or a run named after a command, which carries the command's name ("Tidy Now", "Find Duplicates").
 - Menus keep the Mac's Title Case: the menu bar, the toolbar's Clean up menu and context menus. A command has one name wherever it is a menu item ("Remove Used Installers", "Reveal in Finder"), and prose that points at a menu uses that name ("Clean Up > Tidy Now").
 - Names keep their capitals: Trash, Finder, Downloads, Quick Look, Apple Intelligence, System Settings, Activity, and the marks when named in a sentence (Kept, Never opened). The archive folder is always "Old downloads".
 - Short and specific: say what happened and to how many ("3 files moved to the Trash"), never "Success". An error says what to do next.
 - No exclamation marks, no emoji, no "please", no "simply".
-- One word for one thing: "Reveal in Finder" (not Show), "Trash" (not Bin), "cleanup" for a run.
+- One word for one thing:
+  - **Trash**: "the Trash" in a sentence; "Move to Trash" is the command. A file comes back "put back from the Trash".
+  - **Kept**: the mark the user gives a file, and nothing else. The copy a group of duplicates leaves is the copy that "stays" (its badge is "Stays"); a log file set aside is "saved".
+  - **cleanup**: one run of a command, Tidy Now's included; always with its article ("the cleanup stopped"). "Clean up" is the verb.
+  - **tick**: a checkbox is ticked ("Tick all", "6 of 6 files ticked"). "Selected" is for highlighted rows only.
+  - **Stop** ends work in progress, **Cancel** leaves before anything started, **Done** closes a result, **Close** closes a sheet that only shows something.
+  - **listed**: the folder is "listed" ("changed since the folder was listed"), and "Refresh" lists it again.
+  - "Reveal in Finder" (not Show).
+- A reason that is a full sentence ends with a full stop. A status of a few words ("Stopped", "Moved to the Trash", "Already undone") does not.
+- A count that may be one is inflected (`^[\(n) file](inflect: true)`), and the words around it must read right for one and for many.
 
 ## Window
 

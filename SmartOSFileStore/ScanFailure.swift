@@ -47,7 +47,7 @@ struct ScanFailure: Equatable {
             // The error alone does not say whether macOS privacy protection or the folder's own
             // permissions refused, so the advice names the common case without asserting it.
             message = String(
-                localized: "Smart OS File Store isn’t allowed to read “\(url.lastPathComponent)”. If macOS asked for permission and you chose Don’t Allow, turn on Smart OS File Store under Files & Folders in Privacy & Security, then click Try again."
+                localized: "If you chose Don’t Allow when macOS asked, turn on Smart OS File Store under Files & Folders in Privacy & Security. The folder is read again when you come back."
             )
         // The system's own sentence for these usually repeats the name and is logged by the engine;
         // the window says what to do instead.

@@ -28,6 +28,10 @@ struct ContentView: View {
     /// True while Stop Keeping All asks for confirmation.
     @State private var isConfirmingStopKeepingAll = false
 
+    /// True while the welcome is up, the first time the window opens. The folder is read once it
+    /// closes.
+    @State private var isShowingWelcome = FirstRun.needsWelcome(in: UserDefaults.standard)
+
     /// Which place's list has keyboard focus, when the View menu moves it there.
     @FocusState private var focusedPlace: SidebarSection?
 
@@ -111,6 +115,9 @@ struct ContentView: View {
                 carryOut(card)
             }
         }
+        .sheet(isPresented: $isShowingWelcome, onDismiss: startAfterWelcome) {
+            WelcomeSheet()
+        }
     }
 
     /// What the menu bar's commands act on. While a preview sheet is up, they must not act on the
@@ -142,13 +149,23 @@ struct ContentView: View {
             .focusedSceneValue(\.chatCommands, actsOnWindow ? ChatCommandTarget(focus: focusChat) : nil)
     }
 
+    /// The welcome closed, by its button or by Escape: it is never shown again, and the folder is read.
+    private func startAfterWelcome() {
+        FirstRun.markWelcomeShown(in: UserDefaults.standard)
+        model.refresh()
+    }
+
     private func observingChanges(_ view: some View) -> some View {
         view
             .onAppear {
                 model.connect(to: activity)
                 chat.connect(files: model, activity: activity, hashCache: search.hashCache)
                 activity.open()
-                model.refresh()
+                // The first time, the welcome comes before the folder is read, and so before the
+                // Mac asks about Downloads.
+                if !isShowingWelcome {
+                    model.refresh()
+                }
                 // Makes the folder disk images are read in, and detaches what a crashed run left
                 // mounted there. Once per launch; a search waits for it.
                 Task { await DiskImageMounts.shared.prepare() }
@@ -169,6 +186,9 @@ struct ContentView: View {
                 // changed: the folder is read again, and the card is checked against it. Not for
                 // a sheet or the Settings window closing, which change no file.
                 if chat.hasWaitingCard, canStartCleanup {
+                    model.refresh()
+                } else if model.failure?.isPermissionDenied == true, model.canRefresh {
+                    // Back from the privacy settings, where access may have been turned on.
                     model.refresh()
                 }
             }
@@ -198,6 +218,8 @@ struct ContentView: View {
                 // Another log: its runs and items are not the ones that were selected, and its Kept
                 // list is the one that counts.
                 activitySelection = []
+                // Behind the welcome nothing looks into the folder; the first scan reloads both.
+                guard !isShowingWelcome else { return }
                 model.reloadKeptItems()
                 // Its installer facts are the ones the Installed marks come from.
                 model.reloadInstalledMarks()
@@ -304,7 +326,7 @@ struct ContentView: View {
                 }
                 .keyboardShortcut("r", modifiers: .command)
                 .help(section == .downloads ? Text("Refresh the list (⌘R)") : Text("Read the activity log again (⌘R)"))
-                .disabled(section == .downloads ? !model.canRefresh : activity.log == nil)
+                .disabled(isShowingWelcome || (section == .downloads ? !model.canRefresh : activity.log == nil))
             }
         }
     }
@@ -313,7 +335,7 @@ struct ContentView: View {
     /// in front of it.
     private var actsOnWindow: Bool {
         search.presentedPlan == nil && tidyNow == nil && undo.presented == nil && !isConfirmingStopKeepingAll
-            && confirmingCard == nil
+            && confirmingCard == nil && !isShowingWelcome
     }
 
     // MARK: - Kept
@@ -554,14 +576,16 @@ struct ContentView: View {
     private var content: some View {
         if let failure = model.failure {
             ScanErrorView(failure: failure, retry: model.canRefresh ? model.refresh : nil)
+        } else if isShowingWelcome {
+            // Nothing is read until the welcome closes.
+            Color.clear
         } else if !model.hasLoadedOnce {
-            ProgressView("Loading…")
-                .controlSize(.large)
+            StateView.loading
         } else if model.isEmpty {
-            ContentUnavailableView(
-                "Folder is empty",
-                systemImage: "folder",
-                description: Text("There are no files in this folder.")
+            StateView(
+                title: Text("Folder is empty"),
+                symbol: "folder",
+                message: Text("Files you download are listed here.")
             )
         } else {
             VStack(spacing: 0) {

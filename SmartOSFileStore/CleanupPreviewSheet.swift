@@ -66,17 +66,13 @@ struct CleanupPreviewSheet: View {
     private var plan: CleanupPlan { model.plan }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-                .padding(Design.Space.l)
-            Divider()
+        SheetScaffold(title: Text(plan.action.title), subtitle: subtitle) {
             content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            Divider()
-            footer
-                .padding(Design.Space.m)
+        } status: {
+            footerStatus
+        } buttons: {
+            footerButtons
         }
-        .frame(minWidth: 620, idealWidth: 700, minHeight: 420, idealHeight: 540)
         .sheet(item: Binding(
             get: { comparing.map(ComparedFiles.init) },
             set: { comparing = $0?.records }
@@ -114,41 +110,36 @@ struct CleanupPreviewSheet: View {
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: Design.Space.xs) {
-            Text(plan.action.title)
-                .font(Design.Typography.windowTitle)
-                .accessibilityAddTraits(.isHeader)
-            if plan.archiveProblem != nil {
-                Text("Nothing was archived")
-                    .foregroundStyle(.secondary)
-            } else if plan.isEmpty, model.keptCount > 0 {
-                Text("^[\(model.keptCount) file](inflect: true) kept")
-                    .foregroundStyle(.secondary)
-            } else if plan.isEmpty {
-                Text(plan.action.display.emptyTitle)
-                    .foregroundStyle(.secondary)
-            } else if model.result == nil {
-                // Once files have moved, the summary below says what happened instead.
-                if model.isGroupedByNearDuplicates {
-                    Text("^[\(plan.changes.count) file](inflect: true) in ^[\(plan.nearDuplicateGroups.count) group](inflect: true) share a name but not their content. Nothing is ticked: tick only what you want in the Trash.")
-                        .foregroundStyle(.secondary)
-                } else if plan.action == .reviewLargeDownloads {
-                    Text("^[\(plan.changes.count) item](inflect: true), largest first. Nothing is ticked: tick only what you want in the Trash.")
-                        .foregroundStyle(.secondary)
-                } else if model.isGroupedByDuplicates {
-                    Text("^[\(plan.changes.count) duplicate](inflect: true) in ^[\(plan.duplicateGroups.count) group](inflect: true) would free \(plan.bytesToFree.formattedFileSize)")
-                        .foregroundStyle(.secondary)
-                } else if plan.bytesToFree > 0 {
-                    Text("^[\(plan.changes.count) change](inflect: true) would free \(plan.bytesToFree.formattedFileSize)")
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("^[\(plan.changes.count) change](inflect: true)")
-                        .foregroundStyle(.secondary)
-                }
-            }
+    /// One line under the title: what the ticked files are in for. The numbers are in the card.
+    private var subtitle: Text? {
+        if plan.archiveProblem != nil {
+            return Text("Nothing was archived")
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        if plan.isEmpty, model.keptCount > 0 {
+            return Text("^[\(model.keptCount) file](inflect: true) marked Kept")
+        }
+        if plan.isEmpty {
+            return Text(plan.action.display.emptyTitle)
+        }
+        // Once files have moved, the summary below says what happened instead.
+        guard model.result == nil else { return nil }
+        if model.isGroupedByNearDuplicates {
+            return Text("Files that share a name but not their content. Tick only what you want in the Trash.")
+        }
+        if plan.action == .reviewLargeDownloads {
+            return Text("The largest items, largest first. Tick only what you want in the Trash.")
+        }
+        if model.isGroupedByDuplicates {
+            return Text("Each ticked duplicate goes to the Trash. One copy of each group stays.")
+        }
+        switch model.operation {
+        case .rename:
+            return Text("What is ticked gets the name shown under it.")
+        case .archive:
+            return Text("What is ticked moves into Old downloads.")
+        case .moveToTrash, .move:
+            return Text("What is ticked goes to the Trash.")
+        }
     }
 
     @ViewBuilder
@@ -156,25 +147,76 @@ struct CleanupPreviewSheet: View {
         if let result = model.result {
             CleanupSummaryView(result: result)
         } else if let problem = plan.archiveProblem {
-            ContentUnavailableView(
-                "Old downloads can’t be used",
-                systemImage: "exclamationmark.triangle",
-                description: Text(problem.localizedDescription)
+            StateView(
+                title: Text("Old downloads can’t be used"),
+                symbol: "exclamationmark.triangle",
+                message: Text(problem.localizedDescription)
             )
         } else if plan.isEmpty, plan.skippedItems.isEmpty, model.keptCount > 0 {
-            ContentUnavailableView(
-                "Nothing left to clean up",
-                systemImage: "checkmark.circle",
-                description: Text("You kept every file this cleanup proposed.")
+            StateView(
+                title: Text("Nothing left to clean up"),
+                symbol: "checkmark.circle",
+                message: Text("You marked every file this cleanup proposed Kept.")
             )
         } else if plan.isEmpty, plan.skippedItems.isEmpty {
-            ContentUnavailableView(
-                plan.action.display.emptyTitle,
-                systemImage: "checkmark.circle",
-                description: Text(plan.action.display.emptyDescription)
+            StateView(
+                title: Text(plan.action.display.emptyTitle),
+                symbol: "checkmark.circle",
+                message: Text(plan.action.display.emptyDescription)
             )
         } else {
-            changeList
+            VStack(spacing: 0) {
+                if !plan.isEmpty {
+                    summaryCard
+                        .padding([.horizontal, .top], Design.Space.l)
+                }
+                changeList
+            }
+        }
+    }
+
+    /// The three things to see at a glance: how many files, how much space, and that nothing
+    /// changes yet.
+    private var summaryCard: some View {
+        Card {
+            CardFigures {
+                CardFigure(
+                    value: Text("\(model.tickedCount)"),
+                    label: Text("of ^[\(plan.changes.count) file](inflect: true) ticked")
+                )
+                switch model.operation {
+                case .rename:
+                    EmptyView()
+                case .archive:
+                    CardFigure(value: Text(model.tickedBytes.formattedFileSize), label: Text("to archive"))
+                case .moveToTrash, .move:
+                    CardFigure(value: Text(model.tickedBytes.formattedFileSize), label: Text("to free"))
+                }
+            }
+            Group {
+                if onChoose != nil {
+                    Text("Nothing changes here. Back in Tidy Now, Tidy up carries out what is ticked.")
+                } else if !model.canBeApplied {
+                    Text("This list is a preview only. Nothing changes.")
+                } else if model.isExecuting {
+                    Text("Carrying out what is ticked.")
+                } else {
+                    switch model.operation {
+                    case .rename:
+                        Text("Nothing changes until you click Rename.")
+                    case .archive:
+                        Text("Nothing changes until you click Archive.")
+                    case .moveToTrash, .move:
+                        Text("Nothing changes until you click Move to Trash.")
+                    }
+                }
+                if let share = plan.largeDownloadsShare {
+                    Text("These take up \(share.listed.formattedFileSize) on disk, \(share.fraction.formatted(.percent.precision(.fractionLength(0)))) of the \(share.total.formattedFileSize) taken by the files at the top of this folder.")
+                }
+            }
+            .font(Design.Typography.secondary)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -199,7 +241,7 @@ struct CleanupPreviewSheet: View {
                             .tag(member.id)
                         }
                     } header: {
-                        Text(group.cleanedName)
+                        CardHeader(title: Text(group.cleanedName), subtitle: Text("^[\(group.members.count) file](inflect: true) with this name"))
                     } footer: {
                         Text("One file of each group always stays, so the last one can’t be ticked.")
                             .font(Design.Typography.caption)
@@ -222,6 +264,11 @@ struct CleanupPreviewSheet: View {
                             )
                             .tag(record.url)
                         }
+                    } header: {
+                        CardHeader(
+                            title: Text("^[\(group.duplicates.count + 1) identical file](inflect: true)"),
+                            subtitle: Text("\(group.fileSizeInBytes.formattedFileSize) each")
+                        )
                     }
                 }
             } else if plan.action == .reviewLargeDownloads {
@@ -351,114 +398,70 @@ struct CleanupPreviewSheet: View {
         preview(selection)
     }
 
-    private var footer: some View {
-        VStack(alignment: .leading, spacing: Design.Space.s) {
-            if model.isReviewing, let share = plan.largeDownloadsShare {
-                Text("These take up \(share.listed.formattedFileSize) on disk, \(share.fraction.formatted(.percent.precision(.fractionLength(0)))) of the \(share.total.formattedFileSize) taken by the files at the top of this folder.")
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+    /// The footer's left side: the ticking buttons and notes while reviewing, the progress while
+    /// files move.
+    @ViewBuilder
+    private var footerStatus: some View {
+        switch model.phase {
+        case .reviewing:
+            if !plan.isEmpty {
+                selectButtons
             }
-            footerControls
+            skippedNote
+        case .executing(let progress):
+            ProgressLine(
+                fraction: progress.fractionCompleted,
+                text: progressText(current: min(progress.itemsCompleted + 1, progress.itemsTotal), total: progress.itemsTotal),
+                label: progressLabel
+            )
+        case .finished:
+            EmptyView()
         }
     }
 
     @ViewBuilder
-    private var footerControls: some View {
+    private var footerButtons: some View {
         switch model.phase {
         case .reviewing where onChoose != nil:
-            HStack(spacing: Design.Space.m) {
-                if !plan.isEmpty {
-                    selectButtons
-                    Text("^[\(model.tickedCount) change](inflect: true) ticked")
-                        .foregroundStyle(.secondary)
-                }
-                skippedNote
-                Spacer()
-                Button("Back to Tidy now") {
-                    close()
-                }
-                .keyboardShortcut(.defaultAction)
-                .help(Text("Keep these choices and return to the overview (Return)"))
+            Button("Back to Tidy now") {
+                close()
             }
-        case .reviewing where plan.isEmpty:
-            HStack {
-                skippedNote
-                Spacer()
-                doneButton
+            .keyboardShortcut(.defaultAction)
+            .help(Text("Return to the overview with these choices (Return)"))
+        case .reviewing where !plan.isEmpty && model.canBeApplied:
+            Button("Cancel") {
+                close()
             }
-        case .reviewing where model.canBeApplied:
-            HStack(spacing: Design.Space.m) {
-                selectButtons
-                Group {
-                    if model.operation == .rename {
-                        Text("^[\(model.tickedCount) file](inflect: true) selected")
-                    } else {
-                        Text("^[\(model.tickedCount) file](inflect: true) (\(model.tickedBytes.formattedFileSize)) selected")
-                    }
+            .keyboardShortcut(.cancelAction)
+            Button {
+                confirm()
+            } label: {
+                switch model.operation {
+                case .rename:
+                    Text("Rename")
+                case .archive:
+                    Text("Archive")
+                case .moveToTrash, .move:
+                    Text("Move to Trash")
                 }
-                .foregroundStyle(.secondary)
-                skippedNote
-                Spacer()
-                Button("Cancel") {
-                    close()
-                }
-                .keyboardShortcut(.cancelAction)
-                Button {
-                    confirm()
-                } label: {
-                    switch model.operation {
-                    case .rename:
-                        Text("Rename")
-                    case .archive:
-                        Text("Archive")
-                    case .moveToTrash, .move:
-                        Text("Move to Trash")
-                    }
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(!model.canExecute || model.isConfirming)
             }
+            .keyboardShortcut(.defaultAction)
+            .disabled(!model.canExecute || model.isConfirming)
         case .reviewing:
-            // A plan with a change its action may not make: previewed only, and Done closes.
-            HStack(spacing: Design.Space.m) {
-                selectButtons
-                Text("^[\(model.tickedCount) change](inflect: true) selected")
-                    .foregroundStyle(.secondary)
-                skippedNote
-                Spacer()
-                doneButton
-            }
-        case .executing(let progress):
-            HStack(spacing: Design.Space.m) {
-                let current = min(progress.itemsCompleted + 1, progress.itemsTotal)
-                ProgressView(value: progress.fractionCompleted)
-                    .frame(maxWidth: Design.Size.progressBar)
-                    .accessibilityLabel(progressLabel)
-                progressText(current: current, total: progress.itemsTotal)
-                Spacer()
-            }
+            // Nothing to do, or a plan with a change its action may not make: previewed only, and
+            // Done closes.
+            doneButton
+        case .executing:
+            EmptyView()
         case .finished(let result):
-            HStack {
-                if !result.leftAlone.isEmpty {
-                    Group {
-                        if model.operation == .rename {
-                            Text("^[\(result.leftAlone.count) file](inflect: true) not renamed")
-                        } else {
-                            Text("^[\(result.leftAlone.count) file](inflect: true) not moved")
-                        }
-                    }
-                    .foregroundStyle(.secondary)
+            if let onUndo, let runID = result.runID, result.hasDoneItems, result.logFailure == nil {
+                Button("Undo") {
+                    onUndo(runID)
+                    close()
                 }
-                Spacer()
-                if let onUndo, let runID = result.runID, result.hasDoneItems, result.logFailure == nil {
-                    Button("Undo") {
-                        onUndo(runID)
-                        close()
-                    }
-                    .help(model.operation == .rename ? Text("Give the files their old names back") : Text("Put the files back where they were"))
-                }
-                doneButton
+                .help(model.operation == .rename ? Text("Give the files their old names back") : Text("Put the files back where they were"))
             }
+            doneButton
         }
     }
 
@@ -489,19 +492,19 @@ struct CleanupPreviewSheet: View {
         }
     }
 
-    /// Select All and Select None, worded for duplicates or for changes.
+    /// Tick all and Tick none, worded for duplicates or for changes.
     @ViewBuilder
     private var selectButtons: some View {
         // Near-duplicates and large downloads are ticked one by one, after looking: Select All would
         // tick none of them.
         if !plan.changes.contains(where: \.reason.isReviewOnly) {
-            Button("Select all") {
+            Button("Tick all") {
                 model.selectAll()
             }
             .keyboardShortcut("a", modifiers: .command)
             .help(model.isGroupedByDuplicates ? Text("Tick every duplicate (⌘A)") : Text("Tick every change (⌘A)"))
         }
-        Button("Select none") {
+        Button("Tick none") {
             model.selectNone()
         }
         // Finder's shortcut for Deselect All. Shift-Command-A shows Activity.

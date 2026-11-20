@@ -11,65 +11,30 @@ struct CleanupSummaryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: Design.Space.s) {
-                Image(systemName: isRename ? "pencil" : isArchive ? "archivebox" : "trash")
-                    .font(Design.Icon.large)
-                    .imageScale(.large)
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                if isRename, !result.renamed.isEmpty {
-                    Text("^[\(result.renamed.count) file](inflect: true) renamed")
-                        .font(Design.Typography.windowTitle)
-                        .accessibilityAddTraits(.isHeader)
-                    Text("Undo gives the files their old names back.")
-                        .foregroundStyle(.secondary)
-                } else if isRename {
-                    Text("No files were renamed")
-                        .font(Design.Typography.windowTitle)
-                        .accessibilityAddTraits(.isHeader)
-                    Text("Nothing in the folder was changed.")
-                        .foregroundStyle(.secondary)
-                } else if isArchive, result.moved.isEmpty, result.trashedCount > 0 {
-                    Text("^[\(result.trashedCount) identical copy](inflect: true) moved to the Trash")
-                        .font(Design.Typography.windowTitle)
-                        .accessibilityAddTraits(.isHeader)
-                    Text("Old downloads already held them. Undo puts them back where they were.")
-                        .foregroundStyle(.secondary)
-                } else if isArchive, !result.moved.isEmpty {
-                    Text("^[\(result.moved.count) file](inflect: true) moved into Old downloads")
-                        .font(Design.Typography.windowTitle)
-                        .accessibilityAddTraits(.isHeader)
-                    if result.trashedCount > 0 {
-                        Text("^[\(result.trashedCount) identical copy](inflect: true) moved to the Trash. Undo puts every file back where it was.")
-                            .foregroundStyle(.secondary)
+            Card {
+                CardHeader(title: outcome, subtitle: explanation)
+                    .accessibilityElement(children: .combine)
+                CardFigures {
+                    if isRename {
+                        CardFigure(value: Text("\(result.renamed.count)"), label: Text("renamed"))
                     } else {
-                        Text("Undo puts the files back where they were.")
-                            .foregroundStyle(.secondary)
+                        if isArchive {
+                            CardFigure(value: Text("\(result.moved.count)"), label: Text("moved into Old downloads"))
+                        }
+                        if !isArchive || result.trashedCount > 0 {
+                            CardFigure(value: Text("\(result.trashedCount)"), label: Text("moved to the Trash"))
+                            CardFigure(value: Text(result.bytesFreed.formattedFileSize), label: Text("to free when the Trash is emptied"))
+                        }
                     }
-                } else if result.trashedCount > 0 {
-                    Text("^[\(result.trashedCount) file](inflect: true) moved to the Trash")
-                        .font(Design.Typography.windowTitle)
-                        .accessibilityAddTraits(.isHeader)
-                    Text("\(result.bytesFreed.formattedFileSize) moved to the Trash. The space is free once you empty the Trash; until then you can put the files back.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("No files were moved")
-                        .font(Design.Typography.windowTitle)
-                        .accessibilityAddTraits(.isHeader)
-                    Text("Nothing in the folder was changed.")
-                        .foregroundStyle(.secondary)
+                    if !result.leftAlone.isEmpty {
+                        CardFigure(value: Text("\(result.leftAlone.count)"), label: isRename ? Text("not renamed") : Text("not moved"))
+                    }
+                }
+                if let logFailure = result.logFailure {
+                    LogFailureNotice(failure: logFailure, result: result)
                 }
             }
-            .multilineTextAlignment(.center)
-            .padding(Design.Space.xl)
-            .frame(maxWidth: .infinity)
-            .accessibilityElement(children: .combine)
-
-            if let logFailure = result.logFailure {
-                LogFailureNotice(failure: logFailure, result: result)
-                    .padding(.horizontal, Design.Space.xl)
-                    .padding(.bottom, Design.Space.l)
-            }
+            .padding([.horizontal, .top], Design.Space.l)
 
             if result.leftAlone.isEmpty {
                 Spacer(minLength: 0)
@@ -85,6 +50,33 @@ struct CleanupSummaryView: View {
                 }
                 .accessibilityLabel(isRename ? Text("Files not renamed") : Text("Files not moved"))
             }
+        }
+    }
+
+    /// What happened, in a few words. The numbers are the card's figures.
+    private var outcome: Text {
+        if !result.hasDoneItems {
+            Text("Nothing changed")
+        } else if isRename {
+            Text("Renamed")
+        } else if isArchive, !result.moved.isEmpty {
+            Text("Moved into Old downloads")
+        } else {
+            Text("Moved to the Trash")
+        }
+    }
+
+    private var explanation: Text {
+        if !result.hasDoneItems {
+            Text("Every file is as it was.")
+        } else if isRename {
+            Text("Undo gives back every old name.")
+        } else if isArchive, result.moved.isEmpty {
+            Text("Old downloads already held identical copies. Undo puts every file back where it was.")
+        } else if isArchive {
+            Text("Undo puts every file back where it was.")
+        } else {
+            Text("The space is free once you empty the Trash. Until then, Undo puts every file back.")
         }
     }
 }
@@ -117,35 +109,28 @@ private struct LogFailureNotice: View {
     let result: CleanupResult
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: Design.Space.s) {
-            Image(systemName: "exclamationmark.triangle")
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: Design.Space.tight) {
-                if untouchedCount == result.items.count {
-                    Text("The activity log couldn’t be written, so nothing was changed.")
-                        .fontWeight(.semibold)
-                } else if untouchedCount == 0 {
-                    Text("Every file was recorded, but the activity log couldn’t mark the cleanup as finished.")
-                        .fontWeight(.semibold)
-                    Text("It is listed as interrupted in Activity.")
-                } else {
-                    Text("The activity log stopped working, so the cleanup stopped.")
-                        .fontWeight(.semibold)
-                    if let unrecorded {
-                        Text("\(unrecorded.change.record.displayName) was the last file reached, and the log could not record how it ended: \(unrecorded.outcome.localizedDescription(for: result.action))")
-                    }
-                    // No count here, so no verb has to agree with one; the list below names the files.
-                    Text("Nothing after it was touched.")
+        StateBar(symbol: "exclamationmark.triangle", title: title) {
+            if untouchedCount == 0 {
+                Text("It is listed as interrupted in Activity.")
+            } else if untouchedCount < result.items.count {
+                if let unrecorded {
+                    Text("\(unrecorded.change.record.displayName) was the last file reached, and the log could not record how it ended: \(unrecorded.outcome.localizedDescription(for: result.action))")
                 }
-                Text("See the message at the bottom of the main window.")
+                // No count here, so no verb has to agree with one; the list below names the files.
+                Text("Nothing after it was touched.")
             }
-            .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
+            Text("See the message at the bottom of the main window.")
         }
-        .font(Design.Typography.secondary)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
+    }
+
+    private var title: Text {
+        if untouchedCount == result.items.count {
+            Text("The activity log couldn’t be written, so nothing changed.")
+        } else if untouchedCount == 0 {
+            Text("Every file was recorded, but the activity log couldn’t mark the cleanup as finished.")
+        } else {
+            Text("The activity log stopped working, so the cleanup stopped.")
+        }
     }
 
     /// Files left alone because the log had stopped.

@@ -119,6 +119,7 @@ private struct PanelResizeHandle: View {
 
     /// The height when the drag began. A drag is measured in the window, as the handle moves with it.
     @State private var dragStart: CGFloat?
+    @FocusState private var isFocused: Bool
     private static let step: CGFloat = 24
 
     private var current: CGFloat {
@@ -132,7 +133,7 @@ private struct PanelResizeHandle: View {
 
     var body: some View {
         Capsule()
-            .fill(.quaternary)
+            .fill(isFocused ? AnyShapeStyle(.secondary) : AnyShapeStyle(.quaternary))
             .frame(width: 36, height: 4)
             .frame(maxWidth: .infinity, minHeight: 12)
             .contentShape(.rect)
@@ -147,6 +148,9 @@ private struct PanelResizeHandle: View {
                     .onEnded { _ in dragStart = nil }
             )
             .focusable()
+            .focused($isFocused)
+            // No blue ring around the whole strip: the pill darkens while the arrows act on it.
+            .focusEffectDisabled()
             .onKeyPress(.upArrow) {
                 set(current + Self.step)
                 return .handled
@@ -158,7 +162,7 @@ private struct PanelResizeHandle: View {
             .help("Drag to make the conversation taller or shorter")
             .accessibilityElement()
             .accessibilityLabel("Conversation height")
-            .accessibilityValue(Text("\(Int(current)) points"))
+            .accessibilityValue(Text("^[\(Int(current)) point](inflect: true)"))
             .accessibilityAdjustableAction { direction in
                 switch direction {
                 case .increment: set(current + Self.step)
@@ -264,7 +268,7 @@ private struct LookupCard: View {
     let showInList: @MainActor (URL) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Design.Space.s) {
+        Card {
             ForEach(Array(results.enumerated()), id: \.offset) { index, result in
                 let isLast = index == results.count - 1
                 if index > 0 {
@@ -288,9 +292,7 @@ private struct LookupCard: View {
                 }
             }
         }
-        .padding(Design.Space.m)
         .frame(maxWidth: ChatFileRow.maxWidth, alignment: .leading)
-        .overlay(RoundedRectangle(cornerRadius: Design.Radius.card, style: .continuous).strokeBorder(Design.Colour.hairline))
     }
 }
 
@@ -359,7 +361,7 @@ private struct DuplicateFacts: View {
                     Text("^[\(scan.recentCount) file](inflect: true) added in the last hour not checked yet")
                 }
                 if scan.unreadableCount > 0 {
-                    Text("^[\(scan.unreadableCount) file](inflect: true) could not be read, so they are not counted")
+                    Text("Not counted: ^[\(scan.unreadableCount) file](inflect: true) that could not be read")
                 }
             }
             .foregroundStyle(.secondary)

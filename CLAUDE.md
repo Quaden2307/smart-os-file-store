@@ -57,7 +57,8 @@ A native macOS file browser that will replace Finder, starting with a self-clean
 - `docs/design.md` is the source for how the app looks: the rules, the tokens with their values, the standard components and the copy rules. Read it before adding or changing a view.
 - Every view takes its fonts, colours, spacing, radii and animations from `SmartOSFileStore/DesignTokens.swift` (`Design`). `DesignTokenTests` fails on a raw value. When a view needs a value that does not exist, add it to the tokens and to `docs/design.md` first.
 - Animations go through `.motion(_:value:)`, which does nothing when Reduce Motion is on.
-- Text inside windows and sheets is sentence case. Menus (menu bar, toolbar menu, context menus) keep the Mac's Title Case.
+- A result is summarised in a `Card`, a sheet is a `SheetScaffold` in one of three sizes, work in progress is a `ProgressLine`, and an empty, loading, failed or blocked screen is a `StateView` with at most one action. Do not write a card outline, a sheet frame or a state by hand.
+- Text inside windows and sheets is sentence case. Menus (menu bar, toolbar menu, context menus) keep the Mac's Title Case. One word for one thing: see Copy in `docs/design.md`.
 - The chat bar keeps its own values in `Design.Chat`, some of them off the grid. It is the one exception; nothing else uses them.
 
 ## Code standards
@@ -109,7 +110,8 @@ And from version 0.3 so far:
 10. A chat bar that answers questions about Downloads with the on-device model. It remembers the conversation in app code (`ChatMemory`): follow-ups such as "only the big ones" search inside the last result, and "Continue" asks a stopped question again.
 11. Cleanups from the chat bar: `proposeCleanup` makes a card in the conversation (what the app understood, the actions with counts, Review, Confirm). Confirm asks once, the card becomes the run's summary with Undo, and the run is marked as started from chat in Activity. A card goes out of date when a file of it changes or a newer card replaces it, and then offers Refresh.
 
-12. A design system: tokens, `docs/design.md` and a check that views use them, with the main window's shell (sidebar, toolbar, file table, filter bar, status bar) restyled on it. Sheets, Activity and Settings are on the tokens but not yet redesigned.
+12. A design system: tokens, `docs/design.md` and a check that views use them, with the main window's shell (sidebar, toolbar, file table, filter bar, status bar) restyled on it.
+13. Shared components for every result, sheet, progress line and state (`Card`, `SheetScaffold`, `ProgressLine`, `StateView`), a welcome shown once (`FirstRun`), an About line and an app icon. Settings is on the tokens but not yet redesigned.
 
 Out of scope until the owner asks: watching Downloads automatically, user-defined rules, schedules, folders beyond Downloads, subfolders, the full storage view, search, tags, sharing, AI that makes a change without the user's Confirm, changing a card by talking (`reviseCleanup`), AI that reads file contents, custom theme.
 

@@ -27,77 +27,90 @@ struct CleanupConfirmationSheet: View {
     }
 
     var body: some View {
-        VStack(spacing: Design.Space.l) {
-            Image(systemName: symbol)
-                .font(Design.Icon.large)
-                .imageScale(.large)
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            Group {
-                switch operation {
-                case .rename:
-                    Text("Rename ^[\(fileCount) file](inflect: true)?")
-                case .archive where trashCount == fileCount:
-                    Text("Move ^[\(trashCount) identical copy](inflect: true) (\(trashBytes.formattedFileSize)) to the Trash? Old downloads already holds them.")
-                case .archive where trashCount > 0:
-                    Text("Move ^[\(fileCount - trashCount) file](inflect: true) into Old downloads, and ^[\(trashCount) identical copy](inflect: true) (\(trashBytes.formattedFileSize)) to the Trash?")
-                case .archive:
-                    Text("Move ^[\(fileCount) file](inflect: true) into Old downloads?")
-                case .moveToTrash, .move:
-                    Text("Move ^[\(fileCount) file](inflect: true) (\(bytes.formattedFileSize)) to the Trash?")
-                }
+        SheetScaffold(title: question, subtitle: explanation, size: .small) {
+            Card {
+                TidyNowFigures(totals: totals)
             }
-            .font(Design.Typography.sectionTitle)
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: Design.Space.m) {
-                Spacer()
-                if confirmIsDefault {
-                    Button("Cancel", role: .cancel) {
-                        dismiss()
-                    }
-                    .keyboardShortcut(.cancelAction)
-                    Button {
-                        dismiss()
-                        onConfirm()
-                    } label: {
-                        operation == .rename ? Text("Rename") : Text("Archive")
-                    }
-                    .keyboardShortcut(.defaultAction)
-                    .help(operation == .rename ? Text("Give the files their new names (Return)") : Text("Move the files into Old downloads (Return)"))
-                } else {
-                    // Finder's own shortcut for Move to Trash, so the keyboard has a way to confirm
-                    // without Return ever doing it.
-                    Button(role: .destructive) {
-                        dismiss()
-                        onConfirm()
-                    } label: {
-                        operation == .archive ? Text("Archive") : Text("Move to Trash")
-                    }
-                    .keyboardShortcut(.delete, modifiers: .command)
-                    .help(operation == .archive ? Text("Archive the files, and move the identical copies to the Trash (⌘⌫)") : Text("Move the files to the Trash (⌘⌫)"))
-                    Button("Cancel", role: .cancel) {
-                        dismiss()
-                    }
-                    .keyboardShortcut(.defaultAction)
+            .padding(Design.Space.l)
+        } buttons: {
+            if confirmIsDefault {
+                Button("Cancel", role: .cancel) {
+                    dismiss()
                 }
+                .keyboardShortcut(.cancelAction)
+                Button {
+                    dismiss()
+                    onConfirm()
+                } label: {
+                    operation == .rename ? Text("Rename") : Text("Archive")
+                }
+                .keyboardShortcut(.defaultAction)
+                .help(operation == .rename ? Text("Give the files their new names (Return)") : Text("Move the files into Old downloads (Return)"))
+            } else {
+                // Finder's own shortcut for Move to Trash, so the keyboard has a way to confirm
+                // without Return ever doing it.
+                Button(role: .destructive) {
+                    dismiss()
+                    onConfirm()
+                } label: {
+                    operation == .archive ? Text("Archive") : Text("Move to Trash")
+                }
+                .keyboardShortcut(.delete, modifiers: .command)
+                .help(operation == .archive ? Text("Archive the files, and move the identical copies to the Trash (⌘⌫)") : Text("Move the files to the Trash (⌘⌫)"))
+                Button("Cancel", role: .cancel) {
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(Design.Space.xl)
-        .frame(width: Design.Size.confirmationSheet)
         .onExitCommand {
             dismiss()
         }
     }
 
-    private var symbol: String {
+    /// The counts as a Tidy Now's are given, so every confirmation shows the same figures.
+    private var totals: TidyNowTotals {
+        var totals = TidyNowTotals([])
         switch operation {
         case .rename:
-            "pencil"
+            totals.renameCount = fileCount
         case .archive:
-            "archivebox"
+            totals.archiveCount = fileCount - trashCount
+            totals.trashCount = trashCount
+            totals.trashBytes = trashBytes
         case .moveToTrash, .move:
-            "trash"
+            totals.trashCount = fileCount
+            totals.trashBytes = bytes
+        }
+        return totals
+    }
+
+    /// The question in a few words. The numbers are the card's figures.
+    private var question: Text {
+        switch operation {
+        case .rename:
+            Text("Rename what is ticked?")
+        case .archive where trashCount == fileCount:
+            Text("Move what is ticked to the Trash?")
+        case .archive:
+            Text("Archive what is ticked?")
+        case .moveToTrash, .move:
+            Text("Move what is ticked to the Trash?")
+        }
+    }
+
+    private var explanation: Text {
+        switch operation {
+        case .rename:
+            Text("Each file gets the name shown in the preview. Undo gives back every old name.")
+        case .archive where trashCount == fileCount:
+            Text("Old downloads already holds an identical copy of each. Undo puts everything back.")
+        case .archive where trashCount > 0:
+            Text("What is ticked moves into Old downloads; where it already holds an identical copy, the file goes to the Trash. Undo puts everything back.")
+        case .archive:
+            Text("What is ticked moves into Old downloads. Undo puts everything back.")
+        case .moveToTrash, .move:
+            Text("Everything stays in the Trash until you empty it. Undo puts everything back.")
         }
     }
 }

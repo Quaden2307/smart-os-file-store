@@ -163,11 +163,11 @@ extension MessyNameFix {
 }
 
 extension NameFix {
-    /// One rule's work in the user's words: "Decoded %20", "Removed (2)".
+    /// One rule's work in the user's words: "Turned %20 back into text", "Removed (2)".
     var localizedDescription: String {
         switch self {
         case .decodedPercentEncoding(let escapes):
-            String(localized: "Decoded \(escapes.formatted(.list(type: .and)))")
+            String(localized: "Turned \(escapes.formatted(.list(type: .and))) back into text")
         case .removedWebLeftover(let text):
             String(localized: "Removed \(text)")
         case .removedDoubledExtension(let text):
@@ -226,16 +226,16 @@ extension CleanupSkipReason {
         let runAgain = action.map { String(localized: "Run \($0.commandTitle) again.") } ?? String(localized: "Run the cleanup again.")
         switch self {
         case .changedSinceScan where action == .clearFailedDownloads:
-            return String(localized: "It changed since the folder was scanned, so the download may have resumed. It was left alone.")
+            return String(localized: "It changed since the folder was listed, so the download may have resumed. It was left alone.")
         case .changedSinceScan where action == .removeUnpackedZips:
             // Starting a cleanup plans from the list as it is, so only a refresh sees the change.
             return String(localized: "It changed since the folder was listed, so it was left alone. Refresh the list (⌘R), then run Remove Unpacked Zips again.")
         case .changedSinceScan where action == .removeUsedInstallers:
             return String(localized: "It changed since the folder was listed, so it was left alone. Refresh the list (⌘R), then run Remove Used Installers again.")
         case .changedSinceScan:
-            return String(localized: "Changed since the folder was scanned. \(runAgain)")
+            return String(localized: "Changed since the folder was listed. \(runAgain)")
         case .notFound:
-            return String(localized: "No longer in the folder.")
+            return String(localized: "No longer in the folder")
         case .accessDenied:
             return String(localized: "Not allowed to read it. Check its permissions in Finder (Get Info).")
         case .notDownloaded:
@@ -249,21 +249,21 @@ extension CleanupSkipReason {
         case .installerUnreadable(let problem):
             return problem.localizedDescription
         case .diskImageInUse:
-            return String(localized: "It is open (mounted), or whether it is could not be checked, so it was left alone.")
+            return String(localized: "It is open (mounted), or the app could not tell whether it is, so it was left alone.")
         case .keptFile:
-            return String(localized: "This is the copy that is kept.")
+            return String(localized: "This is the copy that stays.")
         case .notInPlan:
-            return String(localized: "Not proposed by this scan. \(runAgain)")
+            return String(localized: "Not proposed this time. \(runAgain)")
         case .markedKept:
             return String(localized: "You marked it Kept, so it was left alone.")
         case .outsideFolder:
-            return String(localized: "No longer directly inside the folder.")
+            return String(localized: "No longer directly inside the folder")
         case .folderUnavailable:
             return String(localized: "The folder could not be reached. Check that its disk is connected, then try again.")
         case .keptFileMissing(let name):
-            return String(localized: "The kept copy, \(name), is no longer in the folder, so this group was left alone. \(runAgain)")
+            return String(localized: "The copy that stays, \(name), is no longer in the folder, so this group was left alone. \(runAgain)")
         case .keptFileNotVerified(let name):
-            return String(localized: "The kept copy, \(name), could not be checked, so this group was left alone. \(runAgain)")
+            return String(localized: "The copy that stays, \(name), could not be checked, so this group was left alone. \(runAgain)")
         case .unpackedCopyMissing(let name):
             return String(localized: "The unpacked copy, \(name), is no longer next to it, so the zip was left alone. \(runAgain)")
         case .unpackedCopyNotVerified(let name):
@@ -281,7 +281,7 @@ extension CleanupSkipReason {
         case .archivedCopyNotVerified(let name):
             return String(localized: "The copy in Old downloads, \(name), could not be confirmed identical, so this file was left alone. \(runAgain)")
         case .cancelled:
-            return String(localized: "Stopped before this file was reached.")
+            return String(localized: "Stopped before this file was reached")
         case .destinationExists(let name):
             return String(localized: "Something called \(name) is already there, so nothing was replaced.")
         case .invalidName:
@@ -353,7 +353,7 @@ extension CleanupExecutionError {
             String(localized: "This disk can’t rename files without the risk of replacing one. Rename it in Finder instead.")
         case .other(_, let code, _):
             // The code identifies the failure in a report; the system's sentence stays in the log.
-            String(localized: "Couldn’t move it to the Trash (error \(code)). Try again, or move it from Finder.")
+            String(localized: "Couldn’t change it (error \(code)). Try again, or do it in Finder.")
         }
     }
 }

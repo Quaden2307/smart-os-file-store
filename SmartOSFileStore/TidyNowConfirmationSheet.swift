@@ -11,38 +11,87 @@ struct TidyNowConfirmationSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(spacing: Design.Space.l) {
-            Image(systemName: "checklist")
-                .font(Design.Icon.large)
-                .imageScale(.large)
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            Text("\(totals.sentence)?")
-                .font(Design.Typography.sectionTitle)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("One Undo puts everything back.")
-                .foregroundStyle(.secondary)
-            HStack(spacing: Design.Space.m) {
-                Spacer()
-                Button(role: .destructive) {
-                    dismiss()
-                    onConfirm()
-                } label: {
-                    Text("Tidy up")
-                }
-                .keyboardShortcut(.delete, modifiers: .command)
-                .help(Text("Carry out everything ticked (⌘⌫)"))
-                Button("Cancel", role: .cancel) {
-                    dismiss()
-                }
-                .keyboardShortcut(.defaultAction)
+        SheetScaffold(
+            title: Text("Tidy up this folder?"),
+            subtitle: Text("Everything ticked is carried out. One Undo puts it all back."),
+            size: .small
+        ) {
+            Card {
+                TidyNowFigures(totals: totals)
             }
+            .padding(Design.Space.l)
+        } buttons: {
+            Button(role: .destructive) {
+                dismiss()
+                onConfirm()
+            } label: {
+                Text("Tidy up")
+            }
+            .keyboardShortcut(.delete, modifiers: .command)
+            .help(Text("Carry out everything ticked (⌘⌫)"))
+            Button("Cancel", role: .cancel) {
+                dismiss()
+            }
+            .keyboardShortcut(.defaultAction)
         }
-        .padding(Design.Space.xl)
-        .frame(width: Design.Size.confirmationSheet)
         .onExitCommand {
             dismiss()
+        }
+    }
+}
+
+/// What the ticked changes of a Tidy Now come to, as a card's numbers.
+struct TidyNowFigures: View {
+    let totals: TidyNowTotals
+
+    var body: some View {
+        CardFigures {
+            if totals.trashCount > 0 {
+                CardFigure(value: Text("\(totals.trashCount)"), label: Text("to the Trash"))
+                CardFigure(value: Text(totals.trashBytes.formattedFileSize), label: Text("to free"))
+            }
+            if totals.archiveCount > 0 {
+                CardFigure(value: Text("\(totals.archiveCount)"), label: Text("to archive"))
+            }
+            if totals.renameCount > 0 {
+                CardFigure(value: Text("\(totals.renameCount)"), label: Text("to rename"))
+            }
+        }
+    }
+}
+
+/// What a Tidy Now came to, as a card's numbers.
+struct TidyNowResultFigures: View {
+    let result: TidyNowResult
+
+    var body: some View {
+        let done = result.results.reduce(0) { $0 + $1.items.filter(\.isDone).count }
+        let leftAlone = result.results.reduce(0) { $0 + $1.leftAlone.count }
+        CardFigures {
+            CardFigure(value: Text("\(done)"), label: Text("changed"))
+            if leftAlone > 0 {
+                CardFigure(value: Text("\(leftAlone)"), label: Text("left alone"))
+            }
+            if result.bytesFreed > 0 {
+                CardFigure(value: Text(result.bytesFreed.formattedFileSize), label: Text("moved to the Trash"))
+            }
+        }
+    }
+}
+
+/// Why a Tidy Now ended early, when it did.
+struct TidyNowResultNotes: View {
+    let result: TidyNowResult
+
+    var body: some View {
+        if result.wasCancelled {
+            Text("Stopped before every change was tried.")
+                .foregroundStyle(.secondary)
+        }
+        if result.logFailure != nil {
+            Label("The activity log stopped working, so the cleanup stopped. Nothing after that was changed.", systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -53,15 +102,18 @@ struct TidyNowSummaryView: View {
     let result: TidyNowResult
 
     var body: some View {
+        VStack(spacing: 0) {
+            Card {
+                TidyNowResultFigures(result: result)
+                TidyNowResultNotes(result: result)
+            }
+            .padding([.horizontal, .top], Design.Space.l)
+            list
+        }
+    }
+
+    private var list: some View {
         List {
-            if result.wasCancelled {
-                Text("Stopped before every change was tried.")
-                    .foregroundStyle(.secondary)
-            }
-            if result.logFailure != nil {
-                Label("The activity log stopped working, so the tidy stopped. Nothing after that was changed.", systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.secondary)
-            }
             ForEach(result.results, id: \.action) { item in
                 Section(item.action.title) {
                     let done = item.items.filter(\.isDone).count

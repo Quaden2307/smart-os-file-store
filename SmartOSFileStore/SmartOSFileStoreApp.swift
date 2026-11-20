@@ -14,6 +14,7 @@ struct SmartOSFileStoreApp: App {
         // sidebar's width the user leaves it at.
         .defaultSize(width: 1_280, height: 720)
         .commands {
+            AboutCommands()
             UndoCommands()
             RevealInFinderCommands()
             KeepCommands()

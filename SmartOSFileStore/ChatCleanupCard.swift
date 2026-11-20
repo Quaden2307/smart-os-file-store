@@ -25,19 +25,22 @@ struct ChatCleanupCard: View {
     @Environment(ActivityLogModel.self) private var activity
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Design.Chat.cardGap) {
-            VStack(alignment: .leading, spacing: Design.Space.tight) {
-                Text("What I understood")
-                    .font(Design.Chat.caption)
-                    .foregroundStyle(.secondary)
-                // The words may include text the model chose (a name to look for), so they go in
-                // verbatim: nothing in them is read as Markdown or as a link.
-                Text(verbatim: proposal.request.understood)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        let model = chat.cleanups[proposal.id]
+        // Only a card that Confirm can still carry out says so.
+        let canConfirm = model.map { $0.isReviewing && !$0.totals.isEmpty } == true
+            && chat.cards.state(of: proposal.id) != .outOfDate
+        Card {
+            // The words may include text the model chose (a name to look for), so they go in
+            // verbatim: nothing in them is read as Markdown or as a link.
+            CardHeader(
+                title: Text(verbatim: proposal.request.understood),
+                subtitle: canConfirm
+                    ? Text("What I understood. Nothing changes until you confirm.")
+                    : Text("What I understood")
+            )
             .accessibilityElement(children: .combine)
             Divider()
-            if let model = chat.cleanups[proposal.id] {
+            if let model {
                 switch model.phase {
                 case .planning, .reviewing:
                     preview(model)
@@ -51,9 +54,7 @@ struct ChatCleanupCard: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(Design.Space.m)
         .frame(maxWidth: Design.Chat.cardWidth, alignment: .leading)
-        .overlay(RoundedRectangle(cornerRadius: Design.Radius.card, style: .continuous).strokeBorder(Design.Colour.hairline))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("Cleanup preview"))
     }
@@ -67,6 +68,8 @@ struct ChatCleanupCard: View {
         if categories.isEmpty {
             Text("Nothing left to clean up for this request.")
                 .foregroundStyle(.secondary)
+        } else if !model.totals.isEmpty, !isOutOfDate {
+            TidyNowFigures(totals: model.totals)
         }
         ForEach(categories) { category in
             CardCategoryRow(category: category, tickedCount: model.tickedChanges(in: category).count)
@@ -76,22 +79,13 @@ struct ChatCleanupCard: View {
             Label("Couldn’t check: \(failed.map(\.title).formatted(.list(type: .and)))", systemImage: "exclamationmark.triangle")
                 .foregroundStyle(.secondary)
         }
-        if isOutOfDate {
-            Label("Out of date: a file changed, or a newer preview took its place.", systemImage: "clock.arrow.circlepath")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        } else if !categories.isEmpty {
-            Group {
-                if model.totals.isEmpty {
-                    Text("Nothing is ticked. Review to choose files.")
-                } else {
-                    Text("Ticked: \(model.totals.sentence). Nothing changes until you confirm.")
-                }
+        CardActions {
+            if isOutOfDate {
+                Label("Out of date: a file changed, or a newer preview took its place.", systemImage: "clock.arrow.circlepath")
+            } else if !categories.isEmpty, model.totals.isEmpty {
+                Text("Nothing is ticked. Review to choose files.")
             }
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-        }
-        HStack(spacing: Design.Space.s) {
+        } buttons: {
             if isOutOfDate {
                 if chat.refreshing.contains(proposal.id) {
                     ProgressView()
@@ -121,13 +115,12 @@ struct ChatCleanupCard: View {
     // MARK: - Running
 
     private func running(_ model: TidyNowModel, _ progress: CleanupExecutionProgress) -> some View {
-        HStack(spacing: Design.Space.m) {
-            let current = min(progress.itemsCompleted + 1, progress.itemsTotal)
-            ProgressView(value: progress.fractionCompleted)
-                .frame(maxWidth: 200)
-                .accessibilityLabel(Text("Progress cleaning up"))
-            Text("Cleaning up item \(current) of \(progress.itemsTotal)…")
-            Spacer()
+        let current = min(progress.itemsCompleted + 1, progress.itemsTotal)
+        return ProgressLine(
+            fraction: progress.fractionCompleted,
+            text: Text("Cleaning up item \(current) of \(progress.itemsTotal)…"),
+            label: Text("Progress cleaning up")
+        ) {
             Button("Stop") {
                 model.cancel()
             }
@@ -139,19 +132,8 @@ struct ChatCleanupCard: View {
 
     @ViewBuilder
     private func summary(_ result: TidyNowResult) -> some View {
-        if result.wasCancelled {
-            Text("Stopped before every change was tried.")
-                .foregroundStyle(.secondary)
-        }
-        if result.logFailure != nil {
-            Label("The activity log stopped working, so the cleanup stopped. Nothing after that was changed.", systemImage: "exclamationmark.triangle")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        if result.results.isEmpty {
-            Text("Nothing was changed.")
-                .foregroundStyle(.secondary)
-        }
+        TidyNowResultFigures(result: result)
+        TidyNowResultNotes(result: result)
         ForEach(result.results, id: \.action) { item in
             HStack(alignment: .firstTextBaseline) {
                 Label(item.action.title, systemImage: item.action.display.symbol)
@@ -161,13 +143,9 @@ struct ChatCleanupCard: View {
             }
             .accessibilityElement(children: .combine)
         }
-        HStack(spacing: Design.Space.s) {
-            Text(result.bytesFreed > 0
-                ? "\(result.bytesFreed.formattedFileSize) moved to the Trash. Every file is listed in Activity."
-                : "Every file is listed in Activity.")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: Design.Space.m)
+        CardActions {
+            Text("Every file is listed in Activity.")
+        } buttons: {
             // The log's own record of the run decides, so an undo from Edit > Undo or from Activity
             // shows here too. Only the newest cleanup is offered, as Edit > Undo offers it.
             if let runID = result.runID, let run = activity.latestCleanupRun, run.id == runID {
@@ -209,7 +187,7 @@ private struct CardCategoryRow: View {
             .foregroundStyle(.secondary)
             if tickedCount < category.changes.count {
                 Text(tickedCount == 0 ? "for you to review" : "\(tickedCount) ticked")
-                    .font(Design.Chat.caption)
+                    .font(Design.Typography.caption)
                     .foregroundStyle(.secondary)
             }
         }

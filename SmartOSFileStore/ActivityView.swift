@@ -55,19 +55,18 @@ struct ActivityView: View {
     private var content: some View {
         if let error = activity.failure {
             // The problem and its ways out are in the banner under the list, as in Downloads.
-            ContentUnavailableView(
-                ActivityLogFailure(error).title,
-                systemImage: "exclamationmark.triangle",
-                description: Text("See the message below for what to do.")
+            StateView(
+                title: Text(ActivityLogFailure(error).title),
+                symbol: "exclamationmark.triangle",
+                message: Text("See the message below for what to do.")
             )
         } else if activity.log == nil || !model.hasLoaded {
-            ProgressView("Loading…")
-                .controlSize(.large)
+            StateView.loading
         } else if model.runs.isEmpty {
-            ContentUnavailableView(
-                "No activity yet",
-                systemImage: "clock",
-                description: Text("Each cleanup you confirm is listed here, with what happened to every file.")
+            StateView(
+                title: Text("No activity yet"),
+                symbol: "clock",
+                message: Text("Each cleanup you confirm is listed here, with what happened to every file.")
             )
         } else {
             runList

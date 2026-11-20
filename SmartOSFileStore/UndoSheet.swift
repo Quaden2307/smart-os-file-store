@@ -36,49 +36,45 @@ private struct UndoQuestion: View {
     let cancel: @MainActor () -> Void
 
     var body: some View {
-        VStack(spacing: Design.Space.l) {
-            Image(systemName: "arrow.uturn.backward")
-                .font(Design.Icon.large)
-                .imageScale(.large)
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            VStack(spacing: Design.Space.s) {
-                Text("\(plan.title)?")
-                    .font(Design.Typography.sectionTitle)
-                    .accessibilityAddTraits(.isHeader)
-                Text("^[\(plan.steps.count) file](inflect: true) will be put back where they were.")
-                    .multilineTextAlignment(.center)
+        SheetScaffold(
+            title: Text("\(plan.title)?"),
+            subtitle: plan.refused.isEmpty
+                ? Text("Every file goes back where it was. Nothing is replaced.")
+                : Text("What can be put back goes where it was. Nothing is replaced."),
+            size: .small
+        ) {
+            VStack(spacing: 0) {
+                Card {
+                    CardFigures {
+                        CardFigure(value: Text("\(plan.steps.count)"), label: Text("to put back"))
+                        if !plan.refused.isEmpty {
+                            CardFigure(value: Text("\(plan.refused.count)"), label: Text("can’t be put back"))
+                        }
+                    }
+                }
+                .padding(Design.Space.l)
                 if !plan.refused.isEmpty {
-                    Text("^[\(plan.refused.count) file](inflect: true) can’t be:")
-                        .foregroundStyle(.secondary)
+                    List(plan.refused) { refused in
+                        UndoFileRow(
+                            name: refused.change.displayName,
+                            detail: refused.refusal.localizedDescription(for: refused.change.undoOperation)
+                        )
+                    }
+                    .frame(minHeight: 80, maxHeight: 180)
+                    .accessibilityLabel("Files that can’t be put back")
                 }
             }
-            .fixedSize(horizontal: false, vertical: true)
-            if !plan.refused.isEmpty {
-                List(plan.refused) { refused in
-                    UndoFileRow(
-                        name: refused.change.displayName,
-                        detail: refused.refusal.localizedDescription(for: refused.change.undoOperation)
-                    )
-                }
-                .frame(minHeight: 80, maxHeight: 180)
-                .accessibilityLabel("Files that can’t be put back")
+        } buttons: {
+            Button("Cancel", role: .cancel) {
+                cancel()
             }
-            HStack(spacing: Design.Space.m) {
-                Spacer()
-                Button("Cancel", role: .cancel) {
-                    cancel()
-                }
-                .keyboardShortcut(.cancelAction)
-                Button("Undo") {
-                    confirm()
-                }
-                .keyboardShortcut(.defaultAction)
-                .help("Put the files back where they were (Return)")
+            .keyboardShortcut(.cancelAction)
+            Button("Undo") {
+                confirm()
             }
+            .keyboardShortcut(.defaultAction)
+            .help("Put the files back where they were (Return)")
         }
-        .padding(Design.Space.xl)
-        .frame(width: Design.Size.confirmationSheet)
     }
 }
 
@@ -89,23 +85,24 @@ private struct UndoProgressView: View {
     let stop: @MainActor () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Design.Space.m) {
-            Text(plan.title)
-                .font(Design.Typography.sectionTitle)
-                .accessibilityAddTraits(.isHeader)
-            HStack(spacing: Design.Space.m) {
-                ProgressView(value: progress.fractionCompleted)
-                    .accessibilityLabel("Progress putting files back")
+        SheetScaffold(
+            title: Text(plan.title),
+            subtitle: Text("Putting every file back where it was."),
+            size: .small
+        ) {
+        } status: {
+            ProgressLine(
+                fraction: progress.fractionCompleted,
+                text: Text("Putting back file \(min(progress.itemsCompleted + 1, progress.itemsTotal)) of \(progress.itemsTotal)…"),
+                label: Text("Progress putting files back")
+            ) {
                 Button("Stop") {
                     stop()
                 }
                 .help("Stop after the file being put back now")
             }
-            Text("Putting back file \(min(progress.itemsCompleted + 1, progress.itemsTotal)) of \(progress.itemsTotal)…")
-                .foregroundStyle(.secondary)
+        } buttons: {
         }
-        .padding(Design.Space.xl)
-        .frame(width: Design.Size.confirmationSheet)
     }
 }
 
@@ -115,72 +112,60 @@ private struct UndoSummaryView: View {
     let done: @MainActor () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            VStack(spacing: Design.Space.s) {
-                Image(systemName: "arrow.uturn.backward")
-                    .font(Design.Icon.large)
-                    .imageScale(.large)
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                if result.undone.isEmpty {
-                    Text("Nothing was put back")
-                        .font(Design.Typography.windowTitle)
-                        .accessibilityAddTraits(.isHeader)
-                    Text("No file was changed.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("^[\(result.undone.count) file](inflect: true) put back")
-                        .font(Design.Typography.windowTitle)
-                        .accessibilityAddTraits(.isHeader)
-                    if result.bytesTakenFromTrash > 0 {
-                        Text("\(result.bytesTakenFromTrash.formattedFileSize) taken back out of the Trash.")
-                            .foregroundStyle(.secondary)
+        SheetScaffold(title: Text(result.title), subtitle: subtitle) {
+            VStack(spacing: 0) {
+                Card {
+                    CardFigures {
+                        CardFigure(value: Text("\(result.undone.count)"), label: Text("put back"))
+                        if !result.notUndone.isEmpty {
+                            CardFigure(value: Text("\(result.notUndone.count)"), label: Text("not put back"))
+                        }
+                        if result.bytesTakenFromTrash > 0 {
+                            CardFigure(value: Text(result.bytesTakenFromTrash.formattedFileSize), label: Text("put back from the Trash"))
+                        }
+                    }
+                    if result.logFailure != nil {
+                        StateBar(
+                            symbol: "exclamationmark.triangle",
+                            message: Text("The activity log stopped working, so undo stopped. See the message at the bottom of the main window.")
+                        )
                     }
                 }
-                if result.logFailure != nil {
-                    Text("The activity log stopped working, so undo stopped. See the message at the bottom of the main window.")
-                        .font(Design.Typography.secondary)
-                }
-            }
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(Design.Space.xl)
-            .frame(maxWidth: .infinity)
-            .accessibilityElement(children: .combine)
-
-            List {
-                if !result.undone.isEmpty {
-                    Section("Put back") {
-                        ForEach(result.undone) { item in
-                            UndoFileRow(name: item.displayName, detail: item.outcome.localizedDescription(for: item.operation))
+                .padding([.horizontal, .top], Design.Space.l)
+                List {
+                    if !result.undone.isEmpty {
+                        Section("Put back") {
+                            ForEach(result.undone) { item in
+                                UndoFileRow(name: item.displayName, detail: item.outcome.localizedDescription(for: item.operation))
+                            }
+                        }
+                    }
+                    if !result.notUndone.isEmpty {
+                        Section("Not put back") {
+                            ForEach(result.notUndone) { item in
+                                UndoFileRow(name: item.displayName, detail: item.outcome.localizedDescription(for: item.operation))
+                            }
                         }
                     }
                 }
-                if !result.notUndone.isEmpty {
-                    Section("Not put back") {
-                        ForEach(result.notUndone) { item in
-                            UndoFileRow(name: item.displayName, detail: item.outcome.localizedDescription(for: item.operation))
-                        }
-                    }
-                }
+                .accessibilityLabel("Files")
             }
-            .accessibilityLabel("Files")
-
-            Divider()
-            HStack {
-                if !result.notUndone.isEmpty {
-                    Text("^[\(result.notUndone.count) file](inflect: true) not put back")
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button("Done") {
-                    done()
-                }
-                .keyboardShortcut(.defaultAction)
+        } buttons: {
+            Button("Done") {
+                done()
             }
-            .padding(Design.Space.m)
+            .keyboardShortcut(.defaultAction)
         }
-        .frame(minWidth: 520, idealWidth: 560, minHeight: 360, idealHeight: 420)
+    }
+
+    private var subtitle: Text {
+        if result.undone.isEmpty {
+            Text("Nothing was put back. No file changed.")
+        } else if result.notUndone.isEmpty {
+            Text("Every file is back where it was.")
+        } else {
+            Text("Some files could not be put back. The list says why.")
+        }
     }
 }
 

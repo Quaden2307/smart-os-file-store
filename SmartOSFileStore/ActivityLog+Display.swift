@@ -15,28 +15,28 @@ struct ActivityLogFailure: Equatable {
         switch error {
         case .damaged:
             title = String(localized: "The activity log is damaged")
-            message = String(localized: "Its file can’t be read as a database, so nothing can be cleaned up for now. You can start a fresh log; the damaged file is kept beside it. A fresh log has no history and no files marked Kept.")
+            message = String(localized: "Its file can’t be read, so nothing can be cleaned up for now. You can start a fresh log; the damaged file stays beside it. A fresh log has no history and no files marked Kept.")
             canStartFresh = true
         case .unreadable:
             title = String(localized: "The activity log can’t be opened")
-            message = String(localized: "Its file or folder can’t be read or written, so nothing can be cleaned up for now. Check that the disk isn’t full and try again, or start a fresh log; the existing file is kept beside it. A fresh log has no history and no files marked Kept.")
+            message = String(localized: "Its file or folder can’t be read or written, so nothing can be cleaned up for now. Check that the disk isn’t full and try again, or start a fresh log; the existing file stays beside it. A fresh log has no history and no files marked Kept.")
             canStartFresh = true
         case .newerVersion:
             title = String(localized: "The activity log is from a newer version")
-            message = String(localized: "A newer version of Smart OS File Store made this log, and this version must not change it. Update the app, or start a fresh log; the existing file is kept beside it. A fresh log has no history and no files marked Kept.")
+            message = String(localized: "A newer version of Smart OS File Store made this log, and this version must not change it. Update the app, or start a fresh log; the existing file stays beside it. A fresh log has no history and no files marked Kept.")
             canStartFresh = true
         case .writeFailed:
             // The file itself is most likely sound: a full disk, or another copy of the app holding
             // it. Setting it aside would hide its history for nothing.
             title = String(localized: "The activity log can’t be written")
-            message = String(localized: "A change couldn’t be recorded, so cleanup stopped. Check that the disk isn’t full and that no other copy of the app is running, then try again.")
+            message = String(localized: "A change couldn’t be recorded, so the cleanup stopped. Check that the disk isn’t full and that no other copy of the app is running, then try again.")
             canStartFresh = false
         case .inconsistent:
-            title = String(localized: "The activity log can’t be trusted")
-            message = String(localized: "The log no longer holds what was just written to it, so cleanup stopped. Try again, or start a fresh log; the existing file is kept beside it. A fresh log has no history and no files marked Kept.")
+            title = String(localized: "The activity log lost a change")
+            message = String(localized: "The log no longer holds what was just written to it, so the cleanup stopped. Try again, or start a fresh log; the existing file stays beside it. A fresh log has no history and no files marked Kept.")
             canStartFresh = true
         case .locationUnavailable:
-            title = String(localized: "The activity log has nowhere to go")
+            title = String(localized: "The activity log’s folder is missing")
             message = String(localized: "The Application Support folder in your Library couldn’t be found, so nothing can be cleaned up for now. Quit the app and open it again once the folder is back.")
             canStartFresh = false
         }
@@ -51,7 +51,7 @@ extension ActivityRun {
             return UndoPlan.title(undoingCode: undoneActionCode)
         }
         if isTidyNow {
-            return String(localized: "Tidy now")
+            return String(localized: "Tidy Now")
         }
         return action?.title ?? String(localized: "Cleanup")
     }
@@ -164,7 +164,7 @@ extension ActivityChange {
         case .notUndone(let refusal):
             refusal.localizedDescriptionInUndo(for: undoRowOperation)
         case .unrecognized:
-            String(localized: "Recorded by a newer version of the app.")
+            String(localized: "Recorded by a newer version of the app")
         }
     }
 

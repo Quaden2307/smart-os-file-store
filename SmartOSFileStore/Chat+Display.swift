@@ -9,7 +9,7 @@ extension TurnOutcome {
         case .answered:
             nil
         case .stopped:
-            String(localized: "Stopped.")
+            String(localized: "Stopped")
         case .timedOut:
             String(localized: "That took too long, so the reply was stopped. Try a shorter question.")
         case .toolLimitReached:

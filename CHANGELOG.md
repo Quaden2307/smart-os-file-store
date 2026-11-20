@@ -20,10 +20,16 @@ All notable changes to Smart OS File Store are recorded here. The format follows
   - questions are answered on the Mac, nothing leaves it, and the conversation is not saved or logged;
   - when Apple Intelligence is off or not available the bar says why, and the rest of the app works as before.
 - **Use Apple Intelligence** in Settings, on by default, turns the chat off.
+- **A welcome, shown once** the first time the app opens: what it does, and what it promises (a preview first, files go to the Trash, every change can be undone, nothing leaves the Mac). The Downloads folder is read after you click Get started.
+- **An app icon** (a download settling into a tray, white on black), and a one-line description in the About window.
 
 ### Changed
 
 - Version 0.3 needs macOS 27 (version 0.2 ran on macOS 26).
+- Every sheet has the same header, footer and sizes, and every result is summarised in one card with its numbers: how many files, how much space. The preview says in that card that nothing changes until you click its button.
+- Confirmations ask a short question and show the numbers in a card. Their buttons and keys are unchanged: Return never sends a file to the Trash.
+- Empty, loading and failed screens look alike: one symbol, one sentence, one button at most. When access to Downloads is blocked the button opens the privacy settings, and the folder is read again when you come back.
+- The wording is consistent: checkboxes are "ticked" (Tick all, Tick none), the copy a group of duplicates leaves "Stays", a run is a "cleanup", and the button that ends a search is Stop.
 - Keep This File is now ⇧⌘K, in the main window and in the preview. ⌘K goes to the chat bar.
 
 ## [0.2.0] - 2026-11-16

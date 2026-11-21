@@ -74,6 +74,8 @@ enum Design {
         static let thinBar: CGFloat = 4
         /// One folder's stacked bar.
         static let folderBar: CGFloat = 20
+        /// The weekly chart at the top of Activity.
+        static let insightsHeight: CGFloat = 180
         /// The width a row's bar is drawn in.
         static let rowBarWidth: CGFloat = 160
         /// The fade a chart arrives with, and nothing more.

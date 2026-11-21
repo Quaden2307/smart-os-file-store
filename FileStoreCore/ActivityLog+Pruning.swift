@@ -32,14 +32,16 @@ extension ActivityLog {
     /// the log was pruned less than `pruneInterval` ago. A run exactly `retention` old stays. A run
     /// is removed whole or not at all, by when it started.
     @concurrent
-    public func pruneIfDue(now: Date = .now) async throws(ActivityLogError) -> ActivityPruneResult {
+    public func pruneIfDue(now: Date = .now, calendar: Calendar = .current) async throws(ActivityLogError) -> ActivityPruneResult {
         let moment = now.timeIntervalSinceReferenceDate
-        let removed: Int? = try write { db in
+        let removed: Int? = try write { db -> Int? in
             let lastPrunedAt = try Double.fetchOne(db, sql: "SELECT lastPrunedAt FROM maintenance WHERE id = 1")
             // A last pruning in the future means the clock was set back; prune then too.
             if let lastPrunedAt, moment >= lastPrunedAt, moment - lastPrunedAt < Self.pruneInterval {
                 return nil
             }
+            // What goes is added up per day first, so the insights' all-time numbers stay.
+            try Self.rollUp(db, runsBefore: moment - Self.retention, calendar: calendar)
             // The changes go with their run (ON DELETE CASCADE).
             try db.execute(sql: "DELETE FROM runs WHERE startedAt < ?", arguments: [moment - Self.retention])
             let removed = db.changesCount

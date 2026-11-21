@@ -122,6 +122,7 @@ And from version 0.3 so far:
 16. Per-folder cleanup rules (Folders, segment 3): `FolderRules` with tested defaults per kind, stored in the log, enforced by the planners, and a Folders pane in Settings.
 17. The chat across folders (Folders, segment 4): `searchFiles`, `findDuplicates` and `proposeCleanup` take a folder (on screen, named, or all); one card per folder; folder rules respected; per-folder subtotals.
 18. A storage view (Visualizations, segment 1): what is taking space per folder and kind, what each cleanup could get back (counted as previews tick, each file once), and the largest files, with Swift Charts.
+19. Cleanup insights (Visualizations, segment 2): daily totals from the log (undo subtracted on its day), kept through pruning in `dailyTotals`, shown at the top of Activity as headlines, a twelve-week chart and breakdowns.
 
 Out of scope until the owner asks: watching Downloads automatically, user-defined rules, schedules, cloud-drive folders, automatic or scheduled rules, an archive name of its own for each kind of folder, undo that follows a folder that has moved, subfolders, search, tags, sharing, AI that makes a change without the user's Confirm, changing a card by talking (`reviseCleanup`), AI that reads file contents, custom theme.
 

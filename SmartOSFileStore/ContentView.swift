@@ -391,7 +391,8 @@ struct ContentView: View {
                     isShown: section == .activity,
                     focus: $focusedPlace,
                     canUndo: canStartUndo,
-                    undo: startUndo
+                    undo: startUndo,
+                    tidyNow: canStartTidyNow ? startTidyNow : nil
                 )
                 .placeShown(section == .activity)
                 StorageView(model: storage, review: reviewFromStorage, showInList: showInList)

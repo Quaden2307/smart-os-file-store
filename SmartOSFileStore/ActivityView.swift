@@ -24,8 +24,17 @@ struct ActivityView: View {
 
     let undo: @MainActor (UndoTarget) -> Void
 
+    /// Runs Tidy Now, from the empty state of a new install. Nil while it cannot start.
+    var tidyNow: (@MainActor () -> Void)?
+
     /// The folder whose runs are listed, or nil for every folder.
     @State private var folderFilter: ManagedFolder.ID?
+
+    /// What has been cleaned over time, read with the list.
+    @State private var insights: CleanupInsights?
+
+    /// The week whose runs are listed, from a click on its bar, or nil for every week.
+    @State private var weekFilter: Date?
 
     var body: some View {
         content
@@ -46,6 +55,19 @@ struct ActivityView: View {
 
     private func reload() {
         model.reload(activity: activity)
+        guard let log = activity.log else { return }
+        Task {
+            // A log that cannot be read shows its own notice below the list.
+            if let days = try? await log.dailyCleanups() {
+                insights = CleanupInsights(days: days, now: .now, calendar: .current)
+            }
+        }
+    }
+
+    /// True when a run started in the week a bar click chose, or no week was chosen.
+    private func isInWeek(_ run: ActivityRun) -> Bool {
+        guard let weekFilter, let week = Calendar.current.dateInterval(of: .weekOfYear, for: weekFilter) else { return true }
+        return week.contains(run.startedAt)
     }
 
     @ViewBuilder
@@ -63,8 +85,14 @@ struct ActivityView: View {
             StateView(
                 title: Text("No activity yet"),
                 symbol: "clock",
-                message: Text("Each cleanup you confirm is listed here, with what happened to every file.")
-            )
+                message: Text("Each cleanup you confirm is listed here, with how much it moved to the Trash over time.")
+            ) {
+                if let tidyNow {
+                    Button("Tidy now", action: tidyNow)
+                        .keyboardShortcut(.defaultAction)
+                        .help("Check the folder on screen with every cleanup at once")
+                }
+            }
         } else {
             runList
         }
@@ -75,6 +103,10 @@ struct ActivityView: View {
     /// after a placeholder), and then never closes it again.
     private var runList: some View {
         VStack(spacing: 0) {
+            if let insights, !insights.isEmpty {
+                InsightsHeader(insights: insights, folderName: folderName(id:), selectedWeek: $weekFilter)
+                Divider()
+            }
             folderFilterBar
             Divider()
             runs
@@ -109,6 +141,14 @@ struct ActivityView: View {
         .padding(.vertical, Design.Space.s)
     }
 
+    /// A folder's name by its ID, for the insights.
+    private func folderName(id: ManagedFolder.ID) -> String {
+        if let entry = activity.folderEntries.first(where: { $0.id == id }) {
+            return entry.kind == .custom ? (entry.folder?.displayName ?? entry.storedName ?? "") : entry.kind.standardName
+        }
+        return model.runs.first { $0.folderID == id }.map { URL(filePath: $0.folderPath).lastPathComponent } ?? String(localized: "Removed folder")
+    }
+
     /// The name a run's folder goes by now, or the name it had when the run was made.
     private func folderName(of run: ActivityRun) -> String {
         if let id = run.folderID, let entry = activity.folderEntries.first(where: { $0.id == id }) {
@@ -119,7 +159,7 @@ struct ActivityView: View {
 
     private var runs: some View {
         List(selection: $selection) {
-            ForEach(model.runs.filter { folderFilter == nil || $0.folderID == folderFilter }) { run in
+            ForEach(model.runs.filter { (folderFilter == nil || $0.folderID == folderFilter) && isInWeek($0) }) { run in
                 let isExpanded = model.isExpanded(run.id)
                 ActivityRunRow(
                     run: run,

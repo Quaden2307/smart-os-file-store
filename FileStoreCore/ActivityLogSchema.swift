@@ -41,6 +41,9 @@ internal import GRDB
 /// `v8` adds `folders.rules`: the folder's own cleanup rules as JSON, NULL for its kind's defaults
 /// (decision record 0028).
 ///
+/// `v9` adds `dailyTotals`: what pruning removes, added up per day, action and folder first, so
+/// the insights' all-time numbers never shrink (decision record 0031).
+///
 /// Every time is a `Date.timeIntervalSinceReferenceDate`, the number a `Date` itself holds, so a
 /// modification date read back is bit for bit the one the scan saw. Paths are stored as text;
 /// file content never is.
@@ -200,6 +203,24 @@ enum ActivityLogSchema {
         migrator.registerMigration("v8") { db in
             // A folder's own rules, as JSON (`FolderRules`). NULL is its kind's defaults.
             try db.execute(sql: "ALTER TABLE folders ADD COLUMN rules TEXT")
+        }
+        migrator.registerMigration("v9") { db in
+            // What pruning removes is first added up here, one row per day, action and folder, so
+            // all-time numbers survive it (decision record 0031). `day` is YYYY-MM-DD in the Mac's
+            // calendar when the rows were rolled up.
+            try db.execute(sql: """
+                CREATE TABLE dailyTotals (
+                    day TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    folderID TEXT NOT NULL,
+                    bytesMovedToTrash INTEGER NOT NULL,
+                    filesTrashed INTEGER NOT NULL,
+                    filesTidied INTEGER NOT NULL,
+                    PRIMARY KEY (day, action, folderID)
+                ) STRICT;
+
+                CREATE INDEX changes_attemptedAt ON changes (attemptedAt);
+                """)
         }
         return migrator
     }

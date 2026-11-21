@@ -61,6 +61,30 @@ enum Design {
         static let checkbox: CGFloat = 16
     }
 
+    /// Every chart: greys for structure, and one small ordered palette for categories that tells
+    /// apart in light and dark mode and for the common kinds of colour blindness (blue, orange,
+    /// teal and pink lie far apart in each; the order matters more than the hue). Charts use these
+    /// and nothing else (docs/design.md, Charts).
+    enum Chart {
+        static let palette: [Color] = [.blue, .orange, .teal, .pink, .yellow, .purple, .gray]
+        /// Lines and tracks that only give structure.
+        static let structure = Color.secondary.opacity(0.25)
+        /// A bar in a row of a list, and a thin one beside a ranked file.
+        static let barHeight: CGFloat = 8
+        static let thinBar: CGFloat = 4
+        /// One folder's stacked bar.
+        static let folderBar: CGFloat = 20
+        /// The width a row's bar is drawn in.
+        static let rowBarWidth: CGFloat = 160
+        /// The fade a chart arrives with, and nothing more.
+        static let appear = Animation.easeOut(duration: 0.2)
+
+        /// The colour of the category at `index` in the palette's order.
+        static func colour(_ index: Int) -> Color {
+            palette[index % palette.count]
+        }
+    }
+
     /// The About window is the system's own, and its one line of ours is AppKit text, not a view:
     /// the small system font, centred, in the label colour so it reads in light and dark mode.
     enum About {

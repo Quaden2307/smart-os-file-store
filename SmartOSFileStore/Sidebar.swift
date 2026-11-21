@@ -9,6 +9,9 @@ enum SidebarSection: Hashable {
     /// Every confirmed cleanup, from the activity log.
     case activity
 
+    /// What is taking space, and what could be got back.
+    case storage
+
     static let downloads = SidebarSection.folder(.standard(.downloads))
 
     /// The folder this place shows, if it shows one.
@@ -93,6 +96,10 @@ struct Sidebar: View {
                 .disabled(!canChangeFolders)
                 .help("Choose a folder for Smart OS File Store to look after")
                 .accessibilityLabel("Add folder")
+            }
+            Section("Overview") {
+                Label("Storage", systemImage: "chart.bar.xaxis")
+                    .tag(SidebarSection.storage)
             }
             Section("History") {
                 Label("Activity", systemImage: "clock")

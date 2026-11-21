@@ -26,6 +26,12 @@ final class CleanupSearchModel {
     /// The finished plan, shown in the preview sheet until it is dismissed.
     private(set) var presentedPlan: PresentedPlan?
 
+    /// Shows a plan made elsewhere (the storage view's counted plan) as this action's preview.
+    func present(_ plan: CleanupPlan) {
+        guard !isRunning else { return }
+        presentedPlan = PresentedPlan(plan: plan)
+    }
+
     var isRunning: Bool {
         if case .running = phase {
             return true

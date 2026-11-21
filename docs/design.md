@@ -207,6 +207,17 @@ A screen with nothing to list says why, the same way each time. `StateView` (`St
 
 Filter bar, progress line, notices and status bar share `.barInset()` (12 across, 4 down) and the `secondary` role, with a `Divider()` between bars. The filter is a segmented control while it fits, and a pop-up menu when the window is narrow.
 
+### Charts
+
+Swift Charts, which ships with macOS. Tokens in `Design.Chart`.
+
+- Greys for structure (`Design.Chart.structure`): tracks, axes. One small ordered palette for categories (`Design.Chart.palette`: blue, orange, teal, pink, yellow, purple, grey), defined once and reused by every chart; a category keeps its colour on every chart (type groups in their fixed order).
+- Direct labels where they fit; exact values in the legend table, on hover and in the accessibility tree (every mark has a label and a value). Monospaced digits.
+- No pie or donut charts, no 3D, no gradients, no gridlines unless they help reading. No animation beyond a short fade in (`Design.Chart.appear`).
+- A legend doubles as a table of exact sizes and counts.
+- Bars in a list row are `Design.Chart.barHeight`; the thin bar beside a ranked file is `Design.Chart.thinBar`.
+- Sizes are space on disk; cloud-only files count as zero and the screen says so. Space a cleanup would get back is "moved to the Trash", never "freed".
+
 ## Copy
 
 - Sentence case for everything in a window or sheet: titles, buttons, column headings, badges, empty states. "Tidy now", "Date added", "No matching files". The one exception is a sheet or a run named after a command, which carries the command's name ("Tidy Now", "Find Duplicates").

@@ -126,3 +126,13 @@ xcodebuild -scheme SmartOSFileStore -destination 'platform=macOS' -derivedDataPa
 xcrun xccov view --report --only-targets /tmp/coverage.xcresult
 ```
 
+
+## Storage view
+
+`BenchmarkTests.storageViewAtTenThousandFiles`: one scan of a 10,002-file folder (5,000 duplicate pairs and two identical 2 GiB sparse files), then the storage view's numbers: totals, totals per kind and the ten largest files on the main actor's side, and what each cleanup could get back (every planner the folder offers, overlap resolved as Tidy Now resolves it, default ticks counted) in the background. Median of five runs after one warm-up.
+
+| Date | Mac | Build | Records | Totals, kinds, largest | What can be got back |
+|---|---|---|---|---|---|
+| 2026-11-21 | MacBook Pro 13-inch, M1, 2020, 8 GB | Debug | 10,002 | 132.6 ms (131.7–133.6) | 18,947.1 ms (18,863.2–19,028.6) |
+
+The second number is Tidy Now's planning in a Debug build (Release measured about 4.1 s for Tidy Now above). It runs off the main actor with the existing cancellation, once per scan of a folder, and the window shows a progress line meanwhile; the first number is the only work on the main actor.

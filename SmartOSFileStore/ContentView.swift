@@ -31,6 +31,9 @@ struct ContentView: View {
     /// True while the folder picker is up.
     @State private var isChoosingFolder = false
     @State private var activityList = ActivityListModel()
+
+    /// The Storage place's numbers.
+    @State private var storage = StorageModel()
     @State private var activitySelection: Set<ActivityRowID> = []
     @State private var undo = UndoModel()
 
@@ -314,6 +317,12 @@ struct ContentView: View {
 
     private func observingSettings(_ view: some View) -> some View {
         view
+            .onChange(of: lists.all.map(\.scanGeneration)) {
+                // A folder was read again: what it holds and could get back may have changed.
+                if section == .storage {
+                    refreshStorage()
+                }
+            }
             .onChange(of: model.scanGeneration) {
                 // The listing was replaced: drop selected rows that are gone, so menu commands never
                 // act on files that are no longer listed, and forget per-file icons.
@@ -352,6 +361,9 @@ struct ContentView: View {
                 if let place = section.folderPlace {
                     lastFolderPlace = place
                 }
+                if section == .storage {
+                    refreshStorage()
+                }
                 // The chat answers about the folder on screen.
                 chat.show(files: model)
                 guard placeToFocus == section else { return }
@@ -371,7 +383,7 @@ struct ContentView: View {
             // and open cleanups while the other is shown.
             ZStack {
                 content
-                    .placeShown(section != .activity)
+                    .placeShown(section.folderPlace != nil)
                 ActivityView(
                     activity: activity,
                     model: activityList,
@@ -382,6 +394,8 @@ struct ContentView: View {
                     undo: startUndo
                 )
                 .placeShown(section == .activity)
+                StorageView(model: storage, review: reviewFromStorage, showInList: showInList)
+                    .placeShown(section == .storage)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .sheet(item: presentedUndo) { presented in
@@ -453,8 +467,8 @@ struct ContentView: View {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
                 .keyboardShortcut("r", modifiers: .command)
-                .help(section != .activity ? Text("Refresh the list (⌘R)") : Text("Read the activity log again (⌘R)"))
-                .disabled(isShowingWelcome || (section != .activity ? !(showsList && model.canRefresh) : activity.log == nil))
+                .help(section.folderPlace != nil ? Text("Refresh the list (⌘R)") : Text("Read the activity log again (⌘R)"))
+                .disabled(isShowingWelcome || (section.folderPlace != nil ? !(showsList && model.canRefresh) : activity.log == nil))
             }
         }
     }
@@ -569,6 +583,8 @@ struct ContentView: View {
             activity.reloadFolders()
         case .activity:
             activityList.reload(activity: activity)
+        case .storage:
+            lists.all.forEach { $0.refresh() }
         }
     }
 
@@ -580,6 +596,8 @@ struct ContentView: View {
             showsList ? Array(selection) : []
         case .activity:
             activityList.revealableURLs(for: activitySelection)
+        case .storage:
+            []
         }
     }
 
@@ -779,7 +797,7 @@ struct ContentView: View {
                 FileFilterBar(filter: Bindable(model).filter)
                 Divider()
                 FileTableView(
-                    model: model, selection: selectionBinding, isShown: section != .activity, canChangeKept: canChangeKept,
+                    model: model, selection: selectionBinding, isShown: section.folderPlace != nil, canChangeKept: canChangeKept,
                     reveal: fileToReveal
                 )
                 .focused($focusedPlace, equals: .folder(model.place))
@@ -787,6 +805,20 @@ struct ContentView: View {
                 .id(model.place)
             }
         }
+    }
+
+    // MARK: - Storage
+
+    /// A "get back" row's Review: its folder is shown, and the plan that was counted opens as that
+    /// cleanup's own preview, so it shows exactly the files counted.
+    private func reviewFromStorage(_ plan: CleanupPlan, _ place: FolderPlace) {
+        guard canStartCleanup || lists.list(at: place)?.isSettled == true, activity.isListed(plan.folder) else { return }
+        lastFolderPlace = place
+        search.present(plan)
+    }
+
+    private func refreshStorage() {
+        storage.refresh(lists: lists, activity: activity, hashCache: search.hashCache)
     }
 
     // MARK: - Folders

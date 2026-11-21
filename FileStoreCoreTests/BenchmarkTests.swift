@@ -219,6 +219,40 @@ struct BenchmarkTests {
         Self.report("Tidy Now memory: footprint before \(Measured.mebibytes(before)), sampled peak \(Measured.mebibytes(highest)), growth \(Measured.mebibytes(growth))")
     }
 
+    /// The storage view's numbers for the same 10,000-file folder: totals, per kind, the largest
+    /// files, and what each cleanup could get back (every planner, overlap resolved, ticks counted).
+    @Test func storageViewAtTenThousandFiles() async throws {
+        let temp = try TemporaryFolder.make()
+        defer { temp.remove() }
+        _ = try BulkFiles.writeSmallFiles(count: Self.smallFileCount, in: temp.url)
+        try BulkFiles.writeSparseFile(temp.url.appending(path: "big-a.bin"), size: Self.bigSize)
+        try BulkFiles.writeSparseFile(temp.url.appending(path: "big-b.bin"), size: Self.bigSize)
+        let folder = ManagedFolder.temporary(temp.url)
+        let scan = try await FolderScanner().scan(folder)
+        let clock = ContinuousClock()
+        var reportTimes: [Duration] = []
+        var planTimes: [Duration] = []
+        for run in 0...Self.measuredRuns {
+            let start = clock.now
+            let total = StorageReport.total(of: scan.records)
+            _ = StorageReport.totals(of: scan.records) { $0.contentType?.preferredFilenameExtension ?? "" }
+            _ = StorageReport.largest(scan.records)
+            let reported = clock.now
+            let space = try await ReclaimableSpace.plan(
+                records: scan.records, in: folder, eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: .testing(),
+                now: Date(timeIntervalSinceNow: 2 * 3_600)
+            )
+            let planned = clock.now
+            #expect(total.count == scan.records.count)
+            #expect(!space.rows.isEmpty)
+            if run > 0 {
+                reportTimes.append(reported - start)
+                planTimes.append(planned - reported)
+            }
+        }
+        Self.report("Storage over \(scan.records.count) records: totals, kinds and largest \(Self.summary(reportTimes)); what can be got back \(Self.summary(planTimes))")
+    }
+
     /// Undo of a run that moved 1,000 files to a fake Trash, with the activity log in a file as the
     /// app keeps it: the undo plan from the log and the disk, then every file put back. Three runs,
     /// each trashed again first; only the undo is timed.

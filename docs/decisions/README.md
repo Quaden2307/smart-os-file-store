@@ -58,3 +58,4 @@ One short record per segment for each decision a reader of the code would otherw
 - [0027. Desktop, Documents and folders you add, in the app](0027-desktop-documents-and-custom-folders.md)
 - [0028. Each folder chooses its cleanups](0028-per-folder-cleanup-rules.md)
 - [0029. The chat bar works across folders](0029-chat-across-folders.md)
+- [0030. The storage view](0030-storage-view.md)

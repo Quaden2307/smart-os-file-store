@@ -5,7 +5,7 @@ import Foundation
 
 /// Debug builds only: `-SnapshotTo <name>` prints a picture of each window of the app, as base64 PNG on standard
 /// output, a few seconds after launch, drawn by the app itself, so a demo or a check of the layout
-/// needs no screen recording permission. `-StartPlace desktop|documents|activity` opens the window
+/// needs no screen recording permission. `-StartPlace desktop|documents|activity|storage` opens the window
 /// on that place. `-TurnOnStandardFolders` turns on Desktop and Documents. Release builds ignore
 /// all three.
 enum DebugSnapshot {
@@ -21,6 +21,8 @@ enum DebugSnapshot {
             return .folder(.standard(.documents))
         case "activity":
             return .activity
+        case "storage":
+            return .storage
         default:
             return .downloads
         }

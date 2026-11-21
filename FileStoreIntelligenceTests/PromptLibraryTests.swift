@@ -8,11 +8,11 @@ struct PromptLibraryTests {
     /// The SHA-256 of every template's text under its versioned id. A template whose text changes
     /// must get a new version (and a new line here); the old line then no longer matches anything.
     private static let pinned = [
-        "chat-v2": "1736e4154b81086047eec164c5ecd9b4b6381bcbabd82dfc2c44feb07bf54300",
-        "tool-searchFiles-v1": "e667ca7b3a4e3932d3dadd7c4c32d528e890d0854fab91c8005755d57526291b",
-        "tool-folderSummary-v2": "9a45c23241218f9662dafc19874df1700c8cbf854781067cf496889557d46a18",
-        "tool-findDuplicates-v1": "049c1ab78be513d1441f3f661207e95dfca16bfffa26f13cd7c9b1b6226b0f77",
-        "tool-proposeCleanup-v1": "e4eb27fc034ad2d8ad672cebde955434d60e92e7352fd30de4fb1f4b1ec69d7e",
+        "chat-v3": "871e2db6a33e182057abf1478fcb092f19fe857db430b7cc03d59b513c6c20cf",
+        "tool-searchFiles-v2": "263a5fe78e6471696f89add8b74bc3d4efe691a26d90175ce2a789ac3d538817",
+        "tool-folderSummary-v3": "f014fb00f7d3cb368a546fead69afb5d7ae1c78b64752e5b9e667f3069e9ba1f",
+        "tool-findDuplicates-v2": "b91925d55cb6120e60b86edd0cf294f6896170a57496d6d10c2b9174f25bbcf4",
+        "tool-proposeCleanup-v2": "0f19134dd284927a375990a7082f42247c140444c1588492c65129614cebe3d3",
         "output-cleanupReady-v1": "4135653eb0ce042ef355279657db5a3dec4bb733da2f6c9dc0a5e0c118d09234",
         "output-cleanupReply-v1": "1521144fc000171a645c5c0480052d3d272369b031b1d37db7b2b52256bc04be",
         "output-nothingToCleanUp-v1": "e4985465b752e6d9977242d75d249576fba8e61df57c346f1ffb56858e3ddf1c",
@@ -22,6 +22,8 @@ struct PromptLibraryTests {
         "note-v1": "93eb3a18dcc6e6e7fad774d9ca60c0f96bd75f99f349086dd329e98e7983d11a",
         "note-earlier-v1": "a3e3a27d7c8a2c59f100281362497a80586e37827e5229bb00dfa7978edcc88e",
         "note-stopped-v1": "ce8f341f908df52af73365f4731f592dcf3ffadd5003c76df5968ba0ecab110d",
+        "output-duplicatesPerFolder-v1": "2d3e90d7b2ca8bd37dbeacc5af7d648db3e542164e90aa61a747e9453f92a7ea",
+        "output-turnedOff-v1": "54d2e8cc9fb301f6fe8e09f92974b9e406982b4bd65773ba5b8c47c7c63929a1",
         "note-lastResult-v2": "be7c1fd3f269fb4ada3f01edf041f0c40326cc73147f8557b90df6289a1948d4",
     ]
 
@@ -40,7 +42,7 @@ struct PromptLibraryTests {
         #expect(text.contains("It prepares a preview that the user confirms in the app: you never change a file yourself."))
         // How to word the reply is read only after a cleanup was planned.
         #expect(PromptLibrary.cleanupReply.text == "Say that a preview is ready, never that a file was changed. If the user asked for more than these cleanups do, say which part was left out.")
-        #expect(text.contains("You cannot delete files for good, move them out of Downloads, open them, undo, reach other folders or change settings."))
+        #expect(text.contains("You cannot delete files for good, move them between folders, open them, undo or change settings."))
         // What the model reads back from the tool says the same, on the line a later turn keeps.
         #expect(PromptLibrary.cleanupReady.text.hasSuffix("Nothing has been changed."))
         #expect(!PromptLibrary.cleanupReady.text.contains("\n"))

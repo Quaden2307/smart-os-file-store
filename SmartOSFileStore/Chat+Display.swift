@@ -77,6 +77,10 @@ extension CleanupRequest {
             CleanupAction.allCases.first { $0.definition.identifier == name }?.commandTitle ?? name
         }
         var parts = [titles.formatted(.list(type: .and, width: .narrow))] + (query?.lookedUpParts ?? [])
+        // A card belongs to one folder, and says which.
+        if let folder {
+            parts.insert(String(localized: "in \(folder)"), at: 1)
+        }
         if let archiveAfterDays {
             // String(localized:) leaves inflection markup raw; AttributedString applies it.
             parts.append(String(AttributedString(localized: "archive what was not opened for ^[\(archiveAfterDays) day](inflect: true)").characters))

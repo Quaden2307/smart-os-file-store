@@ -11,8 +11,11 @@ public struct CleanupRequest: Sendable, Hashable {
     public var archiveAfterDays: Int?
     /// In place of the app's setting for one request: the size from which a download is large.
     public var largeFileMB: Int?
+    /// The folder the card is for, by the name the app shows. Nil for the folder on screen.
+    public var folder: String?
 
-    public init(actions: [String], query: FileQuery? = nil, archiveAfterDays: Int? = nil, largeFileMB: Int? = nil) {
+    public init(actions: [String], query: FileQuery? = nil, archiveAfterDays: Int? = nil, largeFileMB: Int? = nil, folder: String? = nil) {
+        self.folder = folder
         self.actions = actions
         self.query = query
         self.archiveAfterDays = archiveAfterDays
@@ -52,8 +55,11 @@ public struct CleanupProposal: Sendable, Equatable, Identifiable {
     public var rows: [Row]
     /// A few of the files' names, for the model's summary.
     public var sampleNames: [String]
+    /// Actions asked for that the folder's rules turn off: no rows, and the reply says so.
+    public var notOffered: [String]
 
-    public init(id: UUID = UUID(), request: CleanupRequest, rows: [Row], sampleNames: [String]) {
+    public init(id: UUID = UUID(), request: CleanupRequest, rows: [Row], sampleNames: [String], notOffered: [String] = []) {
+        self.notOffered = notOffered
         self.id = id
         self.request = request
         self.rows = rows

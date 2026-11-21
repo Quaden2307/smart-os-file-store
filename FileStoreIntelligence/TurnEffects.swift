@@ -15,12 +15,20 @@ public struct FileSearchResult: Sendable, Equatable {
     /// keeps no date for (folders, apps, links, a volume without the attribute). Unknown, so they
     /// are not counted as matches, and said to be unknown instead of left out in silence.
     public var unknownOpenCount = 0
+    /// Per folder, when the matches are in more than one: the subtotals the app shows.
+    public var folderTotals: [FolderTotal] = []
+    /// The folders searched. Nil for a snapshot of one folder.
+    public var scope: FolderScope?
 
     public static let defaultLimit = 20
     public static let limitRange = 1...100
 
-    public init(query: FileQuery, sort: FileSort, limit: Int, in snapshot: FolderSnapshot) {
-        let matches = sort.sorted(snapshot.files.filter(query.matches))
+    public init(query: FileQuery, sort: FileSort, limit: Int, in snapshot: FolderSnapshot, scope: FolderScope? = nil) {
+        self.scope = scope
+        let unsorted = snapshot.files.filter(query.matches)
+        let matches = sort.sorted(unsorted)
+        // In the folders' own order, not the list's.
+        folderTotals = FolderTotal.of(unsorted)
         self.query = query
         self.sort = sort
         matchCount = matches.count
@@ -50,8 +58,13 @@ public struct FolderSummary: Sendable, Equatable {
     public var byMark: [FolderSnapshot.Mark: Total] = [:]
     public var largest: [FolderSnapshot.File]
     public var bytesMovedToTrash: Int64?
+    /// Per folder, when the summary covers more than one.
+    public var byFolder: [FolderTotal] = []
+    /// The folders summed up. Nil for a snapshot of one folder.
+    public var scope: FolderScope?
 
-    public init(_ snapshot: FolderSnapshot) {
+    public init(_ snapshot: FolderSnapshot, scope: FolderScope? = nil) {
+        self.scope = scope
         for file in snapshot.files {
             let bytes = file.sizeInBytes ?? 0
             func add(to total: inout Total) {
@@ -65,7 +78,30 @@ public struct FolderSummary: Sendable, Equatable {
             }
         }
         largest = Array(FileSort.largest.sorted(snapshot.files.filter { $0.sizeInBytes != nil }).prefix(Self.largestCount))
+        byFolder = FolderTotal.of(snapshot.files)
         bytesMovedToTrash = snapshot.bytesMovedToTrash
+    }
+}
+
+/// One folder's share of a result.
+public struct FolderTotal: Sendable, Equatable {
+    public var folder: String
+    public var count: Int
+    public var bytes: Int64
+
+    /// Per folder, in the order the folders first appear, when `files` are in more than one.
+    static func of(_ files: [FolderSnapshot.File]) -> [FolderTotal] {
+        var totals: [FolderTotal] = []
+        for file in files {
+            guard let folder = file.folder else { continue }
+            if let index = totals.firstIndex(where: { $0.folder == folder }) {
+                totals[index].count += 1
+                totals[index].bytes += file.sizeInBytes ?? 0
+            } else {
+                totals.append(FolderTotal(folder: folder, count: 1, bytes: file.sizeInBytes ?? 0))
+            }
+        }
+        return totals.count > 1 ? totals : []
     }
 }
 
@@ -87,17 +123,18 @@ public struct TurnEffects: Sendable, Equatable {
 
 /// A lookup by what it asks, so the same one again in a turn can be told apart from another.
 enum Lookup: Hashable {
-    case search(FileQuery, FileSort, limit: Int)
-    case summary
-    case duplicates
+    case search(FileQuery, FileSort, limit: Int, scope: FolderScope)
+    /// By the folder the model wrote, as written, so a repeat is known before the folder is read.
+    case summary(folder: String?)
+    case duplicates(folder: String?)
     case cleanup(CleanupRequest)
 
     /// True when this lookup found all that `other` asks for: the same one, or the same search
     /// listing as many files or more. (The model was seen searching for everything, then for
     /// everything again with a limit of 1.)
     func covers(_ other: Lookup) -> Bool {
-        if case let .search(query, sort, limit) = self, case let .search(otherQuery, otherSort, otherLimit) = other {
-            return query == otherQuery && sort == otherSort && limit >= otherLimit
+        if case let .search(query, sort, limit, scope) = self, case let .search(otherQuery, otherSort, otherLimit, otherScope) = other {
+            return query == otherQuery && sort == otherSort && limit >= otherLimit && scope == otherScope
         }
         return self == other
     }
@@ -180,7 +217,7 @@ final class TurnRecorder: Sendable {
 
     /// Keeps a result, unless it comes from a call of an earlier turn that finished late. A search
     /// for the same files as an earlier one in the turn (in another order, or more of them) takes
-    /// its place, so the app draws one line for them. A turn has one cleanup card, the latest.
+    /// its place, so the app draws one line for them. A turn has one cleanup card per folder, the latest.
     func record(_ result: TurnEffects.Result, turn: Int) {
         state.withLock { state in
             guard state.turn == turn else { return }
@@ -189,8 +226,10 @@ final class TurnRecorder: Sendable {
                 state.effects.results.removeAll { earlier in
                     if case .search(let earlier) = earlier { earlier.query == search.query } else { false }
                 }
-            case .cleanup:
-                state.effects.results.removeAll { if case .cleanup = $0 { true } else { false } }
+            case .cleanup(let proposal):
+                state.effects.results.removeAll { earlier in
+                    if case .cleanup(let earlier) = earlier { earlier.request.folder == proposal.request.folder } else { false }
+                }
             case .summary, .duplicates:
                 break
             }

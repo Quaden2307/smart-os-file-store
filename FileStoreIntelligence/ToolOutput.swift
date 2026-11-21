@@ -44,12 +44,17 @@ public enum ToolOutput {
         guard result.matchCount > 0 else { return "No files match." + unknown }
         // All macOS can say of a file without a last-opened date (docs/decisions/0022).
         let found = result.query.neverOpened ? "files have no open recorded by macOS" : "files match"
-        let header = """
+        let base = """
             \(result.matchCount) \(found), \(size(result.totalBytes)) in total. The app shows the user the list.\(unknown)
             The first ones, sorted by \(result.sort.rawValue):
             """
+        let perFolder = result.folderTotals.isEmpty ? "" : "\nBy folder: " + result.folderTotals.map {
+            "\(quoted($0.folder)) \($0.count) (\(size($0.bytes)))"
+        }.joined(separator: ", ") + "."
+        let header = base + perFolder
         let lines = result.files.prefix(namesShown).map { file in
             var line = quoted(file.name)
+            if !result.folderTotals.isEmpty, let folder = file.folder { line += " in \(quoted(folder))" }
             if let bytes = file.sizeInBytes { line += " \(size(bytes))" }
             if let added = file.dateAdded { line += ", added \(DayText.daysBack(from: added, to: now))" }
             return line
@@ -71,6 +76,9 @@ public enum ToolOutput {
             By kind: \(totals(summary.byTypeGroup, sizes: true)).
             By mark: \(totals(summary.byMark, sizes: false)).
             """
+        if !summary.byFolder.isEmpty {
+            header += "\nBy folder: " + summary.byFolder.map { "\(quoted($0.folder)) \($0.count) (\(size($0.bytes)))" }.joined(separator: ", ") + "."
+        }
         if let moved = summary.bytesMovedToTrash {
             header += "\nCleanups have moved \(size(moved)) to the Trash so far."
         }
@@ -122,6 +130,13 @@ public enum ToolOutput {
 
     /// What the model gets for a lookup it already made in this turn: nothing runs twice.
     public static let repeated = PromptLibrary.repeatedLookup.text
+
+    /// Actions the folder's rules turn off, which made no card there.
+    static func turnedOff(_ actions: [String], in folder: String?) -> String {
+        let names = actions.map { cleaned($0, limit: nameLimit) }.joined(separator: ", ")
+        let place = folder.map { " for \(quoted($0))" } ?? " for this folder"
+        return PromptLibrary.turnedOff.text.replacingOccurrences(of: "{actions}", with: names).replacingOccurrences(of: "{place}", with: place)
+    }
 
     /// What the model gets back for arguments that made no sense, so it can call again correctly.
     public static func invalid(_ error: FilterError) -> String {

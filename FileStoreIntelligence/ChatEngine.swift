@@ -91,7 +91,7 @@ public actor ChatEngine {
     /// its cleanup actions with a way to plan them.
     private struct Tools {
         let snapshot: @Sendable () async -> FolderSnapshot
-        let findDuplicates: @Sendable () async -> DuplicateScan?
+        let findDuplicates: @Sendable (FolderScope) async -> DuplicateScan?
         let cleanupActions: [String]
         let proposeCleanup: ProposeCleanup
 
@@ -114,7 +114,7 @@ public actor ChatEngine {
     ///   - proposeCleanup: Plans a cleanup in the app, which keeps the plan.
     public init(
         snapshot: @escaping @Sendable () async -> FolderSnapshot,
-        findDuplicates: @escaping @Sendable () async -> DuplicateScan?,
+        findDuplicates: @escaping @Sendable (FolderScope) async -> DuplicateScan?,
         cleanupActions: [String],
         proposeCleanup: @escaping ProposeCleanup,
         largeFileMegabytes: @escaping @Sendable () -> Int
@@ -139,7 +139,7 @@ public actor ChatEngine {
     public init(
         model: some LanguageModel,
         snapshot: @escaping @Sendable () async -> FolderSnapshot,
-        findDuplicates: @escaping @Sendable () async -> DuplicateScan? = { nil },
+        findDuplicates: @escaping @Sendable (FolderScope) async -> DuplicateScan? = { _ in nil },
         cleanupActions: [String] = [],
         proposeCleanup: @escaping ProposeCleanup = { _, _ in nil },
         largeFileMegabytes: @escaping @Sendable () -> Int = { 500 },
@@ -331,7 +331,7 @@ public actor ChatEngine {
     public static func fixedPromptTokens(cleanupActions: [String]) async throws -> (instructions: Int, tools: Int, contextSize: Int) {
         let model = SystemLanguageModel.default
         let tools = tools(ToolContext(
-            snapshot: { FolderSnapshot(files: []) }, findDuplicates: { nil }, cleanupActions: cleanupActions, recorder: TurnRecorder()
+            snapshot: { FolderSnapshot(files: []) }, findDuplicates: { _ in nil }, cleanupActions: cleanupActions, recorder: TurnRecorder()
         ))
         return (
             try await model.tokenCount(for: Instructions(PromptLibrary.chatInstructions(today: .now))),

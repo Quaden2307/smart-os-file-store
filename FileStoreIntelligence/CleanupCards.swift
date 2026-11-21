@@ -12,7 +12,10 @@ public struct CleanupCards: Sendable, Equatable {
     }
 
     private var states: [CleanupProposal.ID: State] = [:]
+    /// The newest card.
     public private(set) var current: CleanupProposal.ID?
+    /// The cards the newest turn made: one per folder, each confirmed on its own.
+    public private(set) var currentBatch: Set<CleanupProposal.ID> = []
 
     public init() {}
 
@@ -23,11 +26,21 @@ public struct CleanupCards: Sendable, Equatable {
     /// A card came on screen, or was planned again. It is now the current one, and the one before
     /// it, if still waiting, is out of date.
     public mutating func show(_ id: CleanupProposal.ID) {
-        if let current, current != id, states[current] == .ready {
-            states[current] = .outOfDate
+        show([id])
+    }
+
+    /// Cards that came on screen together, one per folder: all of them are current, and every
+    /// earlier card still waiting is out of date.
+    public mutating func show(_ ids: [CleanupProposal.ID]) {
+        guard let last = ids.last else { return }
+        for earlier in currentBatch where !ids.contains(earlier) && states[earlier] == .ready {
+            states[earlier] = .outOfDate
         }
-        current = id
-        states[id] = .ready
+        current = last
+        currentBatch = Set(ids)
+        for id in ids {
+            states[id] = .ready
+        }
     }
 
     /// One of the card's files is no longer as it was planned.
@@ -39,7 +52,7 @@ public struct CleanupCards: Sendable, Equatable {
 
     /// True while the card may be reviewed and confirmed.
     public func canConfirm(_ id: CleanupProposal.ID) -> Bool {
-        id == current && states[id] == .ready
+        currentBatch.contains(id) && states[id] == .ready
     }
 
     /// True while Refresh is offered.

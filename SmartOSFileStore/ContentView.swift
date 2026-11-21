@@ -248,7 +248,7 @@ struct ContentView: View {
                     section = start
                 }
                 lists.connect(to: activity)
-                chat.connect(files: model, activity: activity, hashCache: search.hashCache)
+                chat.connect(files: model, lists: lists, activity: activity, hashCache: search.hashCache)
                 activity.open()
                 // The first time, the welcome comes before the folder is read, and so before the
                 // Mac asks about Downloads.
@@ -396,7 +396,7 @@ struct ContentView: View {
             Divider()
             StatusBar(model: model, activity: activity, showsFileCounts: showsList)
             Divider()
-            ChatSection(chat: chat, files: model, isFocused: $isChatFocused, showInList: showInList, cardActions: cardActions)
+            ChatSection(chat: chat, files: model, lists: lists, isFocused: $isChatFocused, showInList: showInList, cardActions: cardActions)
         }
         // Narrower than the six columns at their ideal widths: the table then scrolls sideways, as
         // Finder's does, the filter becomes a menu and the toolbar puts what does not fit in its
@@ -640,6 +640,11 @@ struct ContentView: View {
     /// A file clicked in the conversation: Downloads is shown with that file selected. A filter that
     /// hides it is cleared first, since a hidden row must never be the selection.
     private func showInList(_ id: FileRecord.ID) {
+        // A row of an answer about several folders: its own folder is shown.
+        if model.record(for: id) == nil, let list = lists.all.first(where: { $0.record(for: id) != nil }) {
+            section = .folder(list.place)
+        }
+        let model = lists.all.first { $0.record(for: id) != nil } ?? model
         guard model.record(for: id) != nil else { return }
         if !model.visibleRecords.contains(where: { $0.id == id }) {
             model.filter = .all

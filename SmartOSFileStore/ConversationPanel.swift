@@ -8,7 +8,7 @@ import SwiftUI
 /// file selects it in the list. The panel's height is the user's, kept between launches.
 struct ConversationPanel: View {
     let chat: ChatModel
-    let files: FileListModel
+    let files: FolderListsModel
     /// The most the window has room for. A smaller window draws the panel shorter without
     /// changing the height kept for it.
     let maxHeight: CGFloat
@@ -197,7 +197,7 @@ private struct QuestionBubble: View {
 private struct ChatReplyView: View {
     let message: ChatMessage
     let chat: ChatModel
-    let files: FileListModel
+    let files: FolderListsModel
     let showInList: @MainActor (URL) -> Void
     let cardActions: ChatCardActions
 
@@ -234,7 +234,7 @@ private struct ChatReplyView: View {
                     LookupCard(results: results, files: files, showInList: showInList)
                 }
             }
-            if let proposal = message.turn?.cleanupCard {
+            ForEach(message.turn?.cleanupCards ?? [], id: \.id) { proposal in
                 ChatCleanupCard(proposal: proposal, chat: chat, actions: cardActions)
             }
         }
@@ -264,7 +264,7 @@ extension TurnEffects {
 /// out in code; the files are listed for the last, which the reply ends on.
 private struct LookupCard: View {
     let results: [TurnEffects.Result]
-    let files: FileListModel
+    let files: FolderListsModel
     let showInList: @MainActor (URL) -> Void
 
     var body: some View {
@@ -301,7 +301,7 @@ private struct SearchFacts: View {
     let result: FileSearchResult
     /// False for a lookup that was not the turn's last: its line is shown without its files.
     let listsFiles: Bool
-    let files: FileListModel
+    let files: FolderListsModel
     let showInList: @MainActor (URL) -> Void
 
     var body: some View {
@@ -332,6 +332,12 @@ private struct SearchFacts: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .help("macOS keeps no last-opened date for folders, apps and links")
             }
+            if !result.folderTotals.isEmpty {
+                // Per folder, when the answer covers several.
+                Text(verbatim: result.folderTotals.map { "\($0.folder) \($0.count) · \($0.bytes.formattedFileSize)" }.joined(separator: "   "))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
             if listsFiles {
                 ForEach(result.files) { file in
                     ChatFileRow(file: file, record: files.record(for: file.id), showInList: showInList)
@@ -346,7 +352,7 @@ private struct SearchFacts: View {
 private struct DuplicateFacts: View {
     let scan: DuplicateScan
     let listsFiles: Bool
-    let files: FileListModel
+    let files: FolderListsModel
     let showInList: @MainActor (URL) -> Void
 
     var body: some View {
@@ -383,7 +389,7 @@ private struct DuplicateFacts: View {
 /// largest files.
 private struct SummaryFacts: View {
     let summary: FolderSummary
-    let files: FileListModel
+    let files: FolderListsModel
     let showInList: @MainActor (URL) -> Void
 
     var body: some View {
@@ -469,6 +475,11 @@ private struct ChatFileRow: View {
                 Text(file.name)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                if let folder = file.folder {
+                    Text(folder)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
                 Spacer(minLength: Design.Space.m)
                 if let size = file.sizeInBytes {
                     Text(size.formattedFileSize)

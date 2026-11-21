@@ -112,7 +112,7 @@ Plus:
 
 And from version 0.3 so far:
 
-10. A chat bar that answers questions about Downloads with the on-device model. It remembers the conversation in app code (`ChatMemory`): follow-ups such as "only the big ones" search inside the last result, and "Continue" asks a stopped question again.
+10. A chat bar that answers questions about the managed folders with the on-device model. It remembers the conversation in app code (`ChatMemory`): follow-ups such as "only the big ones" search inside the last result, and "Continue" asks a stopped question again.
 11. Cleanups from the chat bar: `proposeCleanup` makes a card in the conversation (what the app understood, the actions with counts, Review, Confirm). Confirm asks once, the card becomes the run's summary with Undo, and the run is marked as started from chat in Activity. A card goes out of date when a file of it changes or a newer card replaces it, and then offers Refresh.
 
 12. A design system: tokens, `docs/design.md` and a check that views use them, with the main window's shell (sidebar, toolbar, file table, filter bar, status bar) restyled on it.
@@ -120,6 +120,7 @@ And from version 0.3 so far:
 14. Managed folders in the engine (Folders, segment 1): `ManagedFolder`, `FolderRegistry`, `FolderSafetyRules`, a folder ID on every run, change and Kept mark, undo into the run's own folder, and the `-DemoHome` override.
 15. Desktop, Documents and folders the user adds, in the app (Folders, segment 2): a Folders sidebar section, turning Desktop and Documents on, permission states, Add Folder (button, File menu, drag from Finder), rename and remove, unavailable folders, and a folder name and filter in Activity.
 16. Per-folder cleanup rules (Folders, segment 3): `FolderRules` with tested defaults per kind, stored in the log, enforced by the planners, and a Folders pane in Settings.
+17. The chat across folders (Folders, segment 4): `searchFiles`, `findDuplicates` and `proposeCleanup` take a folder (on screen, named, or all); one card per folder; folder rules respected; per-folder subtotals.
 
 Out of scope until the owner asks: watching Downloads automatically, user-defined rules, schedules, cloud-drive folders, automatic or scheduled rules, an archive name of its own for each kind of folder, undo that follows a folder that has moved, subfolders, the full storage view, search, tags, sharing, AI that makes a change without the user's Confirm, changing a card by talking (`reviseCleanup`), AI that reads file contents, custom theme.
 

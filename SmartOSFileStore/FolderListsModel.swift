@@ -24,8 +24,16 @@ final class FolderListsModel {
         place == .standard(.downloads) ? downloads : others[place]
     }
 
-    /// Every list there is.
-    var all: [FileListModel] { [downloads] + others.values }
+    /// The listed record with `id`, in whichever folder it is.
+    func record(for id: FileRecord.ID) -> FileRecord? {
+        all.lazy.compactMap { $0.record(for: id) }.first
+    }
+
+    /// Every list there is, in the sidebar's order.
+    var all: [FileListModel] {
+        let ordered = activity?.folderEntries.compactMap { others[FolderPlace($0)] } ?? []
+        return [downloads] + ordered + others.values.filter { list in !ordered.contains { $0 === list } }
+    }
 
     /// Follows the activity log's folder list: a list for each folder that was found, read at once,
     /// and none for a folder that was taken off the list or cannot be found now. A custom folder

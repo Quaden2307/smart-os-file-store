@@ -43,7 +43,7 @@ struct TestPlanTests {
     /// Swift Testing honours only the structured `{"suites": [{"name": …}]}` form, by type name.
     @Test func defaultPlanLeavesTheBenchmarksOutAndTheBenchmarkPlanRunsOnlyThem() throws {
         // The engine's benchmark, and the chat's measurements and evals on the real model.
-        let measured = [["BenchmarkTests"], ["ChatMeasurementTests", "ChatEvalTests"]]
+        let measured = [["BenchmarkTests"], ["ChatMeasurementTests", "ChatEvalTests", "FolderChatEvalTests"]]
         let normal = try plan(named: "SmartOSFileStore").testTargets
         #expect(normal.map { $0.skippedTests?.suites.map(\.name) } == measured)
         #expect(normal.allSatisfy { $0.selectedTests == nil })

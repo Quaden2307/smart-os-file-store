@@ -20,12 +20,13 @@ struct ChatMessage: Identifiable {
 }
 
 extension Turn {
-    /// The cleanup card the reply shows, if its turn planned one and ended with its card on screen.
-    var cleanupCard: CleanupProposal? {
+    /// The cleanup cards the reply shows, one per folder, if its turn planned any and ended with
+    /// them on screen.
+    var cleanupCards: [CleanupProposal] {
         // Also after a reply that ran out of lookups or of time: the plan was made and is the
         // app's, whatever the model went on to do.
-        guard [.answered, .stopped, .toolLimitReached, .timedOut].contains(outcome) else { return nil }
-        return effects.results.lazy.compactMap { if case .cleanup(let proposal) = $0 { proposal } else { nil } }.last
+        guard [.answered, .stopped, .toolLimitReached, .timedOut].contains(outcome) else { return [] }
+        return effects.results.compactMap { if case .cleanup(let proposal) = $0 { proposal } else { nil } }
     }
 }
 
@@ -51,6 +52,8 @@ final class ChatModel {
 
     private var engine: ChatEngine?
     private weak var files: FileListModel?
+    /// Every folder's list, for a question about another folder or all of them.
+    private weak var lists: FolderListsModel?
     private weak var activity: ActivityLogModel?
     private var task: Task<Void, Never>?
     /// Find Duplicates as a question started it. It stops when the turn ends: a reply that was
@@ -98,20 +101,23 @@ final class ChatModel {
         self.files = files
     }
 
-    func connect(files: FileListModel, activity: ActivityLogModel, hashCache: ContentHashCache) {
+    func connect(files: FileListModel, lists: FolderListsModel, activity: ActivityLogModel, hashCache: ContentHashCache) {
         guard engine == nil else { return }
         self.files = files
+        self.lists = lists
         self.activity = activity
         self.hashCache = hashCache
         engine = ChatEngine(
-            snapshot: { [weak files, weak activity] in
+            snapshot: { [weak self] in
                 await MainActor.run {
-                    guard let files, let activity else { return FolderSnapshot(files: []) }
-                    return FolderSnapshot(files: files, activity: activity)
+                    guard let self, let files = self.files, let lists = self.lists, let activity = self.activity else {
+                        return FolderSnapshot(files: [])
+                    }
+                    return FolderSnapshot(lists: lists, current: files, activity: activity)
                 }
             },
-            findDuplicates: { [weak self] in
-                await self?.findDuplicates(hashCache: hashCache)
+            findDuplicates: { [weak self] scope in
+                await self?.findDuplicates(in: scope, hashCache: hashCache)
             },
             // From the action registry: an action added there is offered here with no other change.
             cleanupActions: CleanupAction.allCases.filter(CleanupPlanners.hasPlanner).map(\.definition.identifier),
@@ -126,8 +132,40 @@ final class ChatModel {
     /// Find Duplicates as the Clean Up menu runs it (the same rules, with the Kept list read first),
     /// for a question in the chat. It reads files and changes none. Nil when it cannot run: the
     /// window is gone, the log is not open, or the turn ended.
-    private func findDuplicates(hashCache: ContentHashCache) async -> DuplicateScan? {
-        guard let files, let log = activity?.log, let folder = files.logFolder else { return nil }
+    private func findDuplicates(in scope: FolderScope, hashCache: ContentHashCache) async -> DuplicateScan? {
+        let targets: [FileListModel] = switch scope {
+        case .folder(let name): list(named: name).map { [$0] } ?? []
+        case .all: lists?.all.filter { $0.failure == nil } ?? []
+        }
+        var merged: DuplicateScan?
+        // One folder at a time: copies are found within a folder, never across folders.
+        for list in targets {
+            guard let scan = await findDuplicates(in: list, named: targets.count > 1 ? list.displayName : nil, hashCache: hashCache) else {
+                return nil
+            }
+            merged = merged.map {
+                DuplicateScan(
+                    groups: $0.groups + scan.groups, unreadableCount: $0.unreadableCount + scan.unreadableCount,
+                    recentCount: $0.recentCount + scan.recentCount
+                )
+            } ?? scan
+        }
+        return merged
+    }
+
+    /// The list of the folder with `name` as the app shows it, or the folder on screen for nil.
+    private func list(named name: String?) -> FileListModel? {
+        guard let name else { return files }
+        return lists?.all.first { $0.displayName == name }
+    }
+
+    /// The list of the folder a plan was made for.
+    private func list(for folder: ManagedFolder) -> FileListModel? {
+        lists?.all.first { $0.logFolder?.id == folder.id }
+    }
+
+    private func findDuplicates(in files: FileListModel, named folderName: String?, hashCache: ContentHashCache) async -> DuplicateScan? {
+        guard let log = activity?.log, let folder = files.logFolder else { return nil }
         let records = files.records
         let eligibility = files.eligibility
         let installers = InstallerSources.standard(applicationFolders: files.applicationFolders, cache: log)
@@ -154,7 +192,7 @@ final class ChatModel {
         }
         let now = Date.now
         let recent = records.filter { $0.kind == .file && eligibility.refusal(for: $0, in: folder, now: now) == .insideGracePeriod }.count
-        return DuplicateScan(plan, files: files, recentCount: recent)
+        return DuplicateScan(plan, files: files, recentCount: recent, folderName: folderName)
     }
 
     // MARK: - Cleanup cards
@@ -167,7 +205,7 @@ final class ChatModel {
     private func plan(
         _ request: CleanupRequest, only ids: Set<URL>?, hashCache: ContentHashCache, inTurn: Bool
     ) async -> TidyNowPlan? {
-        guard let files, let log = activity?.log, let folder = files.logFolder else { return nil }
+        guard let files = list(named: request.folder), let log = activity?.log, let folder = files.logFolder else { return nil }
         let actions = CleanupAction.allCases.filter { request.actions.contains($0.definition.identifier) }
         let records = files.records
         let eligibility = files.eligibility
@@ -221,7 +259,7 @@ final class ChatModel {
 
     /// The card's model for `plan`, kept under `id`. Its run is the chat's in the activity log.
     private func keep(_ plan: TidyNowPlan, as id: CleanupProposal.ID) {
-        guard let files, let activity, let log = activity.log else { return }
+        guard let files = list(for: plan.folder), let activity, let log = activity.log else { return }
         cleanups[id] = TidyNowModel(
             showing: plan,
             origin: .chat,
@@ -240,6 +278,15 @@ final class ChatModel {
     /// `proposeCleanup` as the chat's tool reaches it: plans, keeps the plan for the card, and
     /// hands back rows. A plan with nothing in it is handed back with no rows and kept nowhere.
     private func proposeCleanup(_ request: CleanupRequest, only ids: Set<URL>?, hashCache: ContentHashCache) async -> CleanupProposal? {
+        // What the folder's rules turn off is never planned there (the planners refuse it); the
+        // reply says so instead.
+        let rules = list(named: request.folder)?.logFolder?.rules
+        let notOffered = CleanupAction.allCases
+            .filter { request.actions.contains($0.definition.identifier) && rules?.offers($0) == false }
+            .map(\.definition.identifier)
+        if notOffered.count == request.actions.count {
+            return CleanupProposal(request: request, rows: [], sampleNames: [], notOffered: notOffered)
+        }
         guard let plan = await plan(request, only: ids, hashCache: hashCache, inTurn: true) else { return nil }
         let found = plan.plans.filter { !$0.isEmpty }
         let proposal = CleanupProposal(
@@ -250,7 +297,8 @@ final class ChatModel {
                     tickedCount: plan.defaultTickedIDs.count
                 )
             },
-            sampleNames: found.flatMap(\.changes).prefix(CleanupProposal.sampleNamesShown).map(\.record.displayName)
+            sampleNames: found.flatMap(\.changes).prefix(CleanupProposal.sampleNamesShown).map(\.record.displayName),
+            notOffered: notOffered
         )
         if !found.isEmpty {
             keep(plan, as: proposal.id)
@@ -266,18 +314,17 @@ final class ChatModel {
     /// True while a card waits for Confirm, so the folder is worth reading again when the window
     /// comes back from another app.
     var hasWaitingCard: Bool {
-        cards.current.map(cards.canConfirm) ?? false
+        cards.currentBatch.contains(where: cards.canConfirm)
     }
 
     /// Puts out of date every waiting card with a file that is no longer as it was planned, judged
     /// against the list as just read, or that the user has marked Keep since. The executor checks
     /// each file again whatever this finds.
     func checkCards() {
-        guard let files, files.isSettled else { return }
-        let kept = files.keptItems
         for (id, model) in cleanups where cards.state(of: id) == .ready && model.isReviewing {
             let isStale = model.plans.values.contains { plan in
-                !plan.staleChangeIDs(in: files.records).isEmpty || plan.changes.contains { kept.contains($0.record) }
+                guard let files = list(for: plan.folder), files.isSettled else { return false }
+                return !plan.staleChangeIDs(in: files.records).isEmpty || plan.changes.contains { files.keptItems.contains($0.record) }
             }
             if isStale {
                 cards.filesChanged(id)
@@ -303,7 +350,7 @@ final class ChatModel {
     /// model. The card then shows the new plan, and is the current card.
     func refresh(_ proposal: CleanupProposal) {
         let id = proposal.id
-        guard canRefresh(id), let files, let activity, let hashCache else { return }
+        guard canRefresh(id), let files = list(named: proposal.request.folder), let activity, let hashCache else { return }
         refreshing.insert(id)
         Task { [weak self] in
             let ids = proposal.request.fileIDs(in: FolderSnapshot(files: files, activity: activity))
@@ -379,11 +426,12 @@ final class ChatModel {
         guard let index = messages.firstIndex(where: { $0.id == id }) else { return }
         messages[index].text = turn.text
         messages[index].turn = turn
-        if let card = turn.cleanupCard {
-            cards.show(card.id)
+        let shownNow = turn.cleanupCards.map(\.id)
+        if !shownNow.isEmpty {
+            cards.show(shownNow)
         }
         // A plan whose card never came on screen (the turn failed, or planned twice) is dropped.
-        let shown = Set(messages.compactMap { $0.turn?.cleanupCard?.id })
+        let shown = Set(messages.flatMap { $0.turn?.cleanupCards.map(\.id) ?? [] })
         cleanups = cleanups.filter { shown.contains($0.key) }
     }
 }

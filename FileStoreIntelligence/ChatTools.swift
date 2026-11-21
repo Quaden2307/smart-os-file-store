@@ -9,8 +9,8 @@ public typealias ProposeCleanup = @Sendable (CleanupRequest, Set<URL>?) async ->
 /// cleanup planning, and the turn's record.
 struct ToolContext: Sendable {
     let snapshot: @Sendable () async -> FolderSnapshot
-    /// Nil when the scan could not run.
-    let findDuplicates: @Sendable () async -> DuplicateScan?
+    /// Nil when the scan could not run. Copies are found within each folder of the scope.
+    let findDuplicates: @Sendable (FolderScope) async -> DuplicateScan?
     /// The names of the app's cleanup actions. Empty when the app offers none to the chat.
     var cleanupActions: [String] = []
     var proposeCleanup: ProposeCleanup = { _, _ in nil }
@@ -28,6 +28,9 @@ struct SearchFilesArguments {
     // The range is checked in code, and a wrong limit is answered with it.
     @Guide(description: "How many to list.")
     var limit: Int?
+
+    // No description: the name says it, and every token here is read in every turn (0029).
+    var folder: String?
 }
 
 /// Read-only: filters, counts, sums and sorts the snapshot in code.
@@ -49,10 +52,13 @@ struct SearchFilesTool: Tool {
             guard FileSearchResult.limitRange.contains(limit) else {
                 throw FilterError(message: "limit must be between 1 and 100.")
             }
-            guard !context.recorder.isRepeat(.search(query, sort, limit: limit), turn: turn) else {
+            let scope = try FolderScope.resolve(arguments.folder, in: snapshot, insideLastResult: query.withinIDs != nil)
+            guard !context.recorder.isRepeat(.search(query, sort, limit: limit, scope: scope), turn: turn) else {
                 return ToolOutput.repeated
             }
-            let result = FileSearchResult(query: query, sort: sort, limit: limit, in: snapshot)
+            let result = FileSearchResult(
+                query: query, sort: sort, limit: limit, in: snapshot.narrowed(to: scope), scope: snapshot.folders.isEmpty ? nil : scope
+            )
             context.recorder.record(.search(result), turn: turn)
             return ToolOutput.search(result, now: snapshot.now)
         } catch {
@@ -60,8 +66,11 @@ struct SearchFilesTool: Tool {
             return ToolOutput.invalid(error)
         }
     }
+
 }
 
+// No folder argument: the room it takes is not there (0029). A summary is of the folder on
+// screen; searchFiles answers totals for another folder or for all of them.
 @Generable
 struct FolderSummaryArguments {}
 
@@ -73,15 +82,25 @@ struct FolderSummaryTool: Tool {
 
     func call(arguments: FolderSummaryArguments) async -> String {
         let turn = context.recorder.turn
-        guard !context.recorder.isRepeat(.summary, turn: turn) else { return ToolOutput.repeated }
-        let summary = FolderSummary(await context.snapshot())
+        guard !context.recorder.isRepeat(.summary(folder: nil), turn: turn) else { return ToolOutput.repeated }
+        let snapshot = await context.snapshot()
+        let scope: FolderScope
+        do throws(FilterError) {
+            scope = try FolderScope.resolve(nil, in: snapshot)
+        } catch {
+            return ToolOutput.invalid(error)
+        }
+        let summary = FolderSummary(snapshot.narrowed(to: scope), scope: snapshot.folders.isEmpty ? nil : scope)
         context.recorder.record(.summary(summary), turn: turn)
         return ToolOutput.summary(summary)
     }
 }
 
 @Generable
-struct FindDuplicatesArguments {}
+struct FindDuplicatesArguments {
+    // No description: the name says it, and every token here is read in every turn (0029).
+    var folder: String?
+}
 
 /// Read-only: the app's Find Duplicates scan, which reads the files to compare their content. A
 /// mark cannot answer this: it holds only what the last Tidy Now found.
@@ -92,13 +111,23 @@ struct FindDuplicatesTool: Tool {
 
     func call(arguments: FindDuplicatesArguments) async -> String {
         let turn = context.recorder.turn
-        guard !context.recorder.isRepeat(.duplicates, turn: turn) else { return ToolOutput.repeated }
-        guard let scan = await context.findDuplicates() else {
-            context.recorder.forget(.duplicates, turn: turn)
+        let asked = arguments.folder?.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !context.recorder.isRepeat(.duplicates(folder: asked), turn: turn) else { return ToolOutput.repeated }
+        let snapshot = await context.snapshot()
+        let scope: FolderScope
+        do throws(FilterError) {
+            scope = try FolderScope.resolve(arguments.folder, in: snapshot)
+        } catch {
+            context.recorder.forget(.duplicates(folder: asked), turn: turn)
+            return ToolOutput.invalid(error)
+        }
+        guard let scan = await context.findDuplicates(scope) else {
+            context.recorder.forget(.duplicates(folder: asked), turn: turn)
             return ToolOutput.duplicatesUnavailable
         }
         context.recorder.record(.duplicates(scan), turn: turn)
-        return ToolOutput.duplicates(scan)
+        // Copies are compared within a folder, never across folders.
+        return ToolOutput.duplicates(scan) + (scope == .all && snapshot.folders.count > 1 ? "\n" + PromptLibrary.duplicatesPerFolder.text : "")
     }
 }
 
@@ -109,6 +138,7 @@ struct ProposeCleanupArguments: ConvertibleFromGeneratedContent {
     var filter: FileFilter?
     var archiveAfterDays: Int?
     var largeFileMB: Int?
+    var folder: String?
     /// The arguments that were there but not of their kind. A throw here would end the turn, and
     /// reading one as "not given" could widen a cleanup to every file, so the call is answered instead.
     var unreadable: [String] = []
@@ -126,6 +156,7 @@ struct ProposeCleanupArguments: ConvertibleFromGeneratedContent {
         filter = read("filter")
         archiveAfterDays = read("archiveAfterDays")
         largeFileMB = read("largeFileMB")
+        folder = read("folder")
     }
 
     /// What `actions` may hold in place of every name.
@@ -192,6 +223,7 @@ struct ProposeCleanupTool: Tool {
             .init(name: "filter", description: "Only matching files.", schema: DynamicGenerationSchema(type: FileFilter.self), isOptional: true),
             .init(name: "archiveAfterDays", description: "Archive what was unopened this many days.", schema: DynamicGenerationSchema(type: Int.self), isOptional: true),
             .init(name: "largeFileMB", description: "Large is this many MB or more.", schema: DynamicGenerationSchema(type: Int.self), isOptional: true),
+            .init(name: "folder", schema: DynamicGenerationSchema(type: String.self), isOptional: true),
         ])
         guard let schema = try? GenerationSchema(root: root, dependencies: []) else { return nil }
         parameters = schema
@@ -202,23 +234,43 @@ struct ProposeCleanupTool: Tool {
         let turn = context.recorder.turn
         let snapshot = await context.snapshot()
         do throws(FilterError) {
-            let request = try arguments.validated(
+            let asked = try arguments.validated(
                 allowed: context.cleanupActions, now: snapshot.now, lastResultIDs: context.recorder.previous?.ids
             )
-            guard !context.recorder.isRepeat(.cleanup(request), turn: turn) else { return ToolOutput.repeated }
-            let ids = request.fileIDs(in: snapshot)
-            // No file matches, so no planner needs to read any.
-            if ids?.isEmpty == true { return ToolOutput.nothingToCleanUp }
-            guard let proposal = await context.proposeCleanup(request, ids) else {
-                context.recorder.forget(.cleanup(request), turn: turn)
-                return ToolOutput.cleanupUnavailable
+            let scope = try FolderScope.resolve(arguments.folder, in: snapshot, insideLastResult: asked.query?.withinIDs != nil)
+            // A card belongs to one folder: a request for several makes one card per folder.
+            let folders: [String?] = snapshot.folders.isEmpty ? [nil] : scope.folderNames(in: snapshot)
+            var outputs: [String] = []
+            for folder in folders {
+                var request = asked
+                request.folder = folder
+                outputs.append(await propose(request, in: snapshot.narrowed(to: folder.map(FolderScope.folder) ?? .all), turn: turn))
             }
-            guard !proposal.rows.isEmpty else { return ToolOutput.nothingToCleanUp }
-            context.recorder.record(.cleanup(proposal), turn: turn)
-            return ToolOutput.cleanup(proposal)
+            let unread = scope == .all ? snapshot.unreadableFolders.map { ToolOutput.quoted($0.name) } : []
+            if !unread.isEmpty {
+                outputs.append("Not prepared, as the app cannot read them now: \(unread.joined(separator: ", ")).")
+            }
+            return outputs.joined(separator: "\n")
         } catch {
             // Returned, not thrown: a thrown error ends the turn, and the model can fix this itself.
             return ToolOutput.invalid(error)
         }
+    }
+
+    /// One folder's card, or why there is none.
+    private func propose(_ request: CleanupRequest, in snapshot: FolderSnapshot, turn: Int) async -> String {
+        let prefix = request.folder.map { "\(ToolOutput.quoted($0)): " } ?? ""
+        guard !context.recorder.isRepeat(.cleanup(request), turn: turn) else { return prefix + ToolOutput.repeated }
+        let ids = request.fileIDs(in: snapshot)
+        // No file matches, so no planner needs to read any.
+        if ids?.isEmpty == true { return prefix + ToolOutput.nothingToCleanUp }
+        guard let proposal = await context.proposeCleanup(request, ids) else {
+            context.recorder.forget(.cleanup(request), turn: turn)
+            return prefix + ToolOutput.cleanupUnavailable
+        }
+        let turnedOff = proposal.notOffered.isEmpty ? "" : ToolOutput.turnedOff(proposal.notOffered, in: request.folder)
+        guard !proposal.rows.isEmpty else { return prefix + (turnedOff.isEmpty ? ToolOutput.nothingToCleanUp : turnedOff) }
+        context.recorder.record(.cleanup(proposal), turn: turn)
+        return prefix + ToolOutput.cleanup(proposal) + (turnedOff.isEmpty ? "" : "\n" + turnedOff)
     }
 }

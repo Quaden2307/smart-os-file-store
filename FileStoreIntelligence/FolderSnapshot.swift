@@ -28,12 +28,15 @@ public struct FolderSnapshot: Sendable {
         /// The site the file was downloaded from, without "www.".
         public var sourceSite: String?
         public var marks: Set<Mark>
+        /// The managed folder the file is in, by the name the app shows. Nil in a snapshot of one folder.
+        public var folder: String?
 
         public init(
             id: URL, name: String, contentType: UTType? = nil, sizeInBytes: Int64? = nil,
             dateAdded: Date? = nil, lastOpened: Date? = nil, recordsOpens: Bool = true,
-            isDownloading: Bool = false, sourceSite: String? = nil, marks: Set<Mark> = []
+            isDownloading: Bool = false, sourceSite: String? = nil, marks: Set<Mark> = [], folder: String? = nil
         ) {
+            self.folder = folder
             self.id = id
             self.name = name
             self.contentType = contentType
@@ -47,13 +50,38 @@ public struct FolderSnapshot: Sendable {
         }
     }
 
+    /// A folder the app manages, by the name it shows, and whether the chat can read it.
+    public struct Folder: Sendable, Equatable {
+        public enum State: Sendable, Equatable {
+            case available
+            /// macOS has not allowed the app to read it.
+            case permissionNeeded
+            /// It cannot be found now: a disk that is not connected, or it was deleted.
+            case unavailable
+        }
+
+        public var name: String
+        public var state: State
+        /// The folder on screen, which a question without a folder is about.
+        public var isCurrent: Bool
+
+        public init(name: String, state: State = .available, isCurrent: Bool = false) {
+            self.name = name
+            self.state = state
+            self.isCurrent = isCurrent
+        }
+    }
+
     public var files: [File]
+    /// The folders the app manages and the user turned on. Empty for a snapshot of one folder.
+    public var folders: [Folder]
     /// The activity log's running total. Nil while the log is not open.
     public var bytesMovedToTrash: Int64?
     public var now: Date
 
-    public init(files: [File], bytesMovedToTrash: Int64? = nil, now: Date = .now) {
+    public init(files: [File], folders: [Folder] = [], bytesMovedToTrash: Int64? = nil, now: Date = .now) {
         self.files = files
+        self.folders = folders
         self.bytesMovedToTrash = bytesMovedToTrash
         self.now = now
     }

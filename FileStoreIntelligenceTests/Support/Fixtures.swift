@@ -165,15 +165,20 @@ extension ChatEngine {
         availability: @escaping @Sendable () -> IntelligenceAvailability = { .available },
         duplicates: @escaping @Sendable () async -> DuplicateScan? = { Fixtures.duplicates },
         cleanup: @escaping ProposeCleanup = Fixtures.proposal,
-        meter: ContextMeter? = nil
+        meter: ContextMeter? = nil,
+        snapshot: FolderSnapshot = Fixtures.snapshot,
+        scopes: Collected<FolderScope>? = nil
     ) -> ChatEngine {
         ChatEngine(
             model: model,
             snapshot: {
                 reads?.add(())
-                return Fixtures.snapshot
+                return snapshot
             },
-            findDuplicates: duplicates,
+            findDuplicates: { scope in
+                scopes?.add(scope)
+                return await duplicates()
+            },
             cleanupActions: Fixtures.cleanupActions,
             proposeCleanup: cleanup,
             availability: availability,

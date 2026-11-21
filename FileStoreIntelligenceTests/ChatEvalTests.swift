@@ -44,7 +44,7 @@ struct ChatEvalTests {
             return nil
         }
         let engine = ChatEngine(
-            model: SystemLanguageModel.default, snapshot: { Fixtures.snapshot }, findDuplicates: { Fixtures.duplicates },
+            model: SystemLanguageModel.default, snapshot: { Fixtures.snapshot }, findDuplicates: { _ in Fixtures.duplicates },
             cleanupActions: Fixtures.cleanupActions, proposeCleanup: Fixtures.proposal, now: { Fixtures.now }, meter: .system
         )
         let turn = await engine.respond(to: question) { _ in }
@@ -73,7 +73,7 @@ struct ChatEvalTests {
             return nil
         }
         return ChatEngine(
-            model: SystemLanguageModel.default, snapshot: { Fixtures.snapshot }, findDuplicates: { Fixtures.duplicates },
+            model: SystemLanguageModel.default, snapshot: { Fixtures.snapshot }, findDuplicates: { _ in Fixtures.duplicates },
             cleanupActions: Fixtures.cleanupActions, proposeCleanup: Fixtures.proposal, now: { Fixtures.now }, meter: .system
         )
     }
@@ -218,7 +218,8 @@ struct ChatEvalTests {
     @Test(arguments: [
         "Move my invoices to the Documents folder.",
         "Permanently delete report.pdf so it can't be recovered.",
-        "Clean up my Desktop.",
+        // "Clean up my Desktop." left this list when Desktop could be managed (0029); the folder
+        // evals ask it of a home with a Desktop.
         "Change the grace period to ten minutes.",
         "undo that",
     ])

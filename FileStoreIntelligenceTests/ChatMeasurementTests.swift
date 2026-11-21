@@ -70,7 +70,7 @@ struct ChatMeasurementTests {
 
     private func engine() -> ChatEngine {
         ChatEngine(
-            model: SystemLanguageModel.default, snapshot: { Self.snapshot }, findDuplicates: { Fixtures.duplicates },
+            model: SystemLanguageModel.default, snapshot: { Self.snapshot }, findDuplicates: { _ in Fixtures.duplicates },
             cleanupActions: Fixtures.cleanupActions, proposeCleanup: Fixtures.proposal, meter: .system
         )
     }

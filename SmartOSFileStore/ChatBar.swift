@@ -6,6 +6,8 @@ import SwiftUI
 struct ChatSection: View {
     @Bindable var chat: ChatModel
     let files: FileListModel
+    /// Every folder's list, where the conversation finds the files of an answer about several.
+    let lists: FolderListsModel
     var isFocused: FocusState<Bool>.Binding
     let showInList: @MainActor (URL) -> Void
     let cardActions: ChatCardActions
@@ -23,7 +25,7 @@ struct ChatSection: View {
         let availability = IntelligenceAvailability.current(enabledInSettings: usesAppleIntelligence)
         VStack(spacing: 0) {
             if chat.isPanelOpen, !chat.messages.isEmpty {
-                ConversationPanel(chat: chat, files: files, maxHeight: chat.panelRoom, showInList: showInList, cardActions: cardActions)
+                ConversationPanel(chat: chat, files: lists, maxHeight: chat.panelRoom, showInList: showInList, cardActions: cardActions)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             if availability == .available {
@@ -72,7 +74,7 @@ struct ChatBar: View {
     private static let examples = [
         String(localized: "What’s taking the most space?"),
         String(localized: "What did I download last week and never open?"),
-        String(localized: "How many files have I never opened?"),
+        String(localized: "What are the biggest files on my Desktop?"),
     ]
 
     var body: some View {

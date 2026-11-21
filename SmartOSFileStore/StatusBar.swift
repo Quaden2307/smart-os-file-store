@@ -51,7 +51,7 @@ struct StatusBar: View {
     #if DEBUG
     private var debugPaths: String {
         [
-            model.location.map { "Scanning \($0.folderURL.path(percentEncoded: false)) (\($0.source.localizedName))" },
+            model.folder.map { "Scanning \($0.url.path(percentEncoded: false)) (\(activity.folders.activeOverride?.source.localizedName ?? String(localized: "Downloads folder")))" },
             activity.location?.databaseURL.map { "Activity log at \($0.path(percentEncoded: false))" },
         ]
         .compactMap(\.self)

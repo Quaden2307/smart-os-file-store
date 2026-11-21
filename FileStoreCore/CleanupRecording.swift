@@ -66,32 +66,34 @@ public struct CleanupRunStart: Sendable, Hashable {
     /// What the log stores as the run's action: the action's identifier, or
     /// `ActivityRun.tidyNowActionCode`.
     public let logCode: String
-    public let folderURL: URL
+    public let folder: ManagedFolder
+
+    public var folderURL: URL { folder.url }
     /// How many changes the user confirmed.
     public let confirmedCount: Int
     public let startedAt: Date
     public var origin = RunOrigin.app
 
-    public init(action: CleanupAction, folderURL: URL, confirmedCount: Int, startedAt: Date) {
+    public init(action: CleanupAction, folder: ManagedFolder, confirmedCount: Int, startedAt: Date) {
         self.action = action
         self.logCode = action.logCode
-        self.folderURL = folderURL
+        self.folder = folder
         self.confirmedCount = confirmedCount
         self.startedAt = startedAt
     }
 
     /// A Tidy Now run: the confirmed changes of every action's plan, recorded as one run so that one
     /// undo reverses all of it.
-    public static func tidyNow(folderURL: URL, confirmedCount: Int, startedAt: Date, origin: RunOrigin = .app) -> CleanupRunStart {
-        var start = CleanupRunStart(logCode: ActivityRun.tidyNowActionCode, folderURL: folderURL, confirmedCount: confirmedCount, startedAt: startedAt)
+    public static func tidyNow(folder: ManagedFolder, confirmedCount: Int, startedAt: Date, origin: RunOrigin = .app) -> CleanupRunStart {
+        var start = CleanupRunStart(logCode: ActivityRun.tidyNowActionCode, folder: folder, confirmedCount: confirmedCount, startedAt: startedAt)
         start.origin = origin
         return start
     }
 
-    private init(logCode: String, folderURL: URL, confirmedCount: Int, startedAt: Date) {
+    private init(logCode: String, folder: ManagedFolder, confirmedCount: Int, startedAt: Date) {
         self.action = nil
         self.logCode = logCode
-        self.folderURL = folderURL
+        self.folder = folder
         self.confirmedCount = confirmedCount
         self.startedAt = startedAt
     }

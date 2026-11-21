@@ -17,8 +17,8 @@ struct ActivityLogFailureTests {
             ["a.txt": "same bytes", "a (1).txt": "same bytes", "a (2).txt": "same bytes", "a (3).txt": "same bytes"],
             in: folder
         )
-        let records = try await scanner.scan(ScanLocation(folderURL: folder, source: .launchArgument)).records
-        return try await planner.plan(records: records, in: folder)
+        let records = try await scanner.scan(.temporary(folder)).records
+        return try await planner.plan(records: records, in: .temporary(folder))
     }
 
     private func all(_ plan: CleanupPlan) -> Set<ProposedChange.ID> {
@@ -223,7 +223,7 @@ struct ActivityLogFailureTests {
             let log = try await ActivityLog.open(location, now: now)
             let other = try RawDatabase(databaseURL)
             try other.execute("BEGIN EXCLUSIVE")
-            let start = CleanupRunStart(action: .findDuplicates, folderURL: LogSamples.folderURL, confirmedCount: 1, startedAt: now)
+            let start = CleanupRunStart(action: .findDuplicates, folder: log.downloads(at: LogSamples.folderURL), confirmedCount: 1, startedAt: now)
 
             do {
                 _ = try log.beginRun(start)

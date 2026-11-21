@@ -35,9 +35,9 @@ public struct NearDuplicatePlanner: Sendable {
     // MARK: - Pure functions
 
     /// The regular files directly inside `folderURL` that the shared rules allow at `now`.
-    public func candidates(in records: [FileRecord], folderURL: URL, now: Date) -> [FileRecord] {
-        DuplicatePlanner.recordsDirectlyInside(folderURL, among: records).filter { record in
-            record.kind == .file && eligibility.allows(record, now: now)
+    public func candidates(in records: [FileRecord], folder: ManagedFolder, now: Date) -> [FileRecord] {
+        DuplicatePlanner.recordsDirectlyInside(folder.url, among: records).filter { record in
+            record.kind == .file && eligibility.allows(record, in: folder, now: now)
         }
     }
 
@@ -62,7 +62,7 @@ public struct NearDuplicatePlanner: Sendable {
     /// Builds the plan from name groups whose hashes are known. A record missing from `hashes` takes
     /// no part (the driver lists it as not checked). Pure: nothing here touches the disk.
     public static func makePlan(
-        folderURL: URL,
+        folder: ManagedFolder,
         nameGroups: [[FileRecord]],
         hashes: [FileRecord.ID: ContentHash],
         skippedItems: [CleanupPlan.SkippedItem] = []
@@ -104,7 +104,7 @@ public struct NearDuplicatePlanner: Sendable {
         }
         return CleanupPlan(
             action: .reviewNearDuplicates,
-            folderURL: folderURL,
+            folder: folder,
             changes: changes,
             nearDuplicateGroups: groups,
             skippedItems: sortedSkips
@@ -121,14 +121,15 @@ public struct NearDuplicatePlanner: Sendable {
     @concurrent
     public func plan(
         records: [FileRecord],
-        in folderURL: URL,
+        in folder: ManagedFolder,
         now: Date = .now
     ) async throws(CleanupPlanningError) -> CleanupPlan {
+        let folderURL = folder.url
         // Unknown counts as not case-sensitive: more names match, so more files are shown, never fewer.
         let values = try? folderURL.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey])
         let caseSensitive = values?.volumeSupportsCaseSensitiveNames ?? false
         let groups = Self.nameGroups(
-            of: DuplicatePlanner.distinctFiles(candidates(in: records, folderURL: folderURL, now: now)),
+            of: DuplicatePlanner.distinctFiles(candidates(in: records, folder: folder, now: now)),
             caseSensitive: caseSensitive
         )
 
@@ -146,6 +147,9 @@ public struct NearDuplicatePlanner: Sendable {
                 continue
             }
             do throws(ContentHashError) {
+                if record.isDataless {
+                    throw .notDownloaded(record.url)
+                }
                 let hash = try await hasher.hash(contentsOf: record.url, expectedSizeInBytes: record.sizeInBytes)
                 hashes[record.id] = hash
                 hashCache.store(hash, for: record)
@@ -161,7 +165,7 @@ public struct NearDuplicatePlanner: Sendable {
             throw .cancelled
         }
 
-        let plan = Self.makePlan(folderURL: folderURL, nameGroups: groups, hashes: hashes, skippedItems: skippedItems)
+        let plan = Self.makePlan(folder: folder, nameGroups: groups, hashes: hashes, skippedItems: skippedItems)
         Self.logger.info(
             "\(groups.count) name groups; read \(hashedCount) files; \(plan.nearDuplicateGroups.count) near-duplicate groups, \(plan.changes.count) files, \(plan.skippedItems.count) skipped"
         )

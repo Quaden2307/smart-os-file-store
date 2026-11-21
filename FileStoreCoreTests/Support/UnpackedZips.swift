@@ -135,7 +135,7 @@ enum UnpackedZips {
         return try await CleanupPlanners.plan(
             .removeUnpackedZips,
             records: records,
-            in: folder,
+            in: .temporary(folder),
             eligibility: CandidateEligibility(),
             keptItems: keptItems,
             installers: .testing(),

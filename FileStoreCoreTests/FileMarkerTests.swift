@@ -39,7 +39,7 @@ struct FileMarkerTests {
     }
 
     private func marks(_ record: FileRecord, settings: CleanupSettings? = nil) -> [FileMark] {
-        FileMarker.marks(for: record, now: Self.now, settings: settings ?? self.settings)
+        FileMarker.marks(for: record, in: .temporary(record.url.deletingLastPathComponent()), now: Self.now, settings: settings ?? self.settings)
     }
 
     // MARK: - Installed
@@ -48,16 +48,16 @@ struct FileMarkerTests {
     /// mark takes its place after Failed download and before the age marks.
     @Test func anInstallerTheCallerFoundInstalledIsMarkedSoInOrder() {
         let installer = record("SomeApp-2.1.dmg", contentType: UTType(filenameExtension: "dmg"), added: Self.now - 100 * Self.day)
-        #expect(FileMarker.marks(for: installer, now: Self.now, settings: settings, isInstalled: true) == [.installed, .neverOpened, .old])
-        #expect(FileMarker.marks(for: installer, now: Self.now, settings: settings) == [.neverOpened, .old])
+        #expect(FileMarker.marks(for: installer, in: .temporary(installer.url.deletingLastPathComponent()), now: Self.now, settings: settings, isInstalled: true) == [.installed, .neverOpened, .old])
+        #expect(FileMarker.marks(for: installer, in: .temporary(installer.url.deletingLastPathComponent()), now: Self.now, settings: settings) == [.neverOpened, .old])
         #expect(FileMark.allCases == [.kept, .failedDownload, .installed, .duplicate, .neverOpened, .unused, .old])
     }
 
     /// Duplicate comes from the last Tidy Now scan, which the caller passes; it sits after Installed.
     @Test func aCopyTheCallerFoundDuplicateIsMarkedSoInOrder() {
         let copy = record("report (1).pdf", contentType: UTType(filenameExtension: "pdf"), added: Self.now - 100 * Self.day)
-        #expect(FileMarker.marks(for: copy, now: Self.now, settings: settings, isInstalled: true, isDuplicate: true) == [.installed, .duplicate, .neverOpened, .old])
-        #expect(FileMarker.marks(for: copy, now: Self.now, settings: settings) == [.neverOpened, .old])
+        #expect(FileMarker.marks(for: copy, in: .temporary(copy.url.deletingLastPathComponent()), now: Self.now, settings: settings, isInstalled: true, isDuplicate: true) == [.installed, .duplicate, .neverOpened, .old])
+        #expect(FileMarker.marks(for: copy, in: .temporary(copy.url.deletingLastPathComponent()), now: Self.now, settings: settings) == [.neverOpened, .old])
     }
 
     // MARK: - Thresholds

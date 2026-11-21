@@ -12,8 +12,8 @@ struct ActivityLogRecordingTests {
     private let planner = DuplicatePlanner()
 
     private func duplicatePlan(_ folder: URL) async throws -> CleanupPlan {
-        let records = try await scanner.scan(ScanLocation(folderURL: folder, source: .launchArgument)).records
-        return try await planner.plan(records: records, in: folder)
+        let records = try await scanner.scan(.temporary(folder)).records
+        return try await planner.plan(records: records, in: .temporary(folder))
     }
 
     private func change(named name: String, in changes: [ActivityChange]) throws -> ActivityChange {
@@ -240,7 +240,7 @@ struct ActivityLogRecordingTests {
         try LogSamples.writeRun(to: log, startedAt: now, count: 2, size: 1_000)
         try LogSamples.writeRun(to: log, startedAt: now.addingTimeInterval(60), count: 3, size: 10)
         // A run in which nothing was done adds nothing.
-        let runID = try log.beginRun(CleanupRunStart(action: .findDuplicates, folderURL: LogSamples.folderURL, confirmedCount: 2, startedAt: now))
+        let runID = try log.beginRun(CleanupRunStart(action: .findDuplicates, folder: log.downloads(at: LogSamples.folderURL), confirmedCount: 2, startedAt: now))
         let skipped = CleanupItemResult(change: LogSamples.trashChange("gone.pdf", size: 999), outcome: .skipped(.notFound))
         let failed = CleanupItemResult(change: LogSamples.trashChange("locked.pdf", size: 999), outcome: .failed(.fileIsLocked))
         try log.recordResult(CleanupChangeResult(runID: runID, changeID: nil, sequence: 0, item: skipped, attemptedAt: now))
@@ -258,7 +258,7 @@ struct ActivityLogRecordingTests {
     @Test func aResultIsNeverCountedTwice() async throws {
         let log = try await ActivityLog.open(.inMemory)
         let now = Date(timeIntervalSince1970: 1_800_000_000)
-        let runID = try log.beginRun(CleanupRunStart(action: .findDuplicates, folderURL: LogSamples.folderURL, confirmedCount: 1, startedAt: now))
+        let runID = try log.beginRun(CleanupRunStart(action: .findDuplicates, folder: log.downloads(at: LogSamples.folderURL), confirmedCount: 1, startedAt: now))
         let change = LogSamples.trashChange("report (1).pdf", size: 700)
         let changeID = try log.recordedIntent(CleanupChangeIntent(runID: runID, sequence: 0, change: change, contentHash: nil, attemptedAt: now))
         let result = CleanupChangeResult(runID: runID, changeID: changeID, sequence: 0, item: LogSamples.trashed(change), attemptedAt: now)
@@ -322,7 +322,7 @@ struct ActivityLogRecordingTests {
             // What a copy of the app that stopped in the middle of a change leaves behind: an open
             // run and a row that says the change was started.
             let runID = try log.beginRun(
-                CleanupRunStart(action: .findDuplicates, folderURL: LogSamples.folderURL, confirmedCount: 2, startedAt: now)
+                CleanupRunStart(action: .findDuplicates, folder: log.downloads(at: LogSamples.folderURL), confirmedCount: 2, startedAt: now)
             )
             let change = LogSamples.trashChange("report (1).pdf")
             _ = try log.recordedIntent(CleanupChangeIntent(runID: runID, sequence: 0, change: change, contentHash: nil, attemptedAt: now))
@@ -430,7 +430,7 @@ struct ActivityLogRecordingTests {
             CleanupItemResult(change: LogSamples.trashChange("failed-\(index).pdf"), outcome: .failed(error))
         }
         let runID = try log.beginRun(
-            CleanupRunStart(action: .findDuplicates, folderURL: LogSamples.folderURL, confirmedCount: items.count, startedAt: now)
+            CleanupRunStart(action: .findDuplicates, folder: log.downloads(at: LogSamples.folderURL), confirmedCount: items.count, startedAt: now)
         )
         for (sequence, item) in items.enumerated() {
             try log.recordResult(CleanupChangeResult(runID: runID, changeID: nil, sequence: sequence, item: item, attemptedAt: now))
@@ -469,7 +469,7 @@ struct ActivityLogRecordingTests {
             nil,
         ]
         let runID = try log.beginRun(
-            CleanupRunStart(action: .findDuplicates, folderURL: LogSamples.folderURL, confirmedCount: dates.count, startedAt: now)
+            CleanupRunStart(action: .findDuplicates, folder: log.downloads(at: LogSamples.folderURL), confirmedCount: dates.count, startedAt: now)
         )
         for (sequence, date) in dates.enumerated() {
             let change = ProposedChange(

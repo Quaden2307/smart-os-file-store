@@ -13,10 +13,17 @@ struct ScanFailure: Equatable {
     /// True when macOS blocked access, so the view can offer the privacy settings.
     let isPermissionDenied: Bool
 
-    init(_ error: ScanLocationError) {
+    /// Why Downloads could not be found. The other kinds of folder are not shown yet, so every
+    /// case speaks of Downloads.
+    init(_ error: FolderLocationError) {
         isPermissionDenied = false
         switch error {
-        case .downloadsFolderUnavailable:
+        case .refused:
+            title = String(localized: "Downloads folder can’t be used")
+            message = String(
+                localized: "Your Downloads folder leads to a place Smart OS File Store does not look after, such as your home folder, the top of a disk, or a system or cloud-storage folder. Move Downloads to an ordinary folder, then click Try again."
+            )
+        case .standardFolderUnavailable, .bookmarkUnusable:
             title = String(localized: "Downloads folder not found")
             message = String(
                 localized: "Your Downloads folder could not be located. Check that a Downloads folder exists in your home folder, then open Smart OS File Store again."
@@ -71,15 +78,17 @@ struct ScanFailure: Equatable {
     }
 }
 
-extension ScanLocation.Source {
-    /// How the status line and error messages name the way the folder was chosen.
+extension FolderOverride.Source {
+    /// How the status line and error messages name the way the folders were chosen.
     var localizedName: String {
         switch self {
-        case .downloadsFolder:
-            String(localized: "Downloads folder")
-        case .launchArgument:
+        case .demoHomeArgument:
+            String(localized: "-DemoHome launch argument")
+        case .scanFolderArgument:
             String(localized: "-ScanFolder launch argument")
-        case .environmentVariable:
+        case .demoHomeVariable:
+            String(localized: "SMARTOS_DEMO_HOME environment variable")
+        case .scanFolderVariable:
             String(localized: "SMARTOS_SCAN_FOLDER environment variable")
         }
     }

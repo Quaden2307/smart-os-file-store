@@ -45,16 +45,17 @@ extension CleanupExecutor {
         beforeChange: (@Sendable (ProposedChange) -> Void)? = nil
     ) async -> TidyNowResult {
         let segments = TidyNowPlan.executionSegments(plans)
-        // Every plan of one Tidy Now names the same folder; one that does not is not carried out.
-        guard let folderURL = segments.first?.plan.folderURL else {
+        // A run belongs to one folder: the first plan's. A plan that names another is not carried
+        // out, and each of its confirmed changes is reported as outside the folder.
+        guard let folder = segments.first?.plan.folder else {
             return TidyNowResult(results: [], runID: nil, wasCancelled: false, logFailure: nil)
         }
-        let usable = segments.filter { $0.plan.folderURL == folderURL }
         let outcome = await run(
-            usable,
+            segments,
             confirmedChangeIDs: confirmedChangeIDs,
+            folder: folder,
             start: { count in
-                CleanupRunStart.tidyNow(folderURL: folderURL, confirmedCount: count, startedAt: .now, origin: origin)
+                CleanupRunStart.tidyNow(folder: folder, confirmedCount: count, startedAt: .now, origin: origin)
             },
             now: now,
             onProgress: onProgress,
@@ -62,12 +63,12 @@ extension CleanupExecutor {
         )
         let results = TidyNowPlan.order.compactMap { action -> CleanupResult? in
             let items = outcome.items.filter { $0.action == action }.map(\.item)
-            guard !items.isEmpty, let plan = usable.first(where: { $0.plan.action == action })?.plan else {
+            guard !items.isEmpty, let plan = segments.first(where: { $0.plan.action == action })?.plan else {
                 return nil
             }
             return CleanupResult(
                 action: action,
-                folderURL: plan.folderURL,
+                folder: plan.folder,
                 items: items,
                 wasCancelled: outcome.wasCancelled,
                 logFailure: outcome.logFailure,

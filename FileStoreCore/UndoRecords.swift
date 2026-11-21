@@ -6,6 +6,9 @@ import Foundation
 
 public struct UndoRunStart: Sendable, Hashable {
     public let target: UndoTarget
+    /// The folder of the run being undone, which the undo is recorded in too. The log refuses an
+    /// undo without one.
+    public let folderID: ManagedFolder.ID?
     public let folderURL: URL
     /// The action of the run being undone, as stored, so the undo can be named after it.
     public let undoneActionCode: String
@@ -13,8 +16,9 @@ public struct UndoRunStart: Sendable, Hashable {
     public let confirmedCount: Int
     public let startedAt: Date
 
-    public init(target: UndoTarget, folderURL: URL, undoneActionCode: String, confirmedCount: Int, startedAt: Date) {
+    public init(target: UndoTarget, folderID: ManagedFolder.ID?, folderURL: URL, undoneActionCode: String, confirmedCount: Int, startedAt: Date) {
         self.target = target
+        self.folderID = folderID
         self.folderURL = folderURL
         self.undoneActionCode = undoneActionCode
         self.confirmedCount = confirmedCount

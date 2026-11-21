@@ -20,14 +20,14 @@ struct ChatCleanupPlanTests {
         TidyNowPlanner(
             actions: actions, eligibility: CandidateEligibility(), keptItems: keptItems,
             installers: .testing(applications: [fixture.applicationsURL]), settings: settings, records: records,
-            folderURL: fixture.url, now: now
+            folder: .temporary(fixture.url), now: now
         )
     }
 
     /// The planner called directly, as the Clean Up menu calls it.
     static func direct(_ action: CleanupAction, _ fixture: FakeDownloadsFolder, records: [FileRecord]) async throws -> CleanupPlan {
         try #require(try await CleanupPlanners.plan(
-            action, records: records, in: fixture.url, eligibility: CandidateEligibility(), keptItems: KeptItems(),
+            action, records: records, in: .temporary(fixture.url), eligibility: CandidateEligibility(), keptItems: KeptItems(),
             installers: .testing(applications: [fixture.applicationsURL]), now: now, settings: settings
         ))
     }
@@ -104,7 +104,7 @@ struct ChatCleanupPlanTests {
             func plan(_ actions: [CleanupAction], only: Set<URL>) async throws -> TidyNowPlan {
                 try await TidyNowPlanner(
                     actions: actions, eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: .testing(),
-                    records: records, folderURL: folder
+                    records: records, folder: .temporary(folder)
                 ).plan(only: only)
             }
             let copy = try #require(try await plan([.findDuplicates], only: Set(records.map(\.url))).plans.first?.changes.first?.id)
@@ -138,7 +138,7 @@ struct ChatCleanupPlanTests {
             let log = try await ActivityLog.open(.inMemory)
             let keptNames = [Names.reportCopy1, Names.numberedName, Names.oldReceipt, Names.usedAppZip, Names.bigVideo]
             try await log.keep(records.filter { keptNames.contains($0.displayName) })
-            let kept = try await log.keptItems(forFolder: fixture.url)
+            let kept = try await log.keptItems(for: log.downloads(at: fixture.url))
             let archive = fixture.url.appending(path: Names.archiveFolder, directoryHint: .isDirectory)
 
             let all = PlannersRespectKeptTests.plannedActions
@@ -152,7 +152,7 @@ struct ChatCleanupPlanTests {
                 #expect(!changes.contains { $0.id.path.hasPrefix(archive.path) })
                 // Clear Failed Downloads has its own rule for a download in progress; every other
                 // shared rule holds for every change.
-                #expect(!changes.contains { CandidateEligibility(keptItems: kept).refusal(for: $0.record, now: Self.now, downloads: .allowed) != nil })
+                #expect(!changes.contains { CandidateEligibility(keptItems: kept).refusal(for: $0.record, in: log.downloads(at: fixture.url), now: Self.now, downloads: .allowed) != nil })
             }
         }
     }

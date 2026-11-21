@@ -35,8 +35,9 @@ public struct CandidateEligibility: Sendable, Equatable {
     /// downloading, being unpacked or being looked at for the first time.
     public static let defaultGracePeriod: TimeInterval = 60 * 60
 
-    /// The archive: a folder with this name at the top level of the scanned folder. Neither it nor
-    /// anything in it is ever a candidate. Names are compared case-insensitively.
+    /// The archive: a folder with this name at the top level of a managed folder. Neither it nor
+    /// anything in it is ever a candidate. Names are compared case-insensitively. Every kind of
+    /// folder has this one name for now; a check on an item asks its folder (`ManagedFolder.archiveFolderName`).
     public static let archiveFolderName = "Old downloads"
 
     /// Debug-only launch argument that sets the grace period. The next argument is a whole number
@@ -93,7 +94,11 @@ public struct CandidateEligibility: Sendable, Equatable {
 
     /// True for names no action may treat as a candidate: a hidden name (leading dot) and the
     /// archive folder's name, in any letter case.
-    public static func isExcludedName(_ name: String) -> Bool {
+    ///
+    /// - Parameter archiveFolderName: The archive's name in the folder the item is in
+    ///   (`ManagedFolder.archiveFolderName`). A rule about a new name alone, which no folder's
+    ///   archive may have, names `CandidateEligibility.archiveFolderName` itself.
+    public static func isExcludedName(_ name: String, archiveFolderName: String) -> Bool {
         name.hasPrefix(".") || name.compare(archiveFolderName, options: .caseInsensitive) == .orderedSame
     }
 
@@ -103,6 +108,7 @@ public struct CandidateEligibility: Sendable, Equatable {
     /// reads from disk right before acting, so both apply exactly the same rules.
     ///
     /// - Parameters:
+    ///   - folder: The managed folder the item is in, whose archive is left alone.
     ///   - dateModified: When the item last changed: for a folder whose contents were read, its
     ///     last change (`FileRecord.lastChange`).
     ///   - downloads: Whether a download still in progress may take part. Only Clear Failed
@@ -112,10 +118,11 @@ public struct CandidateEligibility: Sendable, Equatable {
         isDownloading: Bool,
         dateAdded: Date?,
         dateModified: Date?,
+        in folder: ManagedFolder,
         now: Date,
         downloads: DownloadsInProgress = .refused
     ) -> Refusal? {
-        if Self.isExcludedName(name) {
+        if Self.isExcludedName(name, archiveFolderName: folder.archiveFolderName) {
             return .excludedName
         }
         if isDownloading, downloads == .refused {
@@ -128,15 +135,16 @@ public struct CandidateEligibility: Sendable, Equatable {
     }
 
     /// The rules every action shares, for `record` as the scan saw it: nil when it may be proposed
-    /// for a change at `now`, otherwise the first rule that keeps it out, with Kept last. The grace
+    /// for a change in `folder` at `now`, otherwise the first rule that keeps it out, with Kept last. The grace
     /// period counts from the record's last change, which is its modification date for everything
     /// but a `.download` folder whose contents were read.
-    public func refusal(for record: FileRecord, now: Date, downloads: DownloadsInProgress = .refused) -> Refusal? {
+    public func refusal(for record: FileRecord, in folder: ManagedFolder, now: Date, downloads: DownloadsInProgress = .refused) -> Refusal? {
         if let refusal = refusal(
             name: record.displayName,
             isDownloading: record.isDownloading,
             dateAdded: record.dateAdded,
             dateModified: record.lastChange,
+            in: folder,
             now: now,
             downloads: downloads
         ) {
@@ -149,8 +157,8 @@ public struct CandidateEligibility: Sendable, Equatable {
     /// not the archive, not still downloading, past the grace period, and not Kept. Each action adds
     /// its own rules on top, such as which kinds of item it handles. Clear Failed Downloads, the one
     /// action with its own rule for downloads in progress, passes `.allowed` to the rules above.
-    public func allows(_ record: FileRecord, now: Date) -> Bool {
-        refusal(for: record, now: now) == nil
+    public func allows(_ record: FileRecord, in folder: ManagedFolder, now: Date) -> Bool {
+        refusal(for: record, in: folder, now: now) == nil
     }
 
     #if DEBUG

@@ -7,7 +7,7 @@ extension ActivityLog: CleanupRecording {
     public func beginRun(_ start: CleanupRunStart) throws(ActivityLogError) -> Int64 {
         try write { db in
             try db.execute(
-                sql: "INSERT INTO runs (action, folderPath, startedAt, state, confirmedCount, origin) VALUES (?, ?, ?, ?, ?, ?)",
+                sql: "INSERT INTO runs (action, folderPath, startedAt, state, confirmedCount, origin, folderID) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 arguments: [
                     start.logCode,
                     start.folderURL.path(percentEncoded: false),
@@ -15,6 +15,7 @@ extension ActivityLog: CleanupRecording {
                     ActivityRun.State.running.logCode,
                     start.confirmedCount,
                     start.origin.logCode,
+                    start.folder.id.uuidString,
                 ]
             )
             return db.lastInsertedRowID
@@ -141,7 +142,8 @@ extension ActivityLog: CleanupRecording {
     }
 
     /// One `changes` row. `resultingPath` is where the file went when the outcome says so, and
-    /// otherwise where a rename or a move was to put it.
+    /// otherwise where a rename or a move was to put it. Its folder is its run's, read from the run
+    /// so the two can never disagree.
     private static func insertChange(
         _ db: Database,
         runID: Int64,
@@ -158,8 +160,8 @@ extension ActivityLog: CleanupRecording {
             INSERT INTO changes (
                 runID, sequence, operation, originalPath, resultingPath, sizeInBytes, dateModified, contentHash,
                 reasonCode, reasonDetail, outcome, outcomeCode, outcomeDetail, errorDomain, errorCode, errorText,
-                createdFolders, attemptedAt, fileNumber, isFolder
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                createdFolders, attemptedAt, fileNumber, isFolder, folderID
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT folderID FROM runs WHERE id = ?))
             """)
         try statement.execute(arguments: [
             runID, sequence, ActivityChange.Operation(change.operation).logCode, change.originalPath,
@@ -168,7 +170,7 @@ extension ActivityLog: CleanupRecording {
             reason.code, reason.detail, outcome.outcome, outcome.code, outcome.detail,
             outcome.errorDomain, outcome.errorNumber, outcome.errorText,
             try encoded(createdFolders), attemptedAt.timeIntervalSinceReferenceDate,
-            fileNumber.map(ActivityLog.storedFileNumber), change.isFolder,
+            fileNumber.map(ActivityLog.storedFileNumber), change.isFolder, runID,
         ])
     }
 

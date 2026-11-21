@@ -162,6 +162,7 @@ struct RunJournal {
             runID = try recorder.beginUndoRun(
                 UndoRunStart(
                     target: plan.target,
+                    folderID: plan.folderID,
                     folderURL: plan.folderURL,
                     undoneActionCode: plan.undoneActionCode,
                     confirmedCount: confirmedCount,

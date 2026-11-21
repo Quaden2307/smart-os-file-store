@@ -106,7 +106,7 @@ struct UndoExecutorTests {
             let (runID, trashURLs) = try await Fixtures.trashRun(["a.txt"], in: folder, to: trash, log: log)
             try Data("new file".utf8).write(to: folder.appending(path: "a.txt"))
 
-            let plan = try await UndoPlanner(trash: trash.locator).plan(.run(runID), log: log, folderURL: folder)
+            let plan = try await UndoPlanner(trash: trash.locator).plan(.run(runID), log: log, folders: .testing(downloads: folder))
             #expect(plan.steps.isEmpty)
             #expect(plan.refused.map(\.refusal) == [.originalNameTaken(name: "a.txt")])
             let result = await CleanupExecutor(recorder: log).undo(plan, trash: trash.locator)
@@ -235,18 +235,18 @@ struct UndoExecutorTests {
             try Fixtures.write(["a.txt": "ten bytes!", "b.txt": "twenty bytes, not 10"], in: folder)
             let (runID, trashURLs) = try await Fixtures.trashRun(["a.txt", "b.txt"], in: folder, to: trash, log: log)
             #expect(try await log.totals() == ActivityTotals(bytesMovedToTrash: 30, filesCleaned: 2))
-            let firstPlan = try await UndoPlanner(trash: trash.locator).plan(.run(runID), log: log, folderURL: folder)
+            let firstPlan = try await UndoPlanner(trash: trash.locator).plan(.run(runID), log: log, folders: .testing(downloads: folder))
             let first = await CleanupExecutor(recorder: log).undo(firstPlan, trash: trash.locator)
             #expect(first.undone.count == 2)
             #expect(try await log.totals() == .zero)
             let afterFirst = DiskState.snapshot(of: folder)
 
             // Planned again: nothing left, and each change says why.
-            let again = try await UndoPlanner(trash: trash.locator).plan(.run(runID), log: log, folderURL: folder)
+            let again = try await UndoPlanner(trash: trash.locator).plan(.run(runID), log: log, folders: .testing(downloads: folder))
             #expect(again.steps.isEmpty)
             #expect(again.refused.isEmpty)
             let change = try await Fixtures.change(named: "a.txt", inRun: runID, log: log)
-            let one = try await UndoPlanner(trash: trash.locator).plan(.change(change.id), log: log, folderURL: folder)
+            let one = try await UndoPlanner(trash: trash.locator).plan(.change(change.id), log: log, folders: .testing(downloads: folder))
             #expect(one.refused.map(\.refusal) == [.alreadyUndone])
 
             // The old plan carried out again: the files are not in the Trash any more.
@@ -287,7 +287,7 @@ struct UndoExecutorTests {
         try await withSetup { folder, trash, log in
             try Fixtures.write(["1.txt": "one", "2.txt": "two"], in: folder)
             let (runID, _) = try await Fixtures.trashRun(["1.txt", "2.txt"], in: folder, to: trash, log: log)
-            let plan = try await UndoPlanner(trash: trash.locator).plan(.run(runID), log: log, folderURL: folder)
+            let plan = try await UndoPlanner(trash: trash.locator).plan(.run(runID), log: log, folders: .testing(downloads: folder))
             let locator = trash.locator
 
             // Cancelled from inside the undo's own task, so the test's task is left alone.
@@ -320,7 +320,7 @@ struct UndoExecutorTests {
         let marker = "undo round trip \(UUID().uuidString)"
         try Fixtures.write(["a.txt": marker, "a (1).txt": marker], in: folder.url)
         let records = try await RelocationPlans.records(in: folder.url)
-        let plan = try await DuplicatePlanner().plan(records: records, in: folder.url)
+        let plan = try await DuplicatePlanner().plan(records: records, in: log.downloads(at: folder.url))
         let cleanup = await CleanupExecutor(recorder: log).execute(plan: plan, confirmedChangeIDs: Set(plan.changes.map(\.id)))
         // Whatever happens next, nothing of this test's is left in the user's Trash: the removal
         // only acts on a file still there with the test's own bytes.
@@ -394,7 +394,7 @@ struct UndoExecutorTests {
         try await withSetup { folder, trash, log in
             try Fixtures.write(["a.txt": "same size", "b.txt": "same size"], in: folder)
             let (runID, trashURLs) = try await Fixtures.trashRun(["a.txt", "b.txt"], in: folder, to: trash, log: log)
-            let plan = try await UndoPlanner(trash: trash.locator).plan(.run(runID), log: log, folderURL: folder)
+            let plan = try await UndoPlanner(trash: trash.locator).plan(.run(runID), log: log, folders: .testing(downloads: folder))
             let a = try #require(plan.steps.first { $0.originalName == "a.txt" })
             let b = try #require(plan.steps.first { $0.originalName == "b.txt" })
             // A plan built elsewhere: a's change, but b's file in the Trash, with b's own evidence,
@@ -408,7 +408,7 @@ struct UndoExecutorTests {
                 originalPath: a.originalPath,
                 evidence: b.evidence
             )
-            let forgedPlan = UndoPlan(target: .change(a.changeID), folderURL: folder, undoneActionCode: plan.undoneActionCode, steps: [forged], refused: [])
+            let forgedPlan = UndoPlan(target: .change(a.changeID), folderID: plan.folderID, folderURL: folder, undoneActionCode: plan.undoneActionCode, steps: [forged], refused: [])
 
             let result = await CleanupExecutor(recorder: log).undo(forgedPlan, trash: trash.locator)
 
@@ -423,7 +423,7 @@ struct UndoExecutorTests {
         try await withSetup { folder, trash, log in
             let planner = UndoPlanner(trash: trash.locator)
             for target in [UndoTarget.run(999), .change(999)] {
-                let plan = try await planner.plan(target, log: log, folderURL: folder)
+                let plan = try await planner.plan(target, log: log, folders: .testing(downloads: folder))
                 #expect(plan.steps.isEmpty)
                 #expect(plan.refused.isEmpty)
             }
@@ -452,7 +452,7 @@ struct UndoExecutorTests {
         ]
         refusals.forEach(listed)
         let undoRunID = try log.beginUndoRun(
-            UndoRunStart(target: .run(runID), folderURL: LogSamples.folderURL, undoneActionCode: "findDuplicates", confirmedCount: refusals.count, startedAt: Fixtures.now)
+            UndoRunStart(target: .run(runID), folderID: try log.folderID(of: .downloads), folderURL: LogSamples.folderURL, undoneActionCode: "findDuplicates", confirmedCount: refusals.count, startedAt: Fixtures.now)
         )
         for (sequence, refusal) in refusals.enumerated() {
             let item = UndoItemResult(

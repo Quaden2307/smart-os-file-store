@@ -24,7 +24,7 @@ struct PlannersRespectKeptTests {
         try await CleanupPlanners.plan(
             action,
             records: records,
-            in: folder,
+            in: .temporary(folder),
             eligibility: CandidateEligibility(),
             keptItems: keptItems,
             installers: .testing(applications: applications),
@@ -63,13 +63,13 @@ struct PlannersRespectKeptTests {
 
             // Everything it proposed is now Kept: none of it may be named again.
             try await log.keep(proposed)
-            let keptProposed = try await log.keptItems(forFolder: fixture.url)
+            let keptProposed = try await log.keptItems(for: log.downloads(at: fixture.url))
             let again = try #require(try await plan(action, records, in: fixture.url, keeping: keptProposed, applications: applications))
             #expect(named(in: again, among: records).filter(keptProposed.contains).isEmpty)
 
             // Everything is Kept: nothing is proposed or named at all.
             try await log.keep(records)
-            let all = try await log.keptItems(forFolder: fixture.url)
+            let all = try await log.keptItems(for: log.downloads(at: fixture.url))
             let none = try #require(try await plan(action, records, in: fixture.url, keeping: all, applications: applications))
             #expect(none.isEmpty)
             #expect(named(in: none, among: records).isEmpty)

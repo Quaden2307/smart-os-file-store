@@ -64,7 +64,7 @@ extension CleanupExecutor {
         let readDateAdded = { () throws(FileStatus.Failure) -> Date? in
             try FileStatus.dateAdded(path: name, relativeTo: folder.descriptor)
         }
-        if let refused = sharedRefusal(status, itemURL: itemURL, change: change, now: now, contents: contents, readDateAdded: readDateAdded) {
+        if let refused = sharedRefusal(status, itemURL: itemURL, change: change, in: context.folder, now: now, contents: contents, readDateAdded: readDateAdded) {
             return refused
         }
 

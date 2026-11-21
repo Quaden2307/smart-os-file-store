@@ -22,7 +22,7 @@ public actor DiskImageMounts {
         root: FileManager.default.temporaryDirectory.appending(path: "com.quaden2307.SmartOSFileStore.mounts", directoryHint: .isDirectory)
     )
 
-    public let root: URL
+    public nonisolated let root: URL
     let tool: SystemTool
     private var preparation: Task<[URL]?, Never>?
     private var freeSlots: [URL]?
@@ -95,7 +95,7 @@ public actor DiskImageMounts {
         guard let parent = try? DirectoryHandle.open(path: parentPath),
               let rootFolder = privateFolder(named: root.lastPathComponent, in: parent),
               let processFolder = privateFolder(named: process, in: rootFolder),
-              let canonicalRoot = canonicalPath(of: root) else {
+              let canonicalRoot = FileStatus.realPath(of: root) else {
             logger.error("The folder for reading disk images could not be made or is not private; no disk image is read")
             return nil
         }
@@ -124,14 +124,6 @@ public actor DiskImageMounts {
             return nil
         }
         return folder
-    }
-
-    private static func canonicalPath(of url: URL) -> String? {
-        guard let resolved = realpath(url.path(percentEncoded: false), nil) else {
-            return nil
-        }
-        defer { free(resolved) }
-        return String(cString: resolved)
     }
 
     /// Detaches every image mounted in the folder of a process that is gone, or of this process

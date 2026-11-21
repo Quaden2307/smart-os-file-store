@@ -51,13 +51,11 @@ final class UndoModel {
     /// straight ahead for one, and shows why when there is nothing that can be undone.
     ///
     /// - Parameters:
-    ///   - folderURL: The folder the app looks after; every file goes back into it.
     ///   - log: The open activity log. The undo is written to it as it happens.
     ///   - activity: Told when the undo has ended, so the totals and the Activity place follow.
     ///   - onFinished: Called once files may have moved, so the file list can be read again.
     func start(
         _ target: UndoTarget,
-        folderURL: URL,
         log: ActivityLog,
         activity: ActivityLogModel,
         onFinished: @escaping @MainActor () -> Void
@@ -67,7 +65,10 @@ final class UndoModel {
         let planner = UndoPlanner()
         Task {
             do throws(ActivityLogError) {
-                let plan = try await planner.plan(target, log: log, folderURL: folderURL)
+                // An undo a crash interrupted waits while its folder cannot be found. If the folder
+                // is back, the wait ends here: a row still waiting would be taken for an undo under way.
+                _ = try await UndoReconciler().reconcile(log, folders: activity.folders)
+                let plan = try await planner.plan(target, log: log, folders: activity.folders)
                 isPlanning = false
                 presented = Presented()
                 switch plan.steps.count {

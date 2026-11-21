@@ -83,12 +83,12 @@ public struct UnpackedZipPlanner: Sendable {
     /// read it and as the name gives it, that the shared rules allow (not hidden, not the archive,
     /// not still downloading, past the grace period, not Kept). `.jar`, `.docx` and other formats
     /// built on zip are not zips here; links and folders never are.
-    public func candidates(in records: [FileRecord], now: Date) -> [FileRecord] {
+    public func candidates(in records: [FileRecord], folder: ManagedFolder, now: Date) -> [FileRecord] {
         records.filter { record in
             record.kind == .file
                 && record.contentType == .zip
                 && Self.isZipName(record.displayName)
-                && eligibility.allows(record, now: now)
+                && eligibility.allows(record, in: folder, now: now)
         }
     }
 
@@ -97,9 +97,9 @@ public struct UnpackedZipPlanner: Sendable {
     /// counts, since a copy is never changed. Whether the copy has settled is decided from the disk
     /// as it is when it is read (`checkCopy`), never from the scan: a copy unpacked again since,
     /// under the same name, is new.
-    public static func unpackedCopies(in records: [FileRecord]) -> [FileRecord] {
+    public static func unpackedCopies(in records: [FileRecord], folder: ManagedFolder) -> [FileRecord] {
         records.filter { record in
-            !CandidateEligibility.isExcludedName(record.displayName)
+            !CandidateEligibility.isExcludedName(record.displayName, archiveFolderName: folder.archiveFolderName)
                 && !record.isDownloading
                 && record.contentType != .zip
                 && !isZipName(record.displayName)
@@ -199,7 +199,7 @@ public struct UnpackedZipPlanner: Sendable {
 
     /// The plan from each zip's finding, for `folderURL`. Changes and items not checked are in name
     /// order. Pure: nothing here touches the disk.
-    public static func makePlan(folderURL: URL, findings: [(record: FileRecord, finding: Finding)]) -> CleanupPlan {
+    public static func makePlan(folder: ManagedFolder, findings: [(record: FileRecord, finding: Finding)]) -> CleanupPlan {
         var changes: [ProposedChange] = []
         var skippedItems: [CleanupPlan.SkippedItem] = []
         for (record, finding) in findings {
@@ -214,7 +214,7 @@ public struct UnpackedZipPlanner: Sendable {
         }
         changes.sort { isOrderedBefore($0.record.displayName, $1.record.displayName) }
         skippedItems.sort { isOrderedBefore($0.url.lastPathComponent, $1.url.lastPathComponent) }
-        return CleanupPlan(action: .removeUnpackedZips, folderURL: folderURL, changes: changes, skippedItems: skippedItems)
+        return CleanupPlan(action: .removeUnpackedZips, folder: folder, changes: changes, skippedItems: skippedItems)
     }
 
     static func isOrderedBefore(_ first: String, _ second: String) -> Bool {

@@ -37,17 +37,36 @@ public struct UndoReconciler: Sendable {
         self.hasher = hasher
     }
 
-    /// Settles every interrupted undo row in `log`. A row whose write fails is left as it was, for
-    /// the next launch, and the others are settled. Running it again finds nothing more to do.
+    /// Settles every interrupted undo row in `log`, each in the folder its run was made in. A row
+    /// whose folder cannot be found now (its disk is away, say) says nothing either way and is left
+    /// as it was, for the next launch, as is a row whose write fails; the others are settled.
+    /// Running it again finds nothing more to do.
+    ///
+    /// - Parameter folders: Finds each row's folder.
     @concurrent
-    public func reconcile(_ log: ActivityLog, now: Date = .now) async throws(ActivityLogError) -> Result {
+    public func reconcile(_ log: ActivityLog, folders: FolderRegistry, now: Date = .now) async throws(ActivityLogError) -> Result {
         let rows = try await log.interruptedUndoRows()
         var undone = 0
         var notUndone = 0
         var unsettled = 0
+        // Each run's folder is looked for once.
+        var foldersByRun: [ActivityRun.ID: ManagedFolder?] = [:]
         // Each row on its own: one that cannot be settled leaves the others to be.
         for row in rows {
-            let wasUndone = await isBackInPlace(row)
+            let folder: ManagedFolder?
+            if let known = foldersByRun[row.runID] {
+                folder = known
+            } else if let run = try await log.run(id: row.runID) {
+                folder = try await UndoPlanner.folder(of: run, log: log, folders: folders)
+                foldersByRun[row.runID] = .some(folder)
+            } else {
+                folder = nil
+            }
+            guard let folder else {
+                unsettled += 1
+                continue
+            }
+            let wasUndone = await isBackInPlace(row, in: folder)
             do throws(ActivityLogError) {
                 try await log.resolveInterruptedUndo(row, wasUndone: wasUndone, at: now)
             } catch {
@@ -69,9 +88,13 @@ public struct UndoReconciler: Sendable {
         return Result(undone: undone, notUndone: notUndone)
     }
 
-    /// True when the row's file is provably at its original place and not at the place undo took it from.
-    private func isBackInPlace(_ row: ActivityChange) async -> Bool {
-        guard let originalPath = row.resultingPath, row.fileNumber != nil else {
+    /// True when the row's file is provably at its original place, directly inside `folder`, and not
+    /// at the place undo took it from. A place outside the folder is never looked at.
+    private func isBackInPlace(_ row: ActivityChange, in folder: ManagedFolder) async -> Bool {
+        guard let originalPath = row.resultingPath, row.fileNumber != nil,
+              let status = try? FileStatus.of(path: folder.url.path(percentEncoded: false), followingLinks: true),
+              status.isDirectory,
+              UndoPaths.isItemDirectlyIn(originalPath, folderIdentity: status.identity) else {
             return false
         }
         let evidence = row.undoEvidence

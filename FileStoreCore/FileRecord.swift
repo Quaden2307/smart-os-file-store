@@ -72,6 +72,10 @@ public struct FileRecord: Sendable, Identifiable, Hashable {
     /// really occupies. Nil for folders and links, and for a package not read in full.
     public let allocatedSizeInBytes: Int64?
 
+    /// True when the item is a cloud placeholder: its content is not on this Mac. Nothing reads a
+    /// placeholder's content, which would download it (decision record 0026).
+    public let isDataless: Bool
+
     public init(
         url: URL,
         displayName: String,
@@ -87,7 +91,8 @@ public struct FileRecord: Sendable, Identifiable, Hashable {
         canReadLastOpened: Bool = true,
         persistentIdentity: PersistentFileIdentity? = nil,
         packageContents: Result<PackageContents, PackageContents.Failure>? = nil,
-        allocatedSizeInBytes: Int64? = nil
+        allocatedSizeInBytes: Int64? = nil,
+        isDataless: Bool = false
     ) {
         self.url = url
         self.displayName = displayName
@@ -104,6 +109,7 @@ public struct FileRecord: Sendable, Identifiable, Hashable {
         self.persistentIdentity = persistentIdentity
         self.packageContents = packageContents
         self.allocatedSizeInBytes = allocatedSizeInBytes
+        self.isDataless = isDataless
     }
 
     /// The contents the scan read in full. Nil when it read none, or not all of them.
@@ -229,7 +235,8 @@ extension FileRecord {
             canReadLastOpened: metadata.canReadLastOpened,
             persistentIdentity: identity,
             packageContents: packageContents,
-            allocatedSizeInBytes: allocatedSizeInBytes
+            allocatedSizeInBytes: allocatedSizeInBytes,
+            isDataless: status?.isDataless ?? false
         )
     }
 }

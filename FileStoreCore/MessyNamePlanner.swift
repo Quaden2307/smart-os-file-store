@@ -53,9 +53,9 @@ public struct MessyNamePlanner: Sendable {
 
     /// The regular files directly inside `folderURL` that the shared rules allow at `now` and whose
     /// names the cleaner changes.
-    public func candidates(in records: [FileRecord], folderURL: URL, now: Date) -> [Candidate] {
-        DuplicatePlanner.recordsDirectlyInside(folderURL, among: records).compactMap { record in
-            guard record.kind == .file, eligibility.allows(record, now: now),
+    public func candidates(in records: [FileRecord], folder: ManagedFolder, now: Date) -> [Candidate] {
+        DuplicatePlanner.recordsDirectlyInside(folder.url, among: records).compactMap { record in
+            guard record.kind == .file, eligibility.allows(record, in: folder, now: now),
                   let cleaned = MessyNameCleaner.clean(record.displayName) else {
                 return nil
             }
@@ -78,7 +78,7 @@ public struct MessyNamePlanner: Sendable {
     ///   - caseSensitive: Whether the volume tells names apart by letter case.
     ///   - timeZone: The time zone the added date is written in.
     public static func makePlan(
-        folderURL: URL,
+        folder: ManagedFolder,
         records: [FileRecord],
         candidates: [Candidate],
         identicalTakers: Set<FileRecord.ID> = [],
@@ -121,7 +121,7 @@ public struct MessyNamePlanner: Sendable {
         let sortedSkips = skippedItems.sorted {
             $0.url.lastPathComponent.localizedStandardCompare($1.url.lastPathComponent) == .orderedAscending
         }
-        return CleanupPlan(action: .fixMessyNames, folderURL: folderURL, changes: changes, skippedItems: sortedSkips)
+        return CleanupPlan(action: .fixMessyNames, folder: folder, changes: changes, skippedItems: sortedSkips)
     }
 
     // MARK: - Driver
@@ -134,11 +134,12 @@ public struct MessyNamePlanner: Sendable {
     @concurrent
     public func plan(
         records: [FileRecord],
-        in folderURL: URL,
+        in folder: ManagedFolder,
         now: Date = .now,
         timeZone: TimeZone = .current
     ) async throws(CleanupPlanningError) -> CleanupPlan {
-        let candidates = candidates(in: records, folderURL: folderURL, now: now)
+        let folderURL = folder.url
+        let candidates = candidates(in: records, folder: folder, now: now)
         // Unknown counts as not case-sensitive: more names clash, never fewer.
         let values = try? folderURL.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey])
         let caseSensitive = values?.volumeSupportsCaseSensitiveNames ?? false
@@ -175,7 +176,7 @@ public struct MessyNamePlanner: Sendable {
         }
 
         let plan = Self.makePlan(
-            folderURL: folderURL,
+            folder: folder,
             records: records,
             candidates: candidates,
             identicalTakers: identical,
@@ -212,6 +213,9 @@ public struct MessyNamePlanner: Sendable {
             return known
         }
         do throws(ContentHashError) {
+            if record.isDataless {
+                throw .notDownloaded(record.url)
+            }
             let hash = try await hasher.hash(contentsOf: record.url, expectedSizeInBytes: record.sizeInBytes)
             cache[record.url] = .success(hash)
             hashCache?.store(hash, for: record)

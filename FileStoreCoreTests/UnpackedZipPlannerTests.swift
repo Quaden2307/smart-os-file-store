@@ -41,21 +41,21 @@ struct UnpackedZipPlannerTests {
     // MARK: - Which zips take part
 
     @Test func aSettledZipIsACandidate() {
-        #expect(names(planner.candidates(in: [record("project.zip"), record("ARCHIVE.ZIP")], now: Self.now)) == ["project.zip", "ARCHIVE.ZIP"])
+        #expect(names(planner.candidates(in: [record("project.zip"), record("ARCHIVE.ZIP")], folder: .temporary(Self.folder), now: Self.now)) == ["project.zip", "ARCHIVE.ZIP"])
     }
 
     @Test func aZipInsideTheGracePeriodIsNot() {
         let hour: TimeInterval = 60 * 60
         let records = [record("fresh.zip", age: 10 * 60), record("edge.zip", age: hour), record("almost.zip", age: hour - 1)]
 
-        #expect(names(planner.candidates(in: records, now: Self.now)) == ["edge.zip"])
+        #expect(names(planner.candidates(in: records, folder: .temporary(Self.folder), now: Self.now)) == ["edge.zip"])
     }
 
     @Test func aKeptZipIsNot() {
         let kept = record("kept.zip")
         let planner = keeping([kept])
 
-        #expect(names(planner.candidates(in: [kept, record("other.zip")], now: Self.now)) == ["other.zip"])
+        #expect(names(planner.candidates(in: [kept, record("other.zip")], folder: .temporary(Self.folder), now: Self.now)) == ["other.zip"])
     }
 
     @Test func hiddenLinkedAndFolderZipsAreNot() {
@@ -66,24 +66,24 @@ struct UnpackedZipPlannerTests {
             record("Old downloads.zip"),
         ]
 
-        #expect(names(planner.candidates(in: records, now: Self.now)) == ["Old downloads.zip"])
+        #expect(names(planner.candidates(in: records, folder: .temporary(Self.folder), now: Self.now)) == ["Old downloads.zip"])
     }
 
     @Test func formatsBuiltOnZipAreNotZipsHere() {
         let records = [record("tool.jar"), record("contract.docx"), record("book.epub"), record("app.ipa"), record("slides.key")]
 
-        #expect(planner.candidates(in: records, now: Self.now).isEmpty)
+        #expect(planner.candidates(in: records, folder: .temporary(Self.folder), now: Self.now).isEmpty)
     }
 
     @Test func theTypeMustBeZipByTheScanAndByTheName() {
         // A zip by its scanned type alone, or by its name alone, is left out.
         let records = [record("archive", type: .zip), record("named.zip", type: .data)]
 
-        #expect(planner.candidates(in: records, now: Self.now).isEmpty)
+        #expect(planner.candidates(in: records, folder: .temporary(Self.folder), now: Self.now).isEmpty)
     }
 
     @Test func noRecordsMeansNoCandidates() {
-        #expect(planner.candidates(in: [], now: Self.now).isEmpty)
+        #expect(planner.candidates(in: [], folder: .temporary(Self.folder), now: Self.now).isEmpty)
     }
 
     // MARK: - What may hold an unpacked zip
@@ -91,25 +91,25 @@ struct UnpackedZipPlannerTests {
     @Test func anyItemOfAnyKindMayBeTheCopy() {
         let records = [record("project", kind: .folder), record("contract.docx"), record("Report.pages", kind: .package), record("latest", kind: .symlink)]
 
-        #expect(names(UnpackedZipPlanner.unpackedCopies(in: records)) == ["project", "contract.docx", "Report.pages", "latest"])
+        #expect(names(UnpackedZipPlanner.unpackedCopies(in: records, folder: .temporary(Self.folder))) == ["project", "contract.docx", "Report.pages", "latest"])
     }
 
     @Test func aHiddenInProgressOrArchiveItemNeverIs() {
         let records = [record(".hidden", kind: .folder), record("movie.mp4.part"), record("Old downloads", kind: .folder)]
 
-        #expect(UnpackedZipPlanner.unpackedCopies(in: records).isEmpty)
+        #expect(UnpackedZipPlanner.unpackedCopies(in: records, folder: .temporary(Self.folder)).isEmpty)
     }
 
     @Test func whetherACopyHasSettledIsLeftToTheDisk() {
         // The scan's dates are not trusted for this: a copy unpacked again since is new. The hour is
         // checked on the item as it is when it is read (`UnpackedZipDiskTests`).
-        #expect(names(UnpackedZipPlanner.unpackedCopies(in: [record("just unpacked", kind: .folder, age: 5 * 60)])) == ["just unpacked"])
+        #expect(names(UnpackedZipPlanner.unpackedCopies(in: [record("just unpacked", kind: .folder, age: 5 * 60)], folder: .temporary(Self.folder))) == ["just unpacked"])
     }
 
     @Test func aZipNeverIsTheCopyOfAnotherZip() {
         let records = [record("inner.zip"), record("named-like-a-zip.zip", kind: .folder, type: .folder)]
 
-        #expect(UnpackedZipPlanner.unpackedCopies(in: records).isEmpty)
+        #expect(UnpackedZipPlanner.unpackedCopies(in: records, folder: .temporary(Self.folder)).isEmpty)
     }
 
     // MARK: - The plan
@@ -123,7 +123,7 @@ struct UnpackedZipPlannerTests {
             (record("locked.zip"), .notChecked(.accessDenied)),
         ]
 
-        let plan = UnpackedZipPlanner.makePlan(folderURL: Self.folder, findings: findings)
+        let plan = UnpackedZipPlanner.makePlan(folder: .temporary(Self.folder), findings: findings)
 
         #expect(plan.action == .removeUnpackedZips)
         #expect(plan.folderURL == Self.folder)

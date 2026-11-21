@@ -33,7 +33,7 @@ struct KeptStoreTests {
         try await log.keep([a, folder])
         // Keeping again changes nothing.
         try await log.keep([a])
-        var list = try await log.keptItems(forFolder: temp.url)
+        var list = try await log.keptItems(for: log.downloads(at: temp.url))
         #expect(list.count == 2)
         #expect(list.contains(a))
         #expect(list.contains(folder))
@@ -43,13 +43,13 @@ struct KeptStoreTests {
         #expect(list.items.allSatisfy { $0.identity != nil })
 
         try await log.stopKeeping([a])
-        list = try await log.keptItems(forFolder: temp.url)
+        list = try await log.keptItems(for: log.downloads(at: temp.url))
         #expect(!list.contains(a))
         #expect(list.contains(folder))
 
         try await log.keep([a, b])
         try await log.stopKeepingAll()
-        #expect(try await log.keptItems(forFolder: temp.url).isEmpty)
+        #expect(try await log.keptItems(for: log.downloads(at: temp.url)).isEmpty)
     }
 
     @Test func keptSurvivesARenameAndFindDuplicatesStillKeepsIt() async throws {
@@ -61,13 +61,13 @@ struct KeptStoreTests {
 
         try FileManager.default.moveItem(at: temp.url.appending(path: "report (1).pdf"), to: temp.url.appending(path: "renamed.pdf"))
         let records = try await scan(temp.url)
-        let list = try await log.keptItems(forFolder: temp.url)
+        let list = try await log.keptItems(for: log.downloads(at: temp.url))
         let renamed = try RelocationPlans.record(named: "renamed.pdf", in: records)
         #expect(list.contains(renamed))
         #expect(!list.contains(try RelocationPlans.record(named: "report.pdf", in: records)))
 
         let plan = try #require(
-            try await CleanupPlanners.plan(.findDuplicates, records: records, in: temp.url, eligibility: CandidateEligibility(), keptItems: list, installers: .testing())
+            try await CleanupPlanners.plan(.findDuplicates, records: records, in: log.downloads(at: temp.url), eligibility: CandidateEligibility(), keptItems: list, installers: .testing())
         )
         #expect(try #require(plan.duplicateGroups.first).kept.id == renamed.id)
         #expect(plan.changes.map(\.record.displayName) == ["report.pdf"])
@@ -83,7 +83,7 @@ struct KeptStoreTests {
         try FileManager.default.moveItem(at: temp.url.appending(path: "a.txt"), to: temp.url.appending(path: "b.txt"))
         try write("a.txt", "a different file", in: temp.url)
         let records = try await scan(temp.url)
-        let list = try await log.keptItems(forFolder: temp.url)
+        let list = try await log.keptItems(for: log.downloads(at: temp.url))
 
         #expect(!list.contains(try RelocationPlans.record(named: "a.txt", in: records)))
         #expect(list.contains(try RelocationPlans.record(named: "b.txt", in: records)))
@@ -100,7 +100,7 @@ struct KeptStoreTests {
 
         try await log.keep([scanned])
 
-        let list = try await log.keptItems(forFolder: temp.url)
+        let list = try await log.keptItems(for: log.downloads(at: temp.url))
         #expect(list.count == 1)
         #expect(list.contains(try await record("notes.txt", in: temp.url)))
     }
@@ -116,10 +116,10 @@ struct KeptStoreTests {
 
         try FileManager.default.moveItem(at: temp.url.appending(path: "a.txt"), to: subfolder.appending(path: "a.txt"))
         // Out of the listing, but still on the disk: the entry stays.
-        #expect(try await log.keptItems(forFolder: temp.url).count == 1)
+        #expect(try await log.keptItems(for: log.downloads(at: temp.url)).count == 1)
 
         try FileManager.default.moveItem(at: subfolder.appending(path: "a.txt"), to: temp.url.appending(path: "a.txt"))
-        #expect(try await log.keptItems(forFolder: temp.url).contains(try await record("a.txt", in: temp.url)))
+        #expect(try await log.keptItems(for: log.downloads(at: temp.url)).contains(try await record("a.txt", in: temp.url)))
     }
 
     @Test func theEntryOfAFileThatIsGoneIsDropped() async throws {
@@ -132,7 +132,7 @@ struct KeptStoreTests {
         try await log.keep(records)
 
         try FileManager.default.removeItem(at: temp.url.appending(path: "a.txt"))
-        let list = try await log.keptItems(forFolder: temp.url)
+        let list = try await log.keptItems(for: log.downloads(at: temp.url))
 
         #expect(list.count == 1)
         #expect(list.contains(try RelocationPlans.record(named: "b.txt", in: records)))
@@ -169,9 +169,9 @@ struct KeptStoreTests {
         try write("here.txt", in: folder)
 
         // While the folder cannot be reached (its disk unplugged, say), nothing is dropped.
-        #expect(try await log.keptItems(forFolder: temp.url.appending(path: "Unplugged")).count == 3)
+        #expect(try await log.keptItems(for: log.downloads(at: temp.url.appending(path: "Unplugged"))).count == 3)
 
-        let list = try await log.keptItems(forFolder: folder)
+        let list = try await log.keptItems(for: log.downloads(at: folder))
         #expect(list.contains(present))
         #expect(!list.contains(gone))
         // Outside the folder, nothing is looked at.
@@ -210,19 +210,9 @@ struct KeptStoreTests {
         try await withLogSandbox { sandbox in
             let location = try sandbox.realLocation()
             let databaseURL = try #require(location.databaseURL)
-            let log = try await ActivityLog.open(location)
-            try LogSamples.writeRun(to: log, startedAt: .now, count: 2)
-            try await log.close()
             // What the version before Kept left: no `keptItems`, no `changes.isFolder`, no
             // `installerFacts`, and migrations up to `v2`.
-            do {
-                let raw = try RawDatabase(databaseURL)
-                try raw.execute("DROP TABLE installerFacts")
-                try raw.execute("DROP TABLE keptItems")
-                try raw.execute("ALTER TABLE changes DROP COLUMN isFolder")
-                try raw.execute("ALTER TABLE runs DROP COLUMN origin")
-                try raw.execute("DELETE FROM grdb_migrations WHERE identifier IN ('v3', 'v4', 'v5', 'v6')")
-            }
+            try LegacyLog.make(at: location, version: 2)
 
             let upgraded = try await ActivityLog.open(location)
             #expect(try await upgraded.runs().count == 1)
@@ -230,7 +220,7 @@ struct KeptStoreTests {
             try await upgraded.close()
 
             let raw = try RawDatabase(databaseURL)
-            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6")
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6,v7")
             #expect(try raw.text("SELECT count(*) FROM changes") == "2")
         }
     }

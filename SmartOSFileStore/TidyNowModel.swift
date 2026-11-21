@@ -117,11 +117,11 @@ final class TidyNowModel {
 
     // MARK: - Planning
 
-    /// Plans every action over `records`, one scan of `folderURL`, with the Kept list as `log` holds
+    /// Plans every action over `records`, one scan of `folder`, with the Kept list as `log` holds
     /// it now. If the list cannot be read, nothing is planned and the failure goes to `activity`.
     func start(
         records: [FileRecord],
-        folderURL: URL,
+        folder: ManagedFolder,
         eligibility: CandidateEligibility,
         applicationFolders: [URL],
         hashCache: ContentHashCache,
@@ -132,11 +132,11 @@ final class TidyNowModel {
         let activity = activity
         let opening = activity.openings
         logger.info("Tidy Now over \(records.count) records")
-        hashCache.keepOnly(records)
+        hashCache.keepOnly(records, in: folder)
         task = Task { [weak self] in
             let keptItems: KeptItems
             do throws(ActivityLogError) {
-                keptItems = try await log.keptItems(forFolder: folderURL)
+                keptItems = try await log.keptItems(for: folder)
             } catch {
                 guard !Task.isCancelled else { return }
                 if activity.openings == opening {
@@ -151,7 +151,7 @@ final class TidyNowModel {
                 installers: .standard(applicationFolders: applicationFolders, cache: log),
                 settings: settings,
                 records: records,
-                folderURL: folderURL
+                folder: folder
             )
             do throws(CleanupPlanningError) {
                 let plan = try await planner.plan(hashCache: hashCache) { event in

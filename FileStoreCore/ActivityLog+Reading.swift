@@ -105,6 +105,7 @@ struct RunRow: Decodable, FetchableRecord {
     let undoneAction: String?
     let bytesTakenFromTrash: Int64
     let origin: String?
+    let folderID: String?
     let undoneCount: Int
 
     var value: ActivityRun {
@@ -123,7 +124,8 @@ struct RunRow: Decodable, FetchableRecord {
             undoneActionCode: undoneAction,
             bytesTakenFromTrash: bytesTakenFromTrash,
             undoneCount: undoneCount,
-            origin: RunOrigin(logCode: origin)
+            origin: RunOrigin(logCode: origin),
+            folderID: folderID.flatMap(UUID.init(uuidString:))
         )
     }
 }

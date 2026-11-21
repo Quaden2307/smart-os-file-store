@@ -13,7 +13,7 @@ struct KeptExecutorTests {
         let records = try await RelocationPlans.records(in: temp.url)
         let log = try await ActivityLog.open(.inMemory)
         let plan = try #require(
-            try await CleanupPlanners.plan(.findDuplicates, records: records, in: temp.url, eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: .testing())
+            try await CleanupPlanners.plan(.findDuplicates, records: records, in: log.downloads(at: temp.url), eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: .testing())
         )
         let copy = try #require(plan.changes.first)
         #expect(copy.record.displayName == "report (1).pdf")
@@ -102,7 +102,7 @@ struct KeptExecutorTests {
             isDownloading: false
         )
         try await log.keep([actedOn])
-        let runID = try log.beginRun(CleanupRunStart(action: .fixMessyNames, folderURL: temp.url, confirmedCount: 1, startedAt: .now))
+        let runID = try log.beginRun(CleanupRunStart(action: .fixMessyNames, folder: log.downloads(at: temp.url), confirmedCount: 1, startedAt: .now))
 
         let decision = try log.recordIntent(
             CleanupChangeIntent(

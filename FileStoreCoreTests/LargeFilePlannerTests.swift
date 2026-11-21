@@ -37,7 +37,7 @@ struct LargeFilePlannerTests {
     }
 
     private func plan(_ records: [FileRecord], eligibility: CandidateEligibility = CandidateEligibility()) -> CleanupPlan {
-        LargeFilePlanner(eligibility: eligibility, settings: settings).plan(records: records, in: folder, now: now)
+        LargeFilePlanner(eligibility: eligibility, settings: settings).plan(records: records, in: .temporary(folder), now: now)
     }
 
     @Test func theThresholdItselfIsLargeAndOneByteLessIsNot() {

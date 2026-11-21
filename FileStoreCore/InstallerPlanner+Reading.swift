@@ -18,34 +18,35 @@ extension InstallerPlanner {
     @concurrent
     public func plan(
         records: [FileRecord],
-        in folderURL: URL,
+        in folder: ManagedFolder,
         sources: InstallerSources,
         now: Date = .now,
         onProgress: (@Sendable (CleanupPlanningProgress) -> Void)? = nil
     ) async throws(CleanupPlanningError) -> CleanupPlan {
+        let folderURL = folder.url
         let clock = ContinuousClock()
         let start = clock.now
         try Self.throwIfCancelled()
 
         let inside = DuplicatePlanner.recordsDirectlyInside(folderURL, among: records)
-        let installers = candidates(in: inside, now: now).sorted { UnpackedZipPlanner.isOrderedBefore($0.displayName, $1.displayName) }
+        let installers = candidates(in: inside, folder: folder, now: now).sorted { UnpackedZipPlanner.isOrderedBefore($0.displayName, $1.displayName) }
         var progress = ItemCheckProgress(total: installers.count, onProgress: onProgress)
         progress.report(checked: 0)
         guard !installers.isEmpty else {
-            return Self.makePlan(folderURL: folderURL, findings: [])
+            return Self.makePlan(folder: folder, findings: [])
         }
         let folderPath = folderURL.path(percentEncoded: false)
-        guard let folder = try? DirectoryHandle.open(path: folderPath) else {
+        guard let handle = try? DirectoryHandle.open(path: folderPath) else {
             Self.logger.error("Could not open the folder to read \(installers.count) installers")
             // A zip is an installer only once its listing shows an app, so none is listed here.
-            return Self.makePlan(folderURL: folderURL, findings: installers.map { record in
+            return Self.makePlan(folder: folder, findings: installers.map { record in
                 (record, Self.kind(ofName: record.displayName) == .zip ? .notProposed : .notChecked(.folderUnavailable))
             })
         }
         let volume = VolumeIdentity.of(folderPath: folderPath)
 
         // Each installer as it is now, and what is known about it already.
-        var outcomes: [Outcome] = installers.map { Self.look(at: $0, in: folder, volume: volume) }
+        var outcomes: [Outcome] = installers.map { Self.look(at: $0, in: handle, volume: volume) }
         let cached = await Self.cachedFacts(for: outcomes.compactMap(\.look?.key), in: sources.cache)
         var attached: AttachedImages?
         if installers.contains(where: { Self.kind(ofName: $0.displayName) == .diskImage }) {
@@ -77,8 +78,8 @@ extension InstallerPlanner {
                 continue
             } else {
                 try Self.throwIfCancelled()
-                let reading = look.kind == .zip ? Self.readZip(named: look.name, in: folder) : Self.readPackage(named: look.name, in: folder)
-                outcomes[index] = .read(look, Self.confirm(reading, of: look, in: folder), fresh: true)
+                let reading = look.kind == .zip ? Self.readZip(named: look.name, in: handle) : Self.readPackage(named: look.name, in: handle)
+                outcomes[index] = .read(look, Self.confirm(reading, of: look, in: handle), fresh: true)
             }
             checked += 1
             progress.report(checked: checked)
@@ -91,8 +92,8 @@ extension InstallerPlanner {
             for index in diskImages {
                 guard case .looked(let look) = outcomes[index] else { continue }
                 group.addTask {
-                    let reading = await DiskImageReader.read(named: look.name, in: folder, folderPath: folderPath, mounts: mounts)
-                    return (index, Self.confirm(Self.reading(reading), of: look, in: folder))
+                    let reading = await DiskImageReader.read(named: look.name, in: handle, folderPath: folderPath, mounts: mounts)
+                    return (index, Self.confirm(Self.reading(reading), of: look, in: handle))
                 }
             }
             for await (index, reading) in group {
@@ -149,7 +150,7 @@ extension InstallerPlanner {
                 }
             }
         }
-        let plan = Self.makePlan(folderURL: folderURL, findings: findings, factsRead: factsRead)
+        let plan = Self.makePlan(folder: folder, findings: findings, factsRead: factsRead)
         Self.logger.info(
             "Checked \(installers.count) installers (\(cached.count) known, \(factsRead.count) read, \(diskImages.count) disk images): \(plan.changes.count) proposed, \(plan.skippedItems.count) not checked, in \((clock.now - start).milliseconds, format: .fixed(precision: 1)) ms"
         )
@@ -161,11 +162,12 @@ extension InstallerPlanner {
     @concurrent
     public static func strongMatches(
         among records: [FileRecord],
-        in folderURL: URL,
+        in folder: ManagedFolder,
         applicationFolders: [URL],
         cache: any InstallerFactsReading,
         receipts: InstallReceipts
     ) async -> Set<URL> {
+        let folderURL = folder.url
         let folderPath = folderURL.path(percentEncoded: false)
         let installers = DuplicatePlanner.recordsDirectlyInside(folderURL, among: records).filter { $0.kind == .file && kind(ofName: $0.displayName) != nil }
         guard !installers.isEmpty, let folder = try? DirectoryHandle.open(path: folderPath) else {
@@ -238,7 +240,7 @@ extension InstallerPlanner {
         guard status.isRegularFile else {
             return notChecked(.notARegularFile)
         }
-        if status.isDataless {
+        if record.isDataless || status.isDataless {
             return notChecked(.notDownloaded)
         }
         guard let scannedDate = record.dateModified, status.sizeInBytes == record.sizeInBytes,

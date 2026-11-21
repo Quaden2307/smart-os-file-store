@@ -40,7 +40,7 @@ struct DuplicatePlannerTests {
     }
 
     private func makePlan(_ records: [FileRecord], hashes: [FileRecord.ID: ContentHash]) -> CleanupPlan {
-        DuplicatePlanner.makePlan(folderURL: Self.folder, records: records, hashes: hashes, keptItems: KeptItems())
+        DuplicatePlanner.makePlan(folder: .temporary(Self.folder), records: records, hashes: hashes, keptItems: KeptItems())
     }
 
     private func permutations<T>(of items: [T]) -> [[T]] {
@@ -173,7 +173,7 @@ struct DuplicatePlannerTests {
             record("boundary.pdf", added: now - hour, modified: now - hour),
             record("no-date-added.pdf", added: nil),
         ]
-        let names = Set(planner.candidates(in: records, now: now).map(\.displayName))
+        let names = Set(planner.candidates(in: records, folder: .temporary(Self.folder), now: now).map(\.displayName))
         #expect(names == ["settled.pdf", "boundary.pdf", "no-date-added.pdf"])
     }
 
@@ -181,8 +181,8 @@ struct DuplicatePlannerTests {
         let now = Self.base + 2 * 3_600
         let fresh = record("fresh.pdf", added: now - 5, modified: now - 5)
         let shortened = DuplicatePlanner(eligibility: CandidateEligibility(gracePeriod: 0))
-        #expect(planner.candidates(in: [fresh], now: now).isEmpty)
-        #expect(shortened.candidates(in: [fresh], now: now).map(\.displayName) == ["fresh.pdf"])
+        #expect(planner.candidates(in: [fresh], folder: .temporary(Self.folder), now: now).isEmpty)
+        #expect(shortened.candidates(in: [fresh], folder: .temporary(Self.folder), now: now).map(\.displayName) == ["fresh.pdf"])
     }
 
     @Test func sizeGroupsOnlyKeepSharedSizes() {

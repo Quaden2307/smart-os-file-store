@@ -34,7 +34,7 @@ extension CleanupPlan {
         }
         return CleanupPlan(
             action: action,
-            folderURL: folderURL,
+            folder: folder,
             changes: changes.filter { !droppedIDs.contains($0.id) },
             duplicateGroups: groups,
             nearDuplicateGroups: nearGroups,

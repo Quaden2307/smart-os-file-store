@@ -121,19 +121,19 @@ final class ChatModel {
     /// for a question in the chat. It reads files and changes none. Nil when it cannot run: the
     /// window is gone, the log is not open, or the turn ended.
     private func findDuplicates(hashCache: ContentHashCache) async -> DuplicateScan? {
-        guard let files, let folderURL = files.location?.folderURL, let log = activity?.log else { return nil }
+        guard let files, let log = activity?.log, let folder = activity?.downloads else { return nil }
         let records = files.records
         let eligibility = files.eligibility
         let installers = InstallerSources.standard(applicationFolders: files.applicationFolders, cache: log)
         let logger = logger
         // As the Clean Up menu's searches do: hashes of files no longer listed are forgotten.
-        hashCache.keepOnly(records)
+        hashCache.keepOnly(records, in: folder)
         duplicateScan?.cancel()
         let scan = Task {
             do {
-                let keptItems = try await log.keptItems(forFolder: folderURL)
+                let keptItems = try await log.keptItems(for: folder)
                 return try await CleanupPlanners.plan(
-                    .findDuplicates, records: records, in: folderURL, eligibility: eligibility, keptItems: keptItems,
+                    .findDuplicates, records: records, in: folder, eligibility: eligibility, keptItems: keptItems,
                     installers: installers, hashCache: hashCache
                 )
             } catch {
@@ -147,7 +147,7 @@ final class ChatModel {
             return nil
         }
         let now = Date.now
-        let recent = records.filter { $0.kind == .file && eligibility.refusal(for: $0, now: now) == .insideGracePeriod }.count
+        let recent = records.filter { $0.kind == .file && eligibility.refusal(for: $0, in: folder, now: now) == .insideGracePeriod }.count
         return DuplicateScan(plan, files: files, recentCount: recent)
     }
 
@@ -161,7 +161,7 @@ final class ChatModel {
     private func plan(
         _ request: CleanupRequest, only ids: Set<URL>?, hashCache: ContentHashCache, inTurn: Bool
     ) async -> TidyNowPlan? {
-        guard let files, let folderURL = files.location?.folderURL, let log = activity?.log else { return nil }
+        guard let files, let log = activity?.log, let folder = activity?.downloads else { return nil }
         let actions = CleanupAction.allCases.filter { request.actions.contains($0.definition.identifier) }
         let records = files.records
         let eligibility = files.eligibility
@@ -174,13 +174,13 @@ final class ChatModel {
             largeDownloadMegabytes: request.largeFileMB ?? stored.largeDownloadMegabytes
         )
         let logger = logger
-        hashCache.keepOnly(records)
+        hashCache.keepOnly(records, in: folder)
         let planning = Task { () -> TidyNowPlan? in
             do {
-                let keptItems = try await log.keptItems(forFolder: folderURL)
+                let keptItems = try await log.keptItems(for: folder)
                 let planner = TidyNowPlanner(
                     actions: actions, eligibility: eligibility, keptItems: keptItems, installers: installers,
-                    settings: settings, records: records, folderURL: folderURL
+                    settings: settings, records: records, folder: folder
                 )
                 let plan = try await planner.plan(only: ids, hashCache: hashCache)
                 // As Tidy Now does: what was read from installers is kept, so the next search

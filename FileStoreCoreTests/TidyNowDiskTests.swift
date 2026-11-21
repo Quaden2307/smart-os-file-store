@@ -20,7 +20,7 @@ struct TidyNowDiskTests {
             installers: .testing(applications: [fixture.applicationsURL]),
             settings: settings,
             records: records,
-            folderURL: fixture.url
+            folder: .temporary(fixture.url)
         )
     }
 
@@ -120,7 +120,7 @@ struct TidyNowDiskTests {
                 keptItems: KeptItems(),
                 installers: .testing(),
                 records: records,
-                folderURL: folder
+                folder: .temporary(folder)
             )
             let plan = try await planner.plan()
             let duplicates = try #require(plan.plans.first { $0.action == .findDuplicates })
@@ -143,12 +143,12 @@ struct TidyNowDiskTests {
         try await withFakeDownloadsFolder { fixture in
             let records = try await RelocationPlans.records(in: fixture.url)
             let installers = InstallerSources.testing(applications: [fixture.applicationsURL])
-            let planner = TidyNowPlanner(folderURL: fixture.url, now: .now, eligibility: CandidateEligibility(), keptItems: KeptItems()) { action, cache, progress in
+            let planner = TidyNowPlanner(folder: .temporary(fixture.url), now: .now, eligibility: CandidateEligibility(), keptItems: KeptItems()) { action, cache, progress in
                 if action == .removeUnpackedZips {
                     throw Broken()
                 }
                 return try await CleanupPlanners.plan(
-                    action, records: records, in: fixture.url, eligibility: CandidateEligibility(), keptItems: KeptItems(),
+                    action, records: records, in: .temporary(fixture.url), eligibility: CandidateEligibility(), keptItems: KeptItems(),
                     installers: installers, settings: Self.settings, hashCache: cache, onProgress: progress
                 )
             }
@@ -168,14 +168,14 @@ struct TidyNowDiskTests {
             let records = try await RelocationPlans.records(in: fixture.url)
             let installers = InstallerSources.testing(applications: [fixture.applicationsURL])
             let (started, signal) = AsyncStream.makeStream(of: Void.self)
-            let planner = TidyNowPlanner(folderURL: fixture.url, now: .now, eligibility: CandidateEligibility(), keptItems: KeptItems()) { action, cache, progress in
+            let planner = TidyNowPlanner(folder: .temporary(fixture.url), now: .now, eligibility: CandidateEligibility(), keptItems: KeptItems()) { action, cache, progress in
                 if action == .findDuplicates {
                     // Still reading when the user cancels.
                     signal.yield()
                     try await Task.sleep(for: .seconds(60))
                 }
                 return try await CleanupPlanners.plan(
-                    action, records: records, in: fixture.url, eligibility: CandidateEligibility(), keptItems: KeptItems(),
+                    action, records: records, in: .temporary(fixture.url), eligibility: CandidateEligibility(), keptItems: KeptItems(),
                     installers: installers, settings: Self.settings, hashCache: cache, onProgress: progress
                 )
             }

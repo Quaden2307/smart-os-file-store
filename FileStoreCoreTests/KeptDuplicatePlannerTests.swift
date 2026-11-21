@@ -34,7 +34,7 @@ struct KeptDuplicatePlannerTests {
     }
 
     private func plan(keeping records: [FileRecord]) -> CleanupPlan {
-        DuplicatePlanner.makePlan(folderURL: Self.folder, records: group, hashes: hashes, keptItems: kept(records))
+        DuplicatePlanner.makePlan(folder: .temporary(Self.folder), records: group, hashes: hashes, keptItems: kept(records))
     }
 
     @Test(arguments: 0..<3)
@@ -85,7 +85,7 @@ struct KeptDuplicatePlannerTests {
 
     private func findDuplicates(_ records: [FileRecord], in folder: URL, keeping keptItems: KeptItems) async throws -> CleanupPlan {
         try #require(
-            try await CleanupPlanners.plan(.findDuplicates, records: records, in: folder, eligibility: CandidateEligibility(), keptItems: keptItems, installers: .testing())
+            try await CleanupPlanners.plan(.findDuplicates, records: records, in: .temporary(folder), eligibility: CandidateEligibility(), keptItems: keptItems, installers: .testing())
         )
     }
 
@@ -98,7 +98,7 @@ struct KeptDuplicatePlannerTests {
 
         let log = try await ActivityLog.open(.inMemory)
         try await log.keep([marked])
-        let plan = try await findDuplicates(records, in: temp.url, keeping: try await log.keptItems(forFolder: temp.url))
+        let plan = try await findDuplicates(records, in: temp.url, keeping: try await log.keptItems(for: log.downloads(at: temp.url)))
 
         #expect(try #require(plan.duplicateGroups.first).kept.displayName == "report copy.pdf")
         #expect(Set(plan.changes.map(\.record.displayName)) == ["report.pdf", "report (1).pdf"])

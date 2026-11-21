@@ -67,7 +67,7 @@ struct BenchmarkTests {
         let listingScanner = FolderScanner(metadataReader: NoMetadataReader())
         let planner = DuplicatePlanner()
         let settings = CleanupSettings()
-        let location = ScanLocation(folderURL: temp.url, source: .launchArgument)
+        let location = ManagedFolder.temporary(temp.url)
         // The files were written moments ago, so plans are made as if two hours had passed; the
         // production rules still run.
         let later = Date(timeIntervalSinceNow: 2 * 3_600)
@@ -104,7 +104,7 @@ struct BenchmarkTests {
 
             // Every file is fresh, so the only mark is Unused, on the files last opened in 2025.
             let marksStart = clock.now
-            let marks = scan.records.map { FileMarker.marks(for: $0, now: later, settings: settings) }
+            let marks = scan.records.map { FileMarker.marks(for: $0, in: location, now: later, settings: settings) }
             let marksTime = clock.now - marksStart
             #expect(marks.count { $0 == [.unused] } == openedCount)
             #expect(marks.count { !$0.isEmpty } == openedCount)
@@ -122,7 +122,7 @@ struct BenchmarkTests {
             let total = Mutex<Int64>(0)
             let planStart = clock.now
             // Progress arrives at most ten times a second while files are hashed: the memory sample.
-            let plan = try await planner.plan(records: scan.records, in: temp.url, now: later) { progress in
+            let plan = try await planner.plan(records: scan.records, in: .temporary(temp.url), now: later) { progress in
                 total.withLock { $0 = progress.bytesToHash }
                 if let footprint = physicalFootprintInBytes() {
                     peak.withLock { $0 = max($0, footprint) }
@@ -185,7 +185,7 @@ struct BenchmarkTests {
         try BulkFiles.writeSparseFile(temp.url.appending(path: "big-b.bin"), size: Self.bigSize)
         try BulkFiles.writeSparseFile(temp.url.appending(path: "big-c.bin"), size: Self.uniqueBigSize)
         let clock = ContinuousClock()
-        let location = ScanLocation(folderURL: temp.url, source: .launchArgument)
+        let location = ManagedFolder.temporary(temp.url)
         let later = Date(timeIntervalSinceNow: 2 * 3_600)
         let scan = try await FolderScanner().scan(location)
         let before = try #require(physicalFootprintInBytes())
@@ -197,7 +197,7 @@ struct BenchmarkTests {
                 keptItems: KeptItems(),
                 installers: .testing(),
                 records: scan.records,
-                folderURL: temp.url,
+                folder: .temporary(temp.url),
                 now: later
             )
             let start = clock.now
@@ -299,7 +299,7 @@ struct BenchmarkTests {
         let sources = InstallerSources.testing(applications: [applications], cache: log, mounts: mounts)
         func plan() async throws -> CleanupPlan {
             try #require(try await CleanupPlanners.plan(
-                .removeUsedInstallers, records: records, in: downloads, eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: sources
+                .removeUsedInstallers, records: records, in: log.downloads(at: downloads), eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: sources
             ))
         }
 
@@ -330,7 +330,7 @@ struct BenchmarkTests {
             #expect(again.installerFactsRead.isEmpty)
             #expect(again.changes == first.changes)
             let marksStart = clock.now
-            let marked = await InstallerPlanner.strongMatches(among: records, in: downloads, applicationFolders: [applications], cache: log, receipts: .fixed([]))
+            let marked = await InstallerPlanner.strongMatches(among: records, in: log.downloads(at: downloads), applicationFolders: [applications], cache: log, receipts: .fixed([]))
             let marksTime = clock.now - marksStart
             #expect(marked.count == 110)
             if run > 0 {

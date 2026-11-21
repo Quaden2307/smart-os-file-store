@@ -29,7 +29,9 @@ public struct TidyNowPlanner: Sendable {
     /// whose hashes the others then read from the cache.
     static let hashingChain: [CleanupAction] = [.findDuplicates, .reviewNearDuplicates, .fixMessyNames, .archiveOldDownloads]
 
-    public let folderURL: URL
+    public let folder: ManagedFolder
+
+    public var folderURL: URL { folder.url }
     /// The time the plans are judged at, the same the planners are given.
     public let now: Date
     public let eligibility: CandidateEligibility
@@ -48,14 +50,14 @@ public struct TidyNowPlanner: Sendable {
         installers: InstallerSources,
         settings: CleanupSettings = CleanupSettings(),
         records: [FileRecord],
-        folderURL: URL,
+        folder: ManagedFolder,
         now: Date = .now
     ) {
-        self.init(actions: actions, folderURL: folderURL, now: now, eligibility: eligibility, keptItems: keptItems) { action, hashCache, onProgress throws(CleanupPlanningError) in
+        self.init(actions: actions, folder: folder, now: now, eligibility: eligibility, keptItems: keptItems) { action, hashCache, onProgress throws(CleanupPlanningError) in
             try await CleanupPlanners.plan(
                 action,
                 records: records,
-                in: folderURL,
+                in: folder,
                 eligibility: eligibility,
                 keptItems: keptItems,
                 installers: installers,
@@ -69,11 +71,11 @@ public struct TidyNowPlanner: Sendable {
 
     /// A planner with its own way of planning each action, for tests.
     public init(
-        actions: [CleanupAction] = TidyNowPlan.order, folderURL: URL, now: Date, eligibility: CandidateEligibility,
+        actions: [CleanupAction] = TidyNowPlan.order, folder: ManagedFolder, now: Date, eligibility: CandidateEligibility,
         keptItems: KeptItems, planAction: @escaping PlanAction
     ) {
         self.actions = actions
-        self.folderURL = folderURL
+        self.folder = folder
         self.now = now
         self.eligibility = eligibility
         self.keptItems = keptItems
@@ -117,7 +119,7 @@ public struct TidyNowPlanner: Sendable {
             }
             return all
         }
-        let folderURL = folderURL
+        let folder = folder
         let now = now
         if Task.isCancelled {
             throw .cancelled
@@ -127,7 +129,7 @@ public struct TidyNowPlanner: Sendable {
         }
         let resolved = TidyNowPlan.resolve(plans, eligibility: eligibility.keeping(keptItems), now: now)
         return TidyNowPlan(
-            folderURL: folderURL,
+            folder: folder,
             outcomes: actions.map { action in
                 guard let plan = resolved.first(where: { $0.action == action }) else {
                     return (action, .failed)

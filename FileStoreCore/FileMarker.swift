@@ -25,6 +25,7 @@ public enum FileMarker {
     /// never Never opened or Old.
     public static func marks(
         for record: FileRecord,
+        in folder: ManagedFolder,
         now: Date,
         settings: CleanupSettings,
         eligibility: CandidateEligibility = CandidateEligibility(),
@@ -33,7 +34,7 @@ public enum FileMarker {
     ) -> [FileMark] {
         var marks: [FileMark] = eligibility.keptItems.contains(record) ? [.kept] : []
         // Only a download in progress can be a failed one; the flag spares every other item the check.
-        if record.isDownloading, FailedDownloadPlanner(eligibility: eligibility).isCandidate(record, now: now) {
+        if record.isDownloading, FailedDownloadPlanner(eligibility: eligibility).isCandidate(record, in: folder, now: now) {
             marks.append(.failedDownload)
         }
         if isInstalled {
@@ -43,7 +44,7 @@ public enum FileMarker {
             marks.append(.duplicate)
         }
         guard record.recordsLastOpened,
-              !CandidateEligibility.isExcludedName(record.displayName),
+              !CandidateEligibility.isExcludedName(record.displayName, archiveFolderName: folder.archiveFolderName),
               !record.isDownloading
         else {
             return marks

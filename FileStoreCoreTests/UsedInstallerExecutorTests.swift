@@ -15,7 +15,7 @@ struct UsedInstallerExecutorTests {
         return try #require(try await CleanupPlanners.plan(
             .removeUsedInstallers,
             records: records,
-            in: fixture.url,
+            in: .temporary(fixture.url),
             eligibility: CandidateEligibility(),
             keptItems: KeptItems(),
             installers: .testing(applications: [fixture.applicationsURL], receipts: receipts),
@@ -31,7 +31,7 @@ struct UsedInstallerExecutorTests {
         applicationFolders: [URL]? = nil
     ) async -> CleanupResult {
         let ids = plan.changes.filter { names?.contains($0.record.displayName) ?? true }.map(\.id)
-        return await CleanupExecutor(recorder: recorder, applicationFolders: applicationFolders ?? [fixture.applicationsURL], receipts: .fixed([]))
+        return await CleanupExecutor(recorder: testRecorder(recorder), applicationFolders: applicationFolders ?? [fixture.applicationsURL], receipts: .fixed([]))
             .execute(plan: plan, confirmedChangeIDs: Set(ids))
     }
 
@@ -135,7 +135,7 @@ struct UsedInstallerExecutorTests {
 
             let records = try await RelocationPlans.records(in: downloads)
             let plan = try #require(try await CleanupPlanners.plan(
-                .removeUsedInstallers, records: records, in: downloads, eligibility: CandidateEligibility(), keptItems: KeptItems(),
+                .removeUsedInstallers, records: records, in: .temporary(downloads), eligibility: CandidateEligibility(), keptItems: KeptItems(),
                 installers: .testing(applications: [applications])
             ))
             let change = try #require(plan.changes.first)
@@ -239,7 +239,7 @@ struct UsedInstallerExecutorTests {
             let records = try await RelocationPlans.records(in: fixture.url)
             let widget = try #require(plan.changes.first { $0.record.displayName == Names.usedAppZip })
             let report = try RelocationPlans.record(named: Names.reportPDF, in: records)
-            let forged = CleanupPlan(action: .removeUsedInstallers, folderURL: fixture.url, changes: [
+            let forged = CleanupPlan(action: .removeUsedInstallers, folder: log.downloads(at: fixture.url), changes: [
                 ProposedChange(record: report, operation: .moveToTrash, reason: widget.reason),
                 // An installer with another action's reason.
                 ProposedChange(record: widget.record, operation: .moveToTrash, reason: .unpackedZip(unpackedTo: "Widget.app")),

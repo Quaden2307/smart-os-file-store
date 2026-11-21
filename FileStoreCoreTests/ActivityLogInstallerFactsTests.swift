@@ -102,16 +102,8 @@ struct ActivityLogInstallerFactsTests {
         try await withLogSandbox { sandbox in
             let location = try sandbox.realLocation()
             let databaseURL = try #require(location.databaseURL)
-            let log = try await ActivityLog.open(location)
-            try LogSamples.writeRun(to: log, startedAt: .now, count: 2)
-            try await log.close()
             // What segment 8 left: migrations up to `v4`, no `installerFacts`.
-            do {
-                let raw = try RawDatabase(databaseURL)
-                try raw.execute("DROP TABLE installerFacts")
-                try raw.execute("ALTER TABLE runs DROP COLUMN origin")
-                try raw.execute("DELETE FROM grdb_migrations WHERE identifier IN ('v5', 'v6')")
-            }
+            try LegacyLog.make(at: location, version: 4)
 
             let upgraded = try await ActivityLog.open(location)
             #expect(try await upgraded.runs().count == 1)
@@ -121,7 +113,7 @@ struct ActivityLogInstallerFactsTests {
             try await upgraded.close()
 
             let raw = try RawDatabase(databaseURL)
-            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6")
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6,v7")
             #expect(try raw.text("SELECT count(*) FROM changes") == "2")
         }
     }

@@ -26,6 +26,18 @@ internal import GRDB
 /// was read at, so a second scan reads nothing again (decision record 0013). No link to `runs`;
 /// `pruneIfDue` removes rows read more than the retention period ago.
 ///
+/// `v6` adds `runs.origin`: where a run was started from (decision record 0023).
+///
+/// `v7` adds `folders`: one row per folder the app looks after, by an ID made once and never by its
+/// path, with how a custom folder is found again (a bookmark, and which folder it is on its volume,
+/// as `keptItems` records a file, so a different folder at the old place is never taken for it)
+/// and the name the user gave it. A standard folder (Downloads, Desktop, Documents) is found by
+/// its kind and has none of them. A folder
+/// taken off the list keeps its row (`removedAt`), so an old run still names its folder. `runs`,
+/// `changes` and `keptItems` gain `folderID`; every row from before belongs to Downloads, whose
+/// row the migration makes. The column cannot be `NOT NULL`, since SQLite adds a column only with
+/// one default for every database, so triggers refuse a row without it (decision record 0026).
+///
 /// Every time is a `Date.timeIntervalSinceReferenceDate`, the number a `Date` itself holds, so a
 /// modification date read back is bit for bit the one the scan saw. Paths are stored as text;
 /// file content never is.
@@ -148,6 +160,39 @@ enum ActivityLogSchema {
         migrator.registerMigration("v6") { db in
             // Where a run was started from. NULL is the app itself, which is every run before this.
             try db.execute(sql: "ALTER TABLE runs ADD COLUMN origin TEXT")
+        }
+        migrator.registerMigration("v7") { db in
+            try db.execute(sql: """
+                CREATE TABLE folders (
+                    id TEXT PRIMARY KEY,
+                    kind TEXT NOT NULL,
+                    displayName TEXT,
+                    bookmark BLOB,
+                    volumeUUID TEXT,
+                    fileNumber INTEGER,
+                    removedAt REAL,
+                    CHECK ((kind = 'custom') = (bookmark IS NOT NULL)),
+                    CHECK ((kind = 'custom') = (displayName IS NOT NULL)),
+                    CHECK ((volumeUUID IS NULL) = (fileNumber IS NULL)),
+                    CHECK (kind = 'custom' OR volumeUUID IS NULL)
+                ) STRICT;
+
+                CREATE UNIQUE INDEX folders_standardKind ON folders (kind) WHERE kind != 'custom';
+                """)
+            // The ID is text: GRDB's own binding for a `UUID` is a blob, which the column refuses.
+            let downloads = UUID().uuidString
+            try db.execute(sql: "INSERT INTO folders (id, kind) VALUES (?, 'downloads')", arguments: [downloads])
+            for table in ["runs", "changes", "keptItems"] {
+                try db.execute(sql: "ALTER TABLE \(table) ADD COLUMN folderID TEXT REFERENCES folders (id)")
+                try db.execute(sql: "UPDATE \(table) SET folderID = ?", arguments: [downloads])
+                try db.execute(sql: """
+                    CREATE TRIGGER \(table)_folderID_insert BEFORE INSERT ON \(table) WHEN NEW.folderID IS NULL
+                    BEGIN SELECT RAISE(ABORT, '\(table).folderID is required'); END;
+
+                    CREATE TRIGGER \(table)_folderID_update BEFORE UPDATE OF folderID ON \(table) WHEN NEW.folderID IS NULL
+                    BEGIN SELECT RAISE(ABORT, '\(table).folderID is required'); END;
+                    """)
+            }
         }
         return migrator
     }

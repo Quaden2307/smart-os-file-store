@@ -8,15 +8,21 @@
 #   scripts/make-fake-downloads.sh                   # the standard set of files
 #   EXTRA_FILES=5000 scripts/make-fake-downloads.sh  # plus 5,000 tiny files for table performance checks,
 #                                                    # each with a download source, half of them Unused
+#   DEMO_HOME=1 scripts/make-fake-downloads.sh       # a whole fake home: the same folder as Home/Downloads,
+#                                                    # with a Home/Desktop and a Home/Documents beside it
 #
 # Then launch a debug build against it:
 #   open build/Build/Products/Debug/SmartOSFileStore.app --args -ScanFolder "<printed path>" \
+#     -ApplicationsFolder "<printed FakeApplications path>"
+# or, for a fake home:
+#   open build/Build/Products/Debug/SmartOSFileStore.app --args -DemoHome "<printed Demo home path>" \
 #     -ApplicationsFolder "<printed FakeApplications path>"
 set -euo pipefail
 
 SCRIPTS="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(mktemp -d)"
-F="$ROOT/FakeDownloads"; APPS="$ROOT/FakeApplications"; STAGE="$ROOT/Staging"
+if [ -n "${DEMO_HOME:-}" ]; then F="$ROOT/Home/Downloads"; else F="$ROOT/FakeDownloads"; fi
+APPS="$ROOT/FakeApplications"; STAGE="$ROOT/Staging"
 mkdir -p "$F" "$APPS" "$STAGE"; cd "$F"
 
 # Every item is dated at the end, in the order it was made: SETTLED two hours back, STALE (failed
@@ -194,12 +200,31 @@ if [ "$count" -gt 0 ]; then
 fi
 rm -rf "$STAGE"
 
+# A fake home's Desktop and Documents, each with a small set, in this order: two exact duplicates,
+# a pair with one name and different content, a messy name whose clean form is free, and an old
+# file nobody opened (dated with the manual below). The test helper's `FakeHome` makes the same.
+OLD_ELSEWHERE=()
+if [ -n "${DEMO_HOME:-}" ]; then
+  other_folder() {
+    local folder="../$1" label="$2"; shift 2
+    mkdir "$folder"
+    printf '%s copy bytes' "$label" > "$folder/$1"; cp "$folder/$1" "$folder/$2"
+    printf '%s draft one' "$label" > "$folder/$3"; printf '%s draft two, edited' "$label" > "$folder/$4"
+    printf '%s messy name' "$label" > "$folder/$5"
+    printf '%s old file nobody opened' "$label" > "$folder/$6"
+    settled "$folder/$1" "$folder/$2" "$folder/$3" "$folder/$4" "$folder/$5"
+    OLD_ELSEWHERE+=("$folder/$6")
+  }
+  other_folder Desktop desktop "screenshot.png" "screenshot copy.png" "todo.txt" "todo (1).txt" "sketch (2).pdf" "old-flyer.pdf"
+  other_folder Documents documents "contract.pdf" "contract (1).pdf" "letter.docx" "letter (1).docx" "resume copy.docx" "old-lease.pdf"
+fi
+
 # Dates, in one call (compiling the helper takes a few seconds). The old receipt and the tax form
 # arrived 2025-01-01 09:00 UTC and the manual 2024-06-01 09:00 UTC, matching the test helper. The
 # bulk files, one second apart, end two hours back however many there are.
 TWO_HOURS_AGO="$(date -v-2H +%s)"
 DATES=("@$TWO_HOURS_AGO" "${SETTLED[@]}" "@$(date -v-3d +%s)" "${STALE[@]}" \
-  "@1735722000" "old-receipt.pdf" "tax-form-2024.pdf" "@1717232400" "old-manual.pdf")
+  "@1735722000" "old-receipt.pdf" "tax-form-2024.pdf" "@1717232400" "old-manual.pdf" ${OLD_ELSEWHERE[@]+"${OLD_ELSEWHERE[@]}"})
 if [ "$count" -gt 0 ]; then
   DATES+=("@$((TWO_HOURS_AGO - count))" "${BULK[@]}")
 fi
@@ -257,4 +282,5 @@ chflags uchg "locked.txt" "report (3).pdf"
 
 echo "Test folder: $F"
 echo "Fake Applications: $APPS"
+if [ -n "${DEMO_HOME:-}" ]; then echo "Demo home: $ROOT/Home"; fi
 echo "Remove with: chflags -R nouchg \"$ROOT\" && rm -rf \"$ROOT\""

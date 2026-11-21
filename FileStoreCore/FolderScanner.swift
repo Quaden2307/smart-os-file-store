@@ -42,15 +42,15 @@ public struct FolderScanner: Sendable {
         self.metadataReader = metadataReader
     }
 
-    /// Lists the top level of `location.folderURL`.
+    /// Lists the top level of `folder`.
     ///
     /// - Returns: The readable items and any that had to be skipped.
     /// - Throws: `.folderNotFound`, `.accessDenied` or `.folderUnreadable` when the folder itself
     ///   cannot be listed, and `.cancelled` when the task is cancelled. One unreadable item is
     ///   reported in the result, not thrown.
     @concurrent
-    public func scan(_ location: ScanLocation) async throws(FolderScanError) -> FolderScanResult {
-        let folderURL = location.folderURL
+    public func scan(_ folder: ManagedFolder) async throws(FolderScanError) -> FolderScanResult {
+        let folderURL = folder.url
         let clock = ContinuousClock()
         let start = clock.now
 
@@ -118,7 +118,7 @@ public struct FolderScanner: Sendable {
                         let handle = folderHandle ?? Self.openHandle(on: folderURL)
                         folderHandle = handle
                         packageContents = handle.flatMap { PackageContents.read(named: name, in: $0, limits: limits) }
-                    } else if !CandidateEligibility.isExcludedName(name) {
+                    } else if !CandidateEligibility.isExcludedName(name, archiveFolderName: folder.archiveFolderName) {
                         let handle = folderHandle ?? Self.openHandle(on: folderURL)
                         folderHandle = handle
                         switch handle {
@@ -160,7 +160,7 @@ public struct FolderScanner: Sendable {
         )
 
         return FolderScanResult(
-            folderURL: folderURL,
+            folder: folder,
             records: records,
             skippedItems: skippedItems,
             scannedAt: .now

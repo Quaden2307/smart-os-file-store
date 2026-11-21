@@ -84,7 +84,12 @@ public struct UndoPlan: Sendable, Hashable {
 
     public let target: UndoTarget
 
-    /// The folder the app looks after: every file goes back into it.
+    /// The managed folder the target's run was made in, which every file goes back into. Nil only
+    /// when the log does not say; nothing can be undone then.
+    public let folderID: ManagedFolder.ID?
+
+    /// Where that folder is now, or when it could not be found, where the run saw it: every step
+    /// is refused then.
     public let folderURL: URL
 
     /// The action of the run the target belongs to, as stored, so the undo can be named after it.
@@ -98,8 +103,9 @@ public struct UndoPlan: Sendable, Hashable {
     /// something and were not undone already; for one change, that change whatever the reason.
     public let refused: [Refused]
 
-    public init(target: UndoTarget, folderURL: URL, undoneActionCode: String, steps: [UndoStep], refused: [Refused]) {
+    public init(target: UndoTarget, folderID: ManagedFolder.ID?, folderURL: URL, undoneActionCode: String, steps: [UndoStep], refused: [Refused]) {
         self.target = target
+        self.folderID = folderID
         self.folderURL = folderURL
         self.undoneActionCode = undoneActionCode
         self.steps = steps

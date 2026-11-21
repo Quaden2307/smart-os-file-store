@@ -12,7 +12,7 @@ struct DuplicatePlannerDiskTests {
     private let planner = DuplicatePlanner()
 
     private func scan(_ fixture: FakeDownloadsFolder) async throws -> [FileRecord] {
-        try await scanner.scan(ScanLocation(folderURL: fixture.url, source: .launchArgument)).records
+        try await scanner.scan(.temporary(fixture.url)).records
     }
 
     private func plan(
@@ -20,7 +20,7 @@ struct DuplicatePlannerDiskTests {
         onProgress: (@Sendable (DuplicateScanProgress) -> Void)? = nil
     ) async throws -> CleanupPlan {
         let records = try await scan(fixture)
-        return try await planner.plan(records: records, in: fixture.url, onProgress: onProgress)
+        return try await planner.plan(records: records, in: .temporary(fixture.url), onProgress: onProgress)
     }
 
     private func group(keeping name: String, in plan: CleanupPlan) -> DuplicateGroup? {
@@ -150,7 +150,7 @@ struct DuplicatePlannerDiskTests {
             let original = try #require(records.first { $0.displayName == Names.reportPDF })
             #expect(record.dateModified == original.dateModified)
 
-            let plan = try await planner.plan(records: records, in: fixture.url)
+            let plan = try await planner.plan(records: records, in: .temporary(fixture.url))
 
             #expect(!groupedNames(plan).contains(Names.freshReportCopy))
             #expect(group(keeping: Names.reportPDF, in: plan)?.duplicates.count == 4)
@@ -170,8 +170,8 @@ struct DuplicatePlannerDiskTests {
         try FileDates.writeSettled(files, in: temp.url)
 
         let plan = try await planner.plan(
-            records: try await scanner.scan(ScanLocation(folderURL: temp.url, source: .launchArgument)).records,
-            in: temp.url
+            records: try await scanner.scan(.temporary(temp.url)).records,
+            in: .temporary(temp.url)
         )
 
         #expect(plan.changes.map(\.record.displayName) == ["a (1).txt"])
@@ -240,7 +240,7 @@ struct DuplicatePlannerDiskTests {
             try handle.write(contentsOf: Data(" and more".utf8))
             try handle.close()
 
-            let plan = try await planner.plan(records: records, in: fixture.url)
+            let plan = try await planner.plan(records: records, in: .temporary(fixture.url))
 
             let reports = try #require(group(keeping: Names.reportPDF, in: plan))
             #expect(reports.duplicates.map(\.displayName) == [Names.reportCopy2, Names.lockedReportCopy, Names.reportCopyWord])
@@ -283,7 +283,7 @@ struct DuplicatePlannerDiskTests {
             // The task cancels itself before the search starts, so the outcome never depends on timing.
             let task = Task {
                 withUnsafeCurrentTask { $0?.cancel() }
-                return try await planner.plan(records: records, in: folderURL)
+                return try await planner.plan(records: records, in: .temporary(folderURL))
             }
 
             await #expect(throws: DuplicatePlanError.cancelled) {
@@ -307,8 +307,8 @@ struct DuplicatePlannerDiskTests {
             try Data("alpha".utf8).write(to: url)
             try FileDates.set(url, to: settled)
         }
-        let insideRecords = try await scanner.scan(ScanLocation(folderURL: inside, source: .launchArgument)).records
-        let outsideRecords = try await scanner.scan(ScanLocation(folderURL: outside, source: .launchArgument)).records
+        let insideRecords = try await scanner.scan(.temporary(inside)).records
+        let outsideRecords = try await scanner.scan(.temporary(outside)).records
         // The scanner itself skips the hidden file; the record below stands in for a plan built elsewhere.
         #expect(insideRecords.count == 2)
         let hidden = FileRecord(
@@ -323,7 +323,7 @@ struct DuplicatePlannerDiskTests {
             isDownloading: false
         )
 
-        let plan = try await planner.plan(records: insideRecords + outsideRecords + [hidden], in: inside)
+        let plan = try await planner.plan(records: insideRecords + outsideRecords + [hidden], in: .temporary(inside))
 
         #expect(plan.duplicateGroups.count == 1)
         #expect(plan.changes.map(\.record.displayName) == ["a (1).txt"])
@@ -342,15 +342,15 @@ struct DuplicatePlannerDiskTests {
             atPath: temp.url.appending(path: "a.txt").path(percentEncoded: false),
             toPath: temp.url.appending(path: "a (1).txt").path(percentEncoded: false)
         )
-        let records = try await scanner.scan(ScanLocation(folderURL: temp.url, source: .launchArgument)).records
+        let records = try await scanner.scan(.temporary(temp.url)).records
         #expect(records.count == 3)
         // Each name of a hard link has a Date Added of its own, so the plan is made two hours on
         // rather than by dating files back; then all three names are candidates and the hard-link
         // rule itself is what keeps `a (1).txt` out of the plan.
         let later = Date(timeIntervalSinceNow: 2 * 3_600)
-        #expect(planner.candidates(in: records, now: later).count == 3)
+        #expect(planner.candidates(in: records, folder: .temporary(temp.url), now: later).count == 3)
 
-        let plan = try await planner.plan(records: records, in: temp.url, now: later)
+        let plan = try await planner.plan(records: records, in: .temporary(temp.url), now: later)
 
         #expect(plan.duplicateGroups.count == 1)
         #expect(plan.duplicateGroups.first?.kept.displayName == "a.txt")
@@ -360,8 +360,8 @@ struct DuplicatePlannerDiskTests {
         // Only the two names of one file left: nothing to find, now and on every later run.
         try fileManager.removeItem(at: temp.url.appending(path: "a (2).txt"))
         let again = try await planner.plan(
-            records: try await scanner.scan(ScanLocation(folderURL: temp.url, source: .launchArgument)).records,
-            in: temp.url,
+            records: try await scanner.scan(.temporary(temp.url)).records,
+            in: .temporary(temp.url),
             now: later
         )
         #expect(again.isEmpty)

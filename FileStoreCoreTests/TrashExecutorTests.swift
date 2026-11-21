@@ -16,8 +16,8 @@ struct TrashExecutorTests {
     // MARK: - Helpers
 
     private func plan(_ folder: URL) async throws -> CleanupPlan {
-        let records = try await scanner.scan(ScanLocation(folderURL: folder, source: .launchArgument)).records
-        return try await planner.plan(records: records, in: folder)
+        let records = try await scanner.scan(.temporary(folder)).records
+        return try await planner.plan(records: records, in: .temporary(folder))
     }
 
     private func change(named name: String, in plan: CleanupPlan) throws -> ProposedChange {
@@ -258,7 +258,7 @@ struct TrashExecutorTests {
             #expect(group.kept.displayName == "x.pdf")
             let crafted = CleanupPlan(
                 action: .findDuplicates,
-                folderURL: temp.url,
+                folder: .temporary(temp.url),
                 changes: [proposedChange(group.kept, keptName: "x (1).pdf")] + real.changes,
                 duplicateGroups: [
                     DuplicateGroup(
@@ -289,7 +289,7 @@ struct TrashExecutorTests {
             let copy = try #require(group.duplicates.first)
             let crafted = CleanupPlan(
                 action: .findDuplicates,
-                folderURL: temp.url,
+                folder: .temporary(temp.url),
                 changes: [proposedChange(copy, keptName: kept.displayName), proposedChange(kept, keptName: copy.displayName)],
                 duplicateGroups: [
                     DuplicateGroup(contentHash: group.contentHash, kept: kept, duplicates: [copy], fileSizeInBytes: 4),
@@ -318,7 +318,7 @@ struct TrashExecutorTests {
             let upper = record(like: group.kept, url: temp.url.appending(path: "X.PDF"))
             let crafted = CleanupPlan(
                 action: .findDuplicates,
-                folderURL: temp.url,
+                folder: .temporary(temp.url),
                 changes: [proposedChange(upper, keptName: group.kept.displayName)],
                 duplicateGroups: [
                     DuplicateGroup(contentHash: group.contentHash, kept: group.kept, duplicates: [upper], fileSizeInBytes: 4),
@@ -348,7 +348,7 @@ struct TrashExecutorTests {
             let link = record(like: group.kept, url: fixture.url(for: Names.symlink))
             let crafted = CleanupPlan(
                 action: .findDuplicates,
-                folderURL: fixture.url,
+                folder: .temporary(fixture.url),
                 changes: [sneaky, link].map { proposedChange($0, keptName: Names.reportPDF) },
                 duplicateGroups: [
                     DuplicateGroup(contentHash: group.contentHash, kept: group.kept, duplicates: [sneaky, link], fileSizeInBytes: 21),
@@ -463,7 +463,7 @@ struct TrashExecutorTests {
             // The plan names a file as its folder, as a plan from an ejected volume might name a path that is gone.
             let crafted = CleanupPlan(
                 action: .findDuplicates,
-                folderURL: fixture.url(for: Names.reportPDF),
+                folder: .temporary(fixture.url(for: Names.reportPDF)),
                 changes: real.changes,
                 duplicateGroups: real.duplicateGroups
             )
@@ -518,7 +518,7 @@ struct TrashExecutorTests {
         )
         let crafted = CleanupPlan(
             action: .findDuplicates,
-            folderURL: temp.url,
+            folder: .temporary(temp.url),
             changes: craftedGroup.duplicates.map { proposedChange($0, keptName: group.kept.displayName) },
             duplicateGroups: [craftedGroup]
         )
@@ -552,7 +552,7 @@ struct TrashExecutorTests {
         )
         let crafted = CleanupPlan(
             action: .findDuplicates,
-            folderURL: temp.url,
+            folder: .temporary(temp.url),
             changes: [proposedChange(archive, keptName: group.kept.displayName)],
             duplicateGroups: [craftedGroup]
         )
@@ -613,9 +613,9 @@ struct TrashExecutorTests {
         for name in ["b.txt", "b (1).txt"] {
             try Data("beta".utf8).write(to: temp.url.appending(path: name))
         }
-        let records = try await scanner.scan(ScanLocation(folderURL: temp.url, source: .launchArgument)).records
+        let records = try await scanner.scan(.temporary(temp.url)).records
         // Planned as if two hours had passed, so the fresh files are candidates; carried out now.
-        let plan = try await planner.plan(records: records, in: temp.url, now: Date(timeIntervalSinceNow: 2 * 3_600))
+        let plan = try await planner.plan(records: records, in: .temporary(temp.url), now: Date(timeIntervalSinceNow: 2 * 3_600))
         #expect(plan.changes.map(\.record.displayName) == ["b (1).txt"])
 
         let result = await executor.execute(plan: plan, confirmedChangeIDs: Set(plan.changes.map(\.id)))
@@ -689,7 +689,7 @@ struct TrashExecutorTests {
         let real = try await plan(temp.url)
         let crafted = CleanupPlan(
             action: .findDuplicates,
-            folderURL: temp.url,
+            folder: .temporary(temp.url),
             changes: real.changes + real.changes,
             duplicateGroups: real.duplicateGroups
         )
@@ -712,7 +712,7 @@ struct TrashExecutorTests {
         let real = try await plan(temp.url)
         #expect(real.changes.map(\.record.displayName) == ["k (1).txt"])
         let groupA = try #require(real.duplicateGroups.first)
-        let records = try await scanner.scan(ScanLocation(folderURL: temp.url, source: .launchArgument)).records
+        let records = try await scanner.scan(.temporary(temp.url)).records
         let unique = try #require(records.first { $0.displayName == "unique.txt" })
         // Group B claims `unique.txt` is a copy of `k.txt`, with unique.txt's own hash, so the item
         // check passes and only the kept file's check can tell the truth.
@@ -720,7 +720,7 @@ struct TrashExecutorTests {
         let groupB = DuplicateGroup(contentHash: uniqueHash, kept: groupA.kept, duplicates: [unique], fileSizeInBytes: 5)
         let crafted = CleanupPlan(
             action: .findDuplicates,
-            folderURL: temp.url,
+            folder: .temporary(temp.url),
             changes: real.changes + [proposedChange(unique, keptName: groupA.kept.displayName)],
             duplicateGroups: [groupA, groupB]
         )

@@ -87,12 +87,12 @@ struct KeptItemsTests {
         let fresh = record("fresh.pdf", identity: identity(8), added: Self.now)
         let eligibility = CandidateEligibility().keeping(kept(marked, fresh))
 
-        #expect(eligibility.refusal(for: marked, now: Self.now) == .kept)
-        #expect(!eligibility.allows(marked, now: Self.now))
+        #expect(eligibility.refusal(for: marked, in: .temporary(Self.folder), now: Self.now) == .kept)
+        #expect(!eligibility.allows(marked, in: .temporary(Self.folder), now: Self.now))
         // Another rule that keeps it out is named first.
-        #expect(eligibility.refusal(for: fresh, now: Self.now) == .insideGracePeriod)
+        #expect(eligibility.refusal(for: fresh, in: .temporary(Self.folder), now: Self.now) == .insideGracePeriod)
         // An item that is not Kept is unaffected.
-        #expect(eligibility.allows(record("other.pdf", identity: identity(9)), now: Self.now))
+        #expect(eligibility.allows(record("other.pdf", identity: identity(9)), in: .temporary(Self.folder), now: Self.now))
     }
 
     @Test func keepingChangesOnlyTheList() {
@@ -113,10 +113,10 @@ struct KeptItemsTests {
         let app = record("Tool.app", identity: identity(3), kind: .package, contentType: .applicationBundle)
         let list = kept(old, folder, app)
 
-        #expect(FileMarker.marks(for: old, now: Self.now, settings: settings, eligibility: CandidateEligibility(keptItems: list)) == [.kept, .neverOpened, .old])
-        #expect(FileMarker.marks(for: folder, now: Self.now, settings: settings, eligibility: CandidateEligibility(keptItems: list)) == [.kept])
-        #expect(FileMarker.marks(for: app, now: Self.now, settings: settings, eligibility: CandidateEligibility(keptItems: list)) == [.kept])
-        #expect(FileMarker.marks(for: old, now: Self.now, settings: settings) == [.neverOpened, .old])
+        #expect(FileMarker.marks(for: old, in: .temporary(old.url.deletingLastPathComponent()), now: Self.now, settings: settings, eligibility: CandidateEligibility(keptItems: list)) == [.kept, .neverOpened, .old])
+        #expect(FileMarker.marks(for: folder, in: .temporary(folder.url.deletingLastPathComponent()), now: Self.now, settings: settings, eligibility: CandidateEligibility(keptItems: list)) == [.kept])
+        #expect(FileMarker.marks(for: app, in: .temporary(app.url.deletingLastPathComponent()), now: Self.now, settings: settings, eligibility: CandidateEligibility(keptItems: list)) == [.kept])
+        #expect(FileMarker.marks(for: old, in: .temporary(old.url.deletingLastPathComponent()), now: Self.now, settings: settings) == [.neverOpened, .old])
         #expect(FileMark.allCases.first == .kept)
     }
 
@@ -133,7 +133,7 @@ struct KeptItemsTests {
         let skipped = CleanupPlan.SkippedItem(url: Self.folder.appending(path: "locked.txt"), reason: .accessDenied)
         let plan = CleanupPlan(
             action: .findDuplicates,
-            folderURL: Self.folder,
+            folder: .temporary(Self.folder),
             changes: [copy, other, photoCopy].map {
                 ProposedChange(record: $0, operation: .moveToTrash, reason: .sameContent(asFileNamed: "x"))
             },

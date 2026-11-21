@@ -50,12 +50,12 @@ extension CleanupExecutor {
         let readDateAdded = { () throws(FileStatus.Failure) -> Date? in
             try FileStatus.dateAdded(path: name, relativeTo: folder.descriptor)
         }
-        if let refused = sharedRefusal(status, itemURL: itemURL, change: change, now: now, readDateAdded: readDateAdded) {
+        if let refused = sharedRefusal(status, itemURL: itemURL, change: change, in: context.folder, now: now, readDateAdded: readDateAdded) {
             return refused
         }
 
         // The archived copy: a regular file in the archive folder, the same size, not this very file.
-        let archiveName = CandidateEligibility.archiveFolderName
+        let archiveName = context.folder.archiveFolderName
         guard case .opened(let archive) = Self.step(into: archiveName, from: folder, device: folderIdentity.device),
               let copyStatus = try? archive.status(of: copyName),
               copyStatus.isRegularFile, !copyStatus.isSymbolicLink, !copyStatus.isDataless,
@@ -78,7 +78,7 @@ extension CleanupExecutor {
         }
         // The hasher reads by path. Before and after it, the path must reach the very file checked
         // through the archive's handle, so a link put in the archive's place is never read instead.
-        let copyURL = ArchivePlanner.archiveURL(in: context.folderURL).appending(path: copyName)
+        let copyURL = ArchivePlanner.archiveURL(in: context.folder).appending(path: copyName)
         func pathReachesCopy() -> Bool {
             (try? FileStatus.of(path: copyURL.path(percentEncoded: false)))?.identity == copyStatus.identity
                 && (try? folder.status(of: archiveName))?.isSymbolicLink == false

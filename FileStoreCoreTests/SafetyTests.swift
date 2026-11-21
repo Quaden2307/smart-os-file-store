@@ -311,11 +311,11 @@ struct SafetyTests {
             #expect(before.contains { $0.name == "\(FakeDownloadsFolder.Names.zipFolder)/\(FakeDownloadsFolder.Names.zipFolderFiles[0])" })
 
             // Every planner the app offers, each with something to propose.
-            let records = try await scanner.scan(ScanLocation(folderURL: fixture.url, source: .launchArgument)).records
+            let records = try await scanner.scan(.temporary(fixture.url)).records
             var proposed: [CleanupAction: Int] = [:]
             for action in PlannersRespectKeptTests.plannedActions {
                 let plan = try #require(
-                    try await CleanupPlanners.plan(action, records: records, in: fixture.url, eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: .testing(applications: [fixture.applicationsURL]), settings: PlannersRespectKeptTests.settings)
+                    try await CleanupPlanners.plan(action, records: records, in: .temporary(fixture.url), eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: .testing(applications: [fixture.applicationsURL]), settings: PlannersRespectKeptTests.settings)
                 )
                 proposed[action] = plan.changes.count
             }
@@ -323,6 +323,20 @@ struct SafetyTests {
 
             let after = try Self.snapshot(of: fixture.url)
             #expect(after == before)
+        }
+    }
+
+    /// The engine asks the system where a standard folder is in one place only, the registry, so a
+    /// debug override that stands in for those folders cannot be bypassed.
+    @Test func onlyTheRegistryLooksUpTheStandardFolders() throws {
+        let lookups = try [#"\.downloadsDirectory\b"#, #"\.desktopDirectory\b"#, #"\.documentDirectory\b"#, #"\bURL\.downloadsDirectory\b"#].map(Self.regex)
+        for source in try Self.sources(of: "FileStoreCore") + Self.sources(of: "SmartOSFileStore") + Self.sources(of: "FileStoreIntelligence") {
+            let count = lookups.reduce(0) { $0 + source.count(of: $1) }
+            if source.label == "FileStoreCore/FolderRegistry.swift" {
+                #expect(count == 3, "\(source.label) names the standard folders \(count) times")
+            } else {
+                #expect(count == 0, "\(source.label) looks up a standard folder itself")
+            }
         }
     }
 
@@ -335,8 +349,10 @@ struct SafetyTests {
         defer { fixture.remove() }
         let plain = try TemporaryFolder.make()
         defer { plain.remove() }
+        let fakeHome = try FakeHome.make()
+        defer { fakeHome.remove() }
 
-        for url in [fixture.url, plain.url] {
+        for url in [fixture.url, plain.url, fakeHome.url] + fakeHome.folders.map(\.url) {
             let path = canonicalPath(url)
             #expect(path.hasPrefix(temporary + "/"), "\(path) is not under the temporary directory")
             for name in ["Downloads", "Desktop", "Documents"] {

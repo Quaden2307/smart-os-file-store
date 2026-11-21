@@ -13,13 +13,15 @@ public struct TidyNowPlan: Sendable, Hashable {
         case failed
     }
 
-    public let folderURL: URL
+    public let folder: ManagedFolder
+
+    public var folderURL: URL { folder.url }
 
     /// Each action's outcome, in `TidyNowPlan.order`.
     public let outcomes: [(action: CleanupAction, outcome: Outcome)]
 
-    public init(folderURL: URL, outcomes: [(action: CleanupAction, outcome: Outcome)]) {
-        self.folderURL = folderURL
+    public init(folder: ManagedFolder, outcomes: [(action: CleanupAction, outcome: Outcome)]) {
+        self.folder = folder
         self.outcomes = outcomes
     }
 
@@ -141,7 +143,7 @@ public struct TidyNowPlan: Sendable, Hashable {
                 protectedKept = keptCopies(in: plans, excluding: dropped, trashedAbove: trashedAbove)
             }
             let url = change.id
-            let destination = destinationKey(of: change, in: plan.folderURL)
+            let destination = destinationKey(of: change, in: plan.folder)
             let keep = isAllowed(change, in: plan, eligibility: eligibility, now: now)
                 && !claimed.contains(url)
                 && !(change.operation == .moveToTrash && protectedKept.contains(url))
@@ -189,12 +191,13 @@ public struct TidyNowPlan: Sendable, Hashable {
             return false
         }
         let downloads: CandidateEligibility.DownloadsInProgress = plan.action == .clearFailedDownloads ? .allowed : .refused
-        return eligibility.refusal(for: change.record, now: now, downloads: downloads) == nil
+        return eligibility.refusal(for: change.record, in: plan.folder, now: now, downloads: downloads) == nil
     }
 
     /// For a rename or a move, where the file would end up, compared without regard to case or
     /// Unicode form, as the disk would. Nil for the Trash.
-    private static func destinationKey(of change: ProposedChange, in folderURL: URL) -> String? {
+    private static func destinationKey(of change: ProposedChange, in folder: ManagedFolder) -> String? {
+        let folderURL = folder.url
         let url: URL
         switch change.operation {
         case .moveToTrash:

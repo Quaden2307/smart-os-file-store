@@ -50,6 +50,16 @@ struct FileStatus: Sendable {
         return FileStatus(status)
     }
 
+    /// Where `url` really is, with every link on the way resolved (`realpath`). Looks at each name
+    /// and opens nothing. Nil when nothing is there.
+    static func realPath(of url: URL) -> String? {
+        guard let resolved = realpath(url.path(percentEncoded: false), nil) else {
+            return nil
+        }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
+
     /// When the item at `path` was added to its folder, read now with `getattrlist(2)`. A symbolic
     /// link is described itself. Nil when the volume does not record the date, including a volume
     /// that does not support the call at all (`ENOTSUP`, `EINVAL`): the modification date then

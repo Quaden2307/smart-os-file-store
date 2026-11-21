@@ -73,4 +73,15 @@ struct VolumeIdentity: Sendable {
         }
         return errno == ENOENT ? false : nil
     }
+
+    /// Where the item with `number` is on this volume now. Nil when nothing has the number, or the
+    /// system could not tell.
+    func path(ofNumber number: UInt64) -> String? {
+        var fsid = fsid_t(val: fileSystemID)
+        var path = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+        guard fsgetpath(&path, path.count, &fsid, number) >= 0 else {
+            return nil
+        }
+        return String(decoding: path.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+    }
 }

@@ -48,10 +48,10 @@ public struct DuplicatePlanner: Sendable {
     /// grace period), and of those only regular files with content. Folders, packages, symbolic
     /// links and empty files are never candidates. A file the user marked Kept takes part too, but
     /// only ever as the copy its group keeps (`makePlan`); it is never proposed.
-    public func candidates(in records: [FileRecord], now: Date) -> [FileRecord] {
+    public func candidates(in records: [FileRecord], folder: ManagedFolder, now: Date) -> [FileRecord] {
         records.filter { record in
             guard record.kind == .file, let size = record.sizeInBytes, size > 0 else { return false }
-            switch eligibility.refusal(for: record, now: now) {
+            switch eligibility.refusal(for: record, in: folder, now: now) {
             case nil, .kept:
                 return true
             case .excludedName, .downloadInProgress, .insideGracePeriod:
@@ -88,7 +88,7 @@ public struct DuplicatePlanner: Sendable {
     /// whatever its name; with several, the keep rule picks among them. A group in which every copy
     /// is Kept proposes nothing and is left out.
     public static func makePlan(
-        folderURL: URL,
+        folder: ManagedFolder,
         records: [FileRecord],
         hashes: [FileRecord.ID: ContentHash],
         keptItems: KeptItems,
@@ -138,7 +138,7 @@ public struct DuplicatePlanner: Sendable {
         }
         return CleanupPlan(
             action: .findDuplicates,
-            folderURL: folderURL,
+            folder: folder,
             changes: changes,
             duplicateGroups: groups,
             skippedItems: sortedSkips
@@ -159,16 +159,17 @@ public struct DuplicatePlanner: Sendable {
     @concurrent
     public func plan(
         records: [FileRecord],
-        in folderURL: URL,
+        in folder: ManagedFolder,
         now: Date = .now,
         onProgress: (@Sendable (DuplicateScanProgress) -> Void)? = nil
     ) async throws(DuplicatePlanError) -> CleanupPlan {
+        let folderURL = folder.url
         let clock = ContinuousClock()
         let start = clock.now
 
         try Self.throwIfCancelled()
 
-        let candidates = Self.distinctFiles(candidates(in: Self.recordsDirectlyInside(folderURL, among: records), now: now))
+        let candidates = Self.distinctFiles(candidates(in: Self.recordsDirectlyInside(folderURL, among: records), folder: folder, now: now))
         let toHash = Self.sizeGroups(of: candidates).flatMap { $0 }
         let bytesToHash = toHash.reduce(Int64(0)) { $0 + ($1.sizeInBytes ?? 0) }
         let tracker = ProgressTracker(filesToHash: toHash.count, bytesToHash: bytesToHash, onProgress: onProgress)
@@ -239,7 +240,7 @@ public struct DuplicatePlanner: Sendable {
         // unchecked: no plan ever names a Kept file except as the copy a group keeps.
         let keptURLs = Set(toHash.filter(eligibility.keptItems.contains).map(\.url))
         let plan = Self.makePlan(
-            folderURL: folderURL,
+            folder: folder,
             records: toHash,
             hashes: hashes,
             keptItems: eligibility.keptItems,
@@ -314,6 +315,9 @@ public struct DuplicatePlanner: Sendable {
         let bytesSeen = ByteCount()
         let expectedBytes = record.sizeInBytes ?? 0
         do throws(ContentHashError) {
+            if record.isDataless {
+                throw .notDownloaded(record.url)
+            }
             let hash = try await hasher.hash(contentsOf: record.url, expectedSizeInBytes: record.sizeInBytes) { count in
                 bytesSeen.add(count)
                 tracker.addBytes(count)

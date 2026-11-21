@@ -14,7 +14,7 @@ struct MessyNameDiskTests {
             try await CleanupPlanners.plan(
                 .fixMessyNames,
                 records: records,
-                in: folder,
+                in: .temporary(folder),
                 eligibility: CandidateEligibility(),
                 keptItems: KeptItems(),
                 installers: .testing(applications: [])

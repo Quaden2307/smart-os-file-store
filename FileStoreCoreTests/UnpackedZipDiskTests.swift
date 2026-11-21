@@ -195,7 +195,7 @@ struct UnpackedZipDiskTests {
             try FileManager.default.moveItem(at: again, to: project)
 
             let plan = try #require(
-                try await CleanupPlanners.plan(.removeUnpackedZips, records: records, in: folder, eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: .testing())
+                try await CleanupPlanners.plan(.removeUnpackedZips, records: records, in: .temporary(folder), eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: .testing())
             )
 
             #expect(UnpackedZips.proposals(plan) == ["\(UnpackedZips.contractZip) → \(UnpackedZips.contract)"])
@@ -209,7 +209,7 @@ struct UnpackedZipDiskTests {
             let log = try await ActivityLog.open(.inMemory)
             try await log.keep(records.filter { [UnpackedZips.project, UnpackedZips.contract].contains($0.displayName) })
 
-            let plan = try await plan(folder, keeping: try await log.keptItems(forFolder: folder))
+            let plan = try await plan(folder, keeping: try await log.keptItems(for: log.downloads(at: folder)))
 
             #expect(UnpackedZips.proposals(plan) == ["\(UnpackedZips.contractZip) → \(UnpackedZips.contract)", "\(UnpackedZips.projectZip) → \(UnpackedZips.project)"])
         }
@@ -251,7 +251,7 @@ struct UnpackedZipDiskTests {
             let records = try await RelocationPlans.records(in: folder)
             let log = try await ActivityLog.open(.inMemory)
             try await log.keep(records.filter { ["damaged.zip", "unreadable.zip"].contains($0.displayName) })
-            let kept = try await plan(folder, keeping: try await log.keptItems(forFolder: folder))
+            let kept = try await plan(folder, keeping: try await log.keptItems(for: log.downloads(at: folder)))
 
             #expect(kept.skippedItems.isEmpty)
             #expect(UnpackedZips.proposals(kept) == UnpackedZips.proposals(unkept))
@@ -287,7 +287,7 @@ struct UnpackedZipDiskTests {
                     await Task.yield()
                 }
                 do throws(CleanupPlanningError) {
-                    _ = try await UnpackedZipPlanner().plan(records: records, in: folder)
+                    _ = try await UnpackedZipPlanner().plan(records: records, in: .temporary(folder))
                     return nil
                 } catch {
                     return error

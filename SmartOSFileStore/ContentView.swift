@@ -249,7 +249,6 @@ struct ContentView: View {
                     selection: $activitySelection,
                     isShown: section == .activity,
                     focus: $focusedPlace,
-                    folderURL: model.location?.folderURL,
                     canUndo: canStartUndo,
                     undo: startUndo
                 )
@@ -368,13 +367,13 @@ struct ContentView: View {
     /// True while an undo may start: the log works, the folder is known, and nothing else that
     /// reads or moves files is under way or on screen.
     private var canStartUndo: Bool {
-        activity.log != nil && model.location != nil && !search.isRunning && search.presentedPlan == nil && tidyNow == nil
+        activity.log != nil && model.folder != nil && !search.isRunning && search.presentedPlan == nil && tidyNow == nil
             && !undo.isBusy && confirmingCard == nil && !chat.isCleaningUp
     }
 
     private func startUndo(_ target: UndoTarget) {
-        guard canStartUndo, let log = activity.log, let folderURL = model.location?.folderURL else { return }
-        undo.start(target, folderURL: folderURL, log: log, activity: activity) {
+        guard canStartUndo, let log = activity.log else { return }
+        undo.start(target, log: log, activity: activity) {
             // Files moved back, so the rows on screen are stale.
             model.refresh()
         }
@@ -437,7 +436,7 @@ struct ContentView: View {
         case .downloads:
             model.refresh()
         case .activity:
-            activityList.reload(activity: activity, folderURL: model.location?.folderURL)
+            activityList.reload(activity: activity)
         }
     }
 
@@ -454,10 +453,10 @@ struct ContentView: View {
 
     /// A cleanup looks at every listed file, whatever the filter shows (the preview names each file
     /// it proposes), so the list must be settled first, and a new search must never replace a
-    /// preview the user is still looking at. Without a working activity log nothing may
-    /// be cleaned up, so nothing is searched for either.
+    /// preview the user is still looking at. Without a working activity log that knows Downloads
+    /// nothing may be cleaned up, so nothing is searched for either.
     private var canStartCleanup: Bool {
-        model.isSettled && !search.isRunning && search.presentedPlan == nil && tidyNow == nil && activity.log != nil
+        model.isSettled && !search.isRunning && search.presentedPlan == nil && tidyNow == nil && activity.downloads != nil
             && !undo.isBusy && !model.isChangingKept && !isConfirmingStopKeepingAll
             && confirmingCard == nil && !chat.isCleaningUp
     }
@@ -531,11 +530,11 @@ struct ContentView: View {
     }
 
     private func startCleanup(_ action: CleanupAction) {
-        guard canStartCleanup, let location = model.location, let log = activity.log else { return }
+        guard canStartCleanup, let log = activity.log, let folder = activity.downloads else { return }
         search.start(
             action,
             records: model.records,
-            folderURL: location.folderURL,
+            folder: folder,
             eligibility: model.eligibility,
             applicationFolders: model.applicationFolders,
             log: log,
@@ -546,7 +545,7 @@ struct ContentView: View {
 
     /// Starts Tidy Now over the listed files, under the same rule as any cleanup.
     private func startTidyNow() {
-        guard canStartCleanup, let location = model.location, let log = activity.log else { return }
+        guard canStartCleanup, let log = activity.log, let folder = activity.downloads else { return }
         let tidy = TidyNowModel(
             eligibility: model.eligibility,
             applicationFolders: model.applicationFolders,
@@ -564,7 +563,7 @@ struct ContentView: View {
         tidyNow = PresentedTidyNow(model: tidy, log: log)
         tidy.start(
             records: model.records,
-            folderURL: location.folderURL,
+            folder: folder,
             eligibility: model.eligibility,
             applicationFolders: model.applicationFolders,
             hashCache: search.hashCache,
@@ -632,7 +631,9 @@ private struct PresentedPlanSheet: View {
         self.markKept = markKept
         self.onExecuted = onExecuted
         self.onUndo = onUndo
-        _log = State(initialValue: activity.log)
+        // A plan names its folder by the ID the log gave it. One made before the log was replaced
+        // names a folder the open log does not hold, and cannot be carried out in it.
+        _log = State(initialValue: plan.folder == activity.downloads ? activity.log : nil)
     }
 
     var body: some View {
@@ -649,8 +650,8 @@ private struct PresentedPlanSheet: View {
                 onExecuted()
             }
         } else {
-            // The log stopped working between the search and its preview: nothing may be carried
-            // out, so there is nothing to preview.
+            // The log stopped working, or was replaced, between the search and its preview: nothing
+            // may be carried out, so there is nothing to preview.
             ActivityLogUnavailableSheet(activity: activity)
         }
     }

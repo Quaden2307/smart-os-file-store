@@ -65,7 +65,7 @@ Version 0.3 needs macOS 27. It is in progress; this is what is in so far.
 ## What it does not do yet
 
 - The chat cannot change a card by talking yet ("leave out the PDFs"), there is no New Chat, and it knows names, sizes, dates, sources and marks, not what files contain. The on-device model is small: it sometimes picks the wrong cleanup or the wrong dates, which is what "What I understood" and Review are for. While typing in the chat bar, ⌘Z does not undo typing (and never starts undoing a cleanup).
-- Only the top level of Downloads. No other folders and no subfolders.
+- Only the top level of Downloads. No other folders and no subfolders. (The engine already knows about more than one folder, so Desktop, Documents and folders of your choosing can follow; see [decision 0026](docs/decisions/0026-managed-folders.md).)
 - All six cleanups are here: Find Duplicates, Clear Failed Downloads, Remove Unpacked Zips, Remove Used Installers, Fix Messy Names, Review Near-Duplicates and Archive Old Downloads, Remove Empty Folders, and the review list Review Large Downloads, plus Tidy Now, which runs them together.
 - An Activity entry cannot be opened for more detail yet. That is planned for later, perhaps with an Apple Intelligence summary.
 - No watching of the folder: the list refreshes on launch, with ⌘R, and after Move to Trash.
@@ -158,6 +158,8 @@ xcodebuild -scheme SmartOSFileStore -destination 'platform=macOS' -configuration
 TEST_RUNNER_SMARTOS_BENCHMARK_FILES=50000 xcodebuild -scheme SmartOSFileStore -destination 'platform=macOS' -configuration Release -derivedDataPath build test -testPlan Benchmark 2>&1 | grep BENCHMARK
 ```
 
+Memory figures depend on what ran earlier in the same process. To measure one benchmark alone, add `-only-testing:"FileStoreCoreTests/BenchmarkTests/<test>()"`, for example `tidyNowAtTenThousandFiles()`. Times vary by more than 10 percent from run to run on a busy Mac, so compare a change with the commit before it measured the same day (docs/benchmarks.md shows how).
+
 ### Chat measurements
 
 The chat's tests use a scripted stand-in for the model, so they and CI never need Apple Intelligence. Two suites do use the real on-device model. The measurements take how much of the model's context the instructions and tool definitions take, the time to the first text and for a whole answer over 20 questions (with and without prewarming), the size of a tool's output, how fast Stop is, and how much of the context a 30-question conversation uses. The evals check which lookup the model makes for a few questions whose right lookup is known, among them six ways of asking about duplicates, and for follow-ups in one conversation ("only the big ones", "sort those by size", "Continue" after Stop), for cleanups asked for in words, and for requests the app cannot do, which must make no card. Both run from the same Benchmark plan, take several minutes, and only on a Mac with Apple Intelligence turned on. Copy the `CHAT` lines into the decision record that holds the last ones ([0023](docs/decisions/0023-cleanups-from-the-chat-bar.md)):
@@ -186,6 +188,14 @@ Cleanup actions leave anything added or modified in the last hour alone. The scr
 open build/Build/Products/Debug/SmartOSFileStore.app --args -ScanFolder /path/to/FakeDownloads -GracePeriodSeconds 0
 ```
 
+To try the app on a whole fake home, with a Desktop and a Documents folder beside Downloads, run `DEMO_HOME=1 scripts/make-fake-downloads.sh` and pass the "Demo home" path it prints with `-DemoHome` (or in `SMARTOS_DEMO_HOME`). The three folders in it then stand in for the real ones, which are never looked up. The app still shows Downloads only; the other two are there for the engine and for later.
+
+```bash
+open build/Build/Products/Debug/SmartOSFileStore.app --args -DemoHome /path/to/Home -ApplicationsFolder /path/to/FakeApplications
+```
+
+When more than one of these is set, one applies: `-DemoHome` first, then `-ScanFolder`, then `SMARTOS_DEMO_HOME`, then `SMARTOS_SCAN_FOLDER`. One that cannot be used (a folder that is missing, say) shows an error; the app never falls back to the real folders.
+
 The welcome is shown once. To see it again on a launch, add `-WelcomeShown NO` to the arguments.
 
 Remove Used Installers looks for installed apps in `/Applications` and `~/Applications`. To try it against the script's fake apps instead, also pass `-ApplicationsFolder` (debug only; a path that is not a folder means no folder at all, never the real ones):
@@ -194,7 +204,7 @@ Remove Used Installers looks for installed apps in `/Applications` and `~/Applic
 open build/Build/Products/Debug/SmartOSFileStore.app --args -ScanFolder /path/to/FakeDownloads -ApplicationsFolder /path/to/FakeApplications
 ```
 
-While the scan folder is overridden, the activity log is a separate database under the temporary directory, one per fake folder, so hand testing never opens or writes the real log. In a debug build, the status line's tooltip shows the folder being scanned and the log's path; Settings shows the log's path too, with Reveal in Finder. To see how the app handles a damaged log, quit the app, overwrite that file (`head -c 8192 /dev/urandom > "<path>"`) and launch again.
+While the scan folder or the home is overridden, the activity log is a separate database under the temporary directory, one per fake folder or fake home, so hand testing never opens or writes the real log. In a debug build, the status line's tooltip shows the folder being scanned and the log's path; Settings shows the log's path too, with Reveal in Finder. To see how the app handles a damaged log, quit the app, overwrite that file (`head -c 8192 /dev/urandom > "<path>"`) and launch again.
 
 Design decisions are recorded in [docs/decisions/](docs/decisions/).
 

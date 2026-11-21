@@ -38,7 +38,7 @@ struct DiskImageTests {
         return try #require(try await CleanupPlanners.plan(
             .removeUsedInstallers,
             records: records,
-            in: fixture.url,
+            in: .temporary(fixture.url),
             eligibility: CandidateEligibility(),
             keptItems: keptItems,
             installers: .testing(applications: [fixture.applicationsURL], cache: cache, receipts: receipts, mounts: mounts),
@@ -106,7 +106,7 @@ struct DiskImageTests {
             let records = try await RelocationPlans.records(in: fixture.url)
             let log = try await ActivityLog.open(.inMemory)
             try await log.keep([try RelocationPlans.record(named: Names.diskImage, in: records)])
-            let plan = try await plan(fixture, mounts: await prepared(root, tool: calls.tool), keeping: try await log.keptItems(forFolder: fixture.url))
+            let plan = try await plan(fixture, mounts: await prepared(root, tool: calls.tool), keeping: try await log.keptItems(for: log.downloads(at: fixture.url)))
             #expect(calls.attaches == 0)
             #expect(!plan.changes.contains { $0.record.displayName == Names.diskImage })
             #expect(!plan.skippedItems.contains { $0.url.lastPathComponent == Names.diskImage })
@@ -121,7 +121,7 @@ struct DiskImageTests {
                 try await CleanupPlanners.plan(
                     .removeUsedInstallers,
                     records: records,
-                    in: fixture.url,
+                    in: .temporary(fixture.url),
                     eligibility: CandidateEligibility(),
                     keptItems: KeptItems(),
                     installers: .testing(applications: [fixture.applicationsURL], mounts: mounts)
@@ -165,7 +165,7 @@ struct DiskImageTests {
             let records = try await RelocationPlans.records(in: fixture.url)
             let first = Task {
                 try await CleanupPlanners.plan(
-                    .removeUsedInstallers, records: records, in: fixture.url, eligibility: CandidateEligibility(), keptItems: KeptItems(),
+                    .removeUsedInstallers, records: records, in: .temporary(fixture.url), eligibility: CandidateEligibility(), keptItems: KeptItems(),
                     installers: .testing(applications: [fixture.applicationsURL], mounts: mounts)
                 )
             }

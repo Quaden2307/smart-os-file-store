@@ -96,7 +96,9 @@ public struct CleanupLogFailure: Sendable, Hashable {
 public struct CleanupResult: Sendable, Hashable {
     public let action: CleanupAction
 
-    public let folderURL: URL
+    public let folder: ManagedFolder
+
+    public var folderURL: URL { folder.url }
 
     public let items: [CleanupItemResult]
 
@@ -114,14 +116,14 @@ public struct CleanupResult: Sendable, Hashable {
 
     public init(
         action: CleanupAction,
-        folderURL: URL,
+        folder: ManagedFolder,
         items: [CleanupItemResult],
         wasCancelled: Bool,
         logFailure: CleanupLogFailure? = nil,
         runID: ActivityRun.ID? = nil
     ) {
         self.action = action
-        self.folderURL = folderURL
+        self.folder = folder
         self.items = items
         self.wasCancelled = wasCancelled
         self.logFailure = logFailure

@@ -71,10 +71,13 @@ enum UndoFixtures {
         _ names: [String],
         in folder: URL,
         to trash: FakeTrash,
-        log: ActivityLog
+        log: ActivityLog,
+        managedFolder: ManagedFolder? = nil
     ) async throws -> (runID: Int64, trashURLs: [String: URL]) {
         let records = try await RelocationPlans.records(in: folder)
-        let runID = try log.beginRun(CleanupRunStart(action: .findDuplicates, folderURL: folder, confirmedCount: names.count, startedAt: now))
+        // In the log's own Downloads, unless the test names another folder the log holds.
+        let runFolder = managedFolder ?? log.downloads(at: folder)
+        let runID = try log.beginRun(CleanupRunStart(action: .findDuplicates, folder: runFolder, confirmedCount: names.count, startedAt: now))
         var trashURLs: [String: URL] = [:]
         for (sequence, name) in names.enumerated() {
             let record = try RelocationPlans.record(named: name, in: records)
@@ -112,7 +115,7 @@ enum UndoFixtures {
     ) async throws -> (runID: Int64, trashURLs: [String: URL]) {
         let records = try await RelocationPlans.records(in: folder)
         let runID = try log.beginRun(
-            CleanupRunStart(action: .clearFailedDownloads, folderURL: folder, confirmedCount: names.count, startedAt: now)
+            CleanupRunStart(action: .clearFailedDownloads, folder: log.downloads(at: folder), confirmedCount: names.count, startedAt: now)
         )
         var trashURLs: [String: URL] = [:]
         for (sequence, name) in names.enumerated() {
@@ -152,7 +155,7 @@ enum UndoFixtures {
         recorder: (any CleanupRecording)? = nil,
         beforeChange: (@Sendable (UndoStep) -> Void)? = nil
     ) async throws -> UndoResult {
-        let plan = try await UndoPlanner(trash: trash).plan(target, log: log, folderURL: folder)
+        let plan = try await UndoPlanner(trash: trash).plan(target, log: log, folders: .testing(downloads: folder))
         return await CleanupExecutor(recorder: recorder ?? (log as any CleanupRecording)).undo(plan, trash: trash, beforeChange: beforeChange)
     }
 

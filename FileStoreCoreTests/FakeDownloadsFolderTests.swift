@@ -12,7 +12,7 @@ struct FakeDownloadsFolderTests {
     private let scanner = FolderScanner()
 
     private func records(_ fixture: FakeDownloadsFolder) async throws -> [FileRecord] {
-        try await scanner.scan(ScanLocation(folderURL: fixture.url, source: .launchArgument)).records
+        try await scanner.scan(.temporary(fixture.url)).records
     }
 
     private func zipEntries(_ url: URL) throws -> Set<String> {
@@ -108,7 +108,7 @@ struct FakeDownloadsFolderTests {
             let all = try await records(fixture)
             #expect(all.count == FakeDownloadsFolder.expectedTopLevelNames.count)
             for record in all {
-                let marks = FileMarker.marks(for: record, now: now, settings: settings)
+                let marks = FileMarker.marks(for: record, in: .temporary(fixture.url), now: now, settings: settings)
                 #expect(marks == expected[record.displayName, default: []], "\(record.displayName) has marks \(marks)")
             }
         }

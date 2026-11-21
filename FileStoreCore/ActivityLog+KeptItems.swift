@@ -6,13 +6,15 @@ internal import GRDB
 /// volume gives no lasting identity; `KeptItems` holds the matching rule, and `keptMatch` below
 /// is the same rule in SQL (decision record 0009).
 extension ActivityLog {
-    /// Marks `records` Kept as of `now`. An item already Kept stays as it was.
+    /// Marks `records`, which are in `folder`, Kept as of `now`. An item already Kept stays as it
+    /// was. The folder is recorded with the entry; it does not narrow the mark, which follows the
+    /// file wherever it goes (decision records 0009 and 0026).
     ///
     /// Each item is marked by the identity it has now, read again from disk: a file saved since the
     /// scan by writing a new copy is the one at its place now, and that is the file the user sees and
     /// means. Only when nothing can be read there does the scan's identity stand.
     @concurrent
-    public func keep(_ records: [FileRecord], now: Date = .now) async throws(ActivityLogError) {
+    public func keep(_ records: [FileRecord], in folder: ManagedFolder, now: Date = .now) async throws(ActivityLogError) {
         guard !records.isEmpty else { return }
         var volumes: [String: VolumeIdentity?] = [:]
         let entries = records.map { record in
@@ -23,7 +25,7 @@ extension ActivityLog {
                 // Uniqueness only: a row that broke the table's CHECK must fail, not vanish.
                 try db.execute(
                     sql: """
-                        INSERT INTO keptItems (volumeUUID, fileNumber, path, keptAt) VALUES (?, ?, ?, ?)
+                        INSERT INTO keptItems (volumeUUID, fileNumber, path, keptAt, folderID) VALUES (?, ?, ?, ?, ?)
                         ON CONFLICT DO NOTHING
                         """,
                     arguments: [
@@ -31,6 +33,7 @@ extension ActivityLog {
                         entry.identity.map { Self.storedFileNumber($0.fileNumber) },
                         entry.path,
                         now.timeIntervalSinceReferenceDate,
+                        folder.id.uuidString,
                     ]
                 )
             }
@@ -62,8 +65,8 @@ extension ActivityLog {
         Self.logger.info("Stopped keeping all \(removed) items")
     }
 
-    /// The Kept list, once the entries for items that no longer exist are dropped: an entry whose
-    /// number nothing on the volume of `folderURL` has any more, or, for an entry without one, an
+    /// The Kept list, every folder's, once the entries for items that no longer exist are dropped:
+    /// an entry whose number nothing on the volume of `folder` has any more, or, for an entry without one, an
     /// item inside the folder whose path leads nowhere. An entry is dropped only when the system
     /// says the item is gone; one it cannot tell about, or one on another volume, stays, and while
     /// the folder cannot be reached (its disk is not connected, say) nothing is dropped. An item
@@ -72,10 +75,10 @@ extension ActivityLog {
     /// The list is read, then looked up on disk with no lock held; it is written to only when an
     /// entry is to be dropped.
     ///
-    /// - Parameter folderURL: The scanned folder, whose volume the entries are looked up on.
+    /// - Parameter folder: The scanned folder, whose volume the entries are looked up on.
     @concurrent
-    public func keptItems(forFolder folderURL: URL) async throws(ActivityLogError) -> KeptItems {
-        let folderPath = folderURL.path(percentEncoded: false)
+    public func keptItems(for folder: ManagedFolder) async throws(ActivityLogError) -> KeptItems {
+        let folderPath = folder.url.path(percentEncoded: false)
         let volume = VolumeIdentity.of(folderPath: folderPath)
         let pathPrefix = folderPath.hasSuffix("/") ? folderPath : folderPath + "/"
         let rows = try read { db in

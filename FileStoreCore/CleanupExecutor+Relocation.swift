@@ -84,7 +84,7 @@ extension CleanupExecutor {
             addedTime = try FileStatus.addedTime(path: name, relativeTo: folder.descriptor)
             return addedTime.map(FileStatus.date(of:))
         }
-        if let refused = sharedRefusal(status, itemURL: itemURL, change: change, now: now, readDateAdded: readDateAdded) {
+        if let refused = sharedRefusal(status, itemURL: itemURL, change: change, in: context.folder, now: now, readDateAdded: readDateAdded) {
             return result(refused)
         }
 
@@ -202,6 +202,10 @@ extension CleanupExecutor {
     /// Opens the folder `name` inside `parent`: never through a link, never a hidden one, and only
     /// on the scanned folder's disk, since a disk mounted inside the folder is somewhere else.
     static func step(into name: String, from parent: DirectoryHandle, device: dev_t) -> FolderStep {
+        // A folder kept in the cloud is not opened, which could fetch it.
+        if (try? parent.status(of: name))?.isDataless == true {
+            return .refused(.skipped(.notDownloaded))
+        }
         let child: DirectoryHandle
         do throws(DirectoryHandle.OpenFailure) {
             child = try parent.openFolder(named: name)

@@ -41,7 +41,7 @@ struct ScaleTests {
 
         // Scan
         let scanStart = clock.now
-        let scan = try await scanner.scan(ScanLocation(folderURL: temp.url, source: .launchArgument))
+        let scan = try await scanner.scan(.temporary(temp.url))
         let scanTime = clock.now - scanStart
         #expect(scan.records.count == Self.smallFileCount + 3)
         #expect(scan.skippedItems.isEmpty)
@@ -53,7 +53,7 @@ struct ScaleTests {
         let peak = Mutex<UInt64>(0)
         let before = try #require(physicalFootprintInBytes())
         let planStart = clock.now
-        let plan = try await planner.plan(records: scan.records, in: temp.url, now: Date(timeIntervalSinceNow: 2 * 3_600)) { progress in
+        let plan = try await planner.plan(records: scan.records, in: .temporary(temp.url), now: Date(timeIntervalSinceNow: 2 * 3_600)) { progress in
             first.withLock { stored in
                 if stored == nil {
                     stored = progress
@@ -91,7 +91,7 @@ struct ScaleTests {
         for _ in 0..<2 where growth >= bound {
             let again = try #require(physicalFootprintInBytes())
             let peakAgain = Mutex<UInt64>(0)
-            _ = try await planner.plan(records: scan.records, in: temp.url, now: Date(timeIntervalSinceNow: 2 * 3_600)) { _ in
+            _ = try await planner.plan(records: scan.records, in: .temporary(temp.url), now: Date(timeIntervalSinceNow: 2 * 3_600)) { _ in
                 if let footprint = physicalFootprintInBytes() {
                     peakAgain.withLock { $0 = max($0, footprint) }
                 }
@@ -115,7 +115,7 @@ struct ScaleTests {
         defer { temp.remove() }
         try BulkFiles.writeSparseFile(temp.url.appending(path: "big-a.bin"), size: Self.bigSize)
         try BulkFiles.writeSparseFile(temp.url.appending(path: "big-b.bin"), size: Self.bigSize)
-        let records = try await scanner.scan(ScanLocation(folderURL: temp.url, source: .launchArgument)).records
+        let records = try await scanner.scan(.temporary(temp.url)).records
         #expect(records.count == 2)
         let clock = ContinuousClock()
         let planner = planner
@@ -127,7 +127,7 @@ struct ScaleTests {
         let cancelledAt = Mutex<ContinuousClock.Instant?>(nil)
 
         let task = Task<CleanupPlan, any Error> {
-            try await planner.plan(records: records, in: folder, now: Date(timeIntervalSinceNow: 2 * 3_600)) { progress in
+            try await planner.plan(records: records, in: .temporary(folder), now: Date(timeIntervalSinceNow: 2 * 3_600)) { progress in
                 guard progress.bytesHashed > 64 * Self.mebibyte else { return }
                 searchTask.withLock { task in
                     guard let task else { return }
@@ -220,7 +220,7 @@ struct ScaleTests {
         try ZipTools.zip(["big"], in: temp.url, to: zip)
         try FileDates.settle([big, zip])
         let setupTime = clock.now - setupStart
-        let records = try await scanner.scan(ScanLocation(folderURL: temp.url, source: .launchArgument)).records
+        let records = try await scanner.scan(.temporary(temp.url)).records
         #expect(records.count == 2)
 
         let before = try #require(physicalFootprintInBytes())
@@ -231,7 +231,7 @@ struct ScaleTests {
 
         let planStart = clock.now
         let plan = try #require(
-            try await CleanupPlanners.plan(.removeUnpackedZips, records: records, in: temp.url, eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: .testing())
+            try await CleanupPlanners.plan(.removeUnpackedZips, records: records, in: .temporary(temp.url), eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: .testing())
         )
         let planTime = clock.now - planStart
         let after = try #require(physicalFootprintInBytes())

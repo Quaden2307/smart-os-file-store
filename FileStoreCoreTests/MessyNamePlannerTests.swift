@@ -44,9 +44,9 @@ struct MessyNamePlannerTests {
     ) -> CleanupPlan {
         let planner = planner ?? self.planner
         return MessyNamePlanner.makePlan(
-            folderURL: Self.folder,
+            folder: .temporary(Self.folder),
             records: records,
-            candidates: planner.candidates(in: records, folderURL: Self.folder, now: Self.now),
+            candidates: planner.candidates(in: records, folder: .temporary(Self.folder), now: Self.now),
             identicalTakers: Set(records.filter { identical.contains($0.displayName) }.map(\.id)),
             caseSensitive: caseSensitive,
             timeZone: Self.utc
@@ -120,7 +120,7 @@ struct MessyNamePlannerTests {
         )
         let candidates = MessyNameCleaner.clean(undated.displayName).map { [MessyNamePlanner.Candidate(record: undated, cleaned: $0)] } ?? []
         let plan = MessyNamePlanner.makePlan(
-            folderURL: Self.folder, records: [record("a.txt"), undated], candidates: candidates, caseSensitive: false, timeZone: Self.utc
+            folder: .temporary(Self.folder), records: [record("a.txt"), undated], candidates: candidates, caseSensitive: false, timeZone: Self.utc
         )
         #expect(plan.isEmpty)
         #expect(plan.skippedItems == [CleanupPlan.SkippedItem(url: undated.url, reason: .invalidName)])
@@ -218,9 +218,9 @@ struct MessyNamePlannerTests {
     @Test func aFileThatCouldNotBeComparedIsReportedNotProposed() {
         let messy = record("receipt (1).pdf")
         let plan = MessyNamePlanner.makePlan(
-            folderURL: Self.folder,
+            folder: .temporary(Self.folder),
             records: [record("receipt.pdf"), messy],
-            candidates: planner.candidates(in: [messy], folderURL: Self.folder, now: Self.now),
+            candidates: planner.candidates(in: [messy], folder: .temporary(Self.folder), now: Self.now),
             skippedItems: [CleanupPlan.SkippedItem(url: messy.url, reason: .accessDenied)],
             caseSensitive: false,
             timeZone: Self.utc

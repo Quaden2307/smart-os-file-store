@@ -30,7 +30,9 @@ enum FileNameRules {
     /// since every action would then leave the item alone for good.
     static func isAllowedFileName(_ name: String, maximumLength: Int) -> Bool {
         isSingleName(name, maximumLength: maximumLength)
-            && !CandidateEligibility.isExcludedName(name)
+            // One name for every kind of folder today. When kinds get names of their own, a new
+            // name must be none of them.
+            && !CandidateEligibility.isExcludedName(name, archiveFolderName: CandidateEligibility.archiveFolderName)
             && !FileRecord.isInProgressDownload(name: name)
     }
 

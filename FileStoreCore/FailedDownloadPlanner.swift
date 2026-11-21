@@ -64,7 +64,7 @@ public struct FailedDownloadPlanner: Sendable {
 
     /// True when the plan at `now` would propose `record`: the file list's Failed download mark asks
     /// the same question, so the two never disagree.
-    public func isCandidate(_ record: FileRecord, now: Date) -> Bool {
+    public func isCandidate(_ record: FileRecord, in folder: ManagedFolder, now: Date) -> Bool {
         // The scan's flag answers for almost every item at no cost: the file list asks this of all.
         guard record.isDownloading,
               let shape = Self.partialShape(ofName: record.displayName),
@@ -75,21 +75,22 @@ public struct FailedDownloadPlanner: Sendable {
         if shape == .folder, record.readContents == nil {
             return false
         }
-        return eligibility.refusal(for: record, now: now, downloads: .allowed) == nil
+        return eligibility.refusal(for: record, in: folder, now: now, downloads: .allowed) == nil
     }
 
     /// The plan for the records directly inside `folderURL`, from one scan of it, at `now`. Changes
     /// are in name order.
     /// A `.download` folder whose contents could not be read is reported as not checked; one too
     /// big to be a download is left out.
-    public func plan(records: [FileRecord], in folderURL: URL, now: Date = .now) -> CleanupPlan {
+    public func plan(records: [FileRecord], in folder: ManagedFolder, now: Date = .now) -> CleanupPlan {
+        let folderURL = folder.url
         // Only the folder's own items: never anything inside a folder in it, the archive's included.
         let records = DuplicatePlanner.recordsDirectlyInside(folderURL, among: records)
         let finished = Self.finishedItemNames(in: records)
         var changes: [ProposedChange] = []
         var skippedItems: [CleanupPlan.SkippedItem] = []
         for record in records {
-            if isCandidate(record, now: now), let stoppedOn = record.lastChange {
+            if isCandidate(record, in: folder, now: now), let stoppedOn = record.lastChange {
                 let finishedFileName = finished[Self.finishedName(of: record.displayName).lowercased()]
                 changes.append(
                     ProposedChange(
@@ -98,13 +99,13 @@ public struct FailedDownloadPlanner: Sendable {
                         reason: .failedDownload(stoppedOn: stoppedOn, finishedFileName: finishedFileName)
                     )
                 )
-            } else if let reason = unreadableReason(for: record, now: now) {
+            } else if let reason = unreadableReason(for: record, in: folder, now: now) {
                 skippedItems.append(CleanupPlan.SkippedItem(url: record.url, reason: reason))
             }
         }
         changes.sort { Self.isOrderedBefore($0.record.displayName, $1.record.displayName) }
         skippedItems.sort { Self.isOrderedBefore($0.url.lastPathComponent, $1.url.lastPathComponent) }
-        return CleanupPlan(action: .clearFailedDownloads, folderURL: folderURL, changes: changes, skippedItems: skippedItems)
+        return CleanupPlan(action: .clearFailedDownloads, folder: folder, changes: changes, skippedItems: skippedItems)
     }
 
     // MARK: - Rules
@@ -112,11 +113,11 @@ public struct FailedDownloadPlanner: Sendable {
     /// Why a `.download` folder that could be a candidate was not checked, or nil. The shared rules
     /// apply by the folder's own dates, the only ones known: a folder changed within the grace
     /// period may simply be downloading, and is left out without a word, like a fresh candidate.
-    private func unreadableReason(for record: FileRecord, now: Date) -> CleanupSkipReason? {
+    private func unreadableReason(for record: FileRecord, in folder: ManagedFolder, now: Date) -> CleanupSkipReason? {
         guard Self.partialShape(ofName: record.displayName) == .folder,
               Self.kind(record.kind, fits: .folder),
               case .failure(let failure) = record.packageContents,
-              eligibility.refusal(for: record, now: now, downloads: .allowed) == nil else {
+              eligibility.refusal(for: record, in: folder, now: now, downloads: .allowed) == nil else {
             return nil
         }
         return CleanupSkipReason(packageFailure: failure)

@@ -19,7 +19,7 @@ struct ArchiveDiskTests {
             try await CleanupPlanners.plan(
                 .archiveOldDownloads,
                 records: try await RelocationPlans.records(in: folder),
-                in: folder,
+                in: .temporary(folder),
                 eligibility: CandidateEligibility(),
                 keptItems: KeptItems(),
                 installers: .testing(applications: [])
@@ -66,7 +66,7 @@ struct ArchiveDiskTests {
     @Test func theFakeFoldersOldFilesAreProposedAndTheFreshOnesAreNot() async throws {
         try await withFakeDownloadsFolder { fixture in
             let plan = try await plan(fixture.url)
-            let archive = ArchivePlanner.archiveURL(in: fixture.url)
+            let archive = ArchivePlanner.archiveURL(in: .temporary(fixture.url))
             #expect(plan.changes.map(\.record.displayName) == [Names.oldManual, Names.oldReceipt])
             #expect(plan.changes.map(\.operation) == [.move(to: archive, name: Names.oldManual), .move(to: archive, name: Names.oldReceipt)])
             #expect(plan.changes.map(\.reason) == [
@@ -92,7 +92,7 @@ struct ArchiveDiskTests {
             try ExtendedAttributes.setQuarantine(ExtendedAttributes.quarantineValue(app: "Safari", downloadedAt: Self.oldDate), on: a)
             let before = Dictionary(uniqueKeysWithValues: files.keys.map { ($0, Metadata(folder.appending(path: $0))) })
             let log = try await ActivityLog.open(.inMemory)
-            let archive = ArchivePlanner.archiveURL(in: folder)
+            let archive = ArchivePlanner.archiveURL(in: log.downloads(at: folder))
 
             let result = await executeAll(try await plan(folder), log: log)
 
@@ -122,7 +122,7 @@ struct ArchiveDiskTests {
             let records = try await RelocationPlans.records(in: folder)
             for action in CleanupAction.allCases where CleanupPlanners.hasPlanner(action) {
                 let other = try #require(
-                    try await CleanupPlanners.plan(action, records: records, in: folder, eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: .testing(applications: []))
+                    try await CleanupPlanners.plan(action, records: records, in: log.downloads(at: folder), eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: .testing(applications: []))
                 )
                 #expect(other.isEmpty, "\(action)")
                 #expect(other.skippedItems.isEmpty, "\(action)")
@@ -146,7 +146,7 @@ struct ArchiveDiskTests {
     @Test func anExistingArchiveFolderIsUsedAndNoFolderIsMade() async throws {
         try await withTemporaryFolderAsync { folder in
             try writeOld(["a.pdf": "first"], in: folder)
-            let archive = ArchivePlanner.archiveURL(in: folder)
+            let archive = ArchivePlanner.archiveURL(in: .temporary(folder))
             try FileManager.default.createDirectory(at: archive, withIntermediateDirectories: false)
             let log = try await ActivityLog.open(.inMemory)
             let result = await executeAll(try await plan(folder), log: log)
@@ -162,14 +162,14 @@ struct ArchiveDiskTests {
         try await withTemporaryFolderAsync { folder in
             let files = ["manual.pdf": "the manual", "report.pdf": "this year's report"]
             try writeOld(files, in: folder)
-            let archive = ArchivePlanner.archiveURL(in: folder)
+            let archive = ArchivePlanner.archiveURL(in: .temporary(folder))
             try FileManager.default.createDirectory(at: archive, withIntermediateDirectories: false)
             try Data("the manual".utf8).write(to: archive.appending(path: "manual.pdf"))
             try Data("last year's report".utf8).write(to: archive.appending(path: "Report.pdf"))
             let log = try await ActivityLog.open(.inMemory)
             let utc = TimeZone(identifier: "UTC") ?? .gmt
 
-            let plan = try await ArchivePlanner().plan(records: try await RelocationPlans.records(in: folder), in: folder, timeZone: utc)
+            let plan = try await ArchivePlanner().plan(records: try await RelocationPlans.records(in: folder), in: log.downloads(at: folder), timeZone: utc)
             #expect(plan.changes.map(\.operation) == [.moveToTrash, .move(to: archive, name: "report 2025-01-01.pdf")])
             #expect(plan.changes.first?.reason == .alreadyArchived(copyNamed: "manual.pdf"))
 
@@ -197,7 +197,7 @@ struct ArchiveDiskTests {
     @Test func aChangedOrMissingArchivedCopyLeavesTheFileAlone() async throws {
         try await withTemporaryFolderAsync { folder in
             try writeOld(["manual.pdf": "the manual", "guide.pdf": "the guide"], in: folder)
-            let archive = ArchivePlanner.archiveURL(in: folder)
+            let archive = ArchivePlanner.archiveURL(in: .temporary(folder))
             try FileManager.default.createDirectory(at: archive, withIntermediateDirectories: false)
             try Data("the manual".utf8).write(to: archive.appending(path: "manual.pdf"))
             try Data("the guide".utf8).write(to: archive.appending(path: "guide.pdf"))
@@ -216,7 +216,7 @@ struct ArchiveDiskTests {
             // A Trash change of this action without an archived copy named is not in any plan.
             let crafted = CleanupPlan(
                 action: .archiveOldDownloads,
-                folderURL: folder,
+                folder: .temporary(folder),
                 changes: [ProposedChange(record: try #require(plan.changes.first?.record), operation: .moveToTrash, reason: RelocationPlans.archiveReason)]
             )
             let craftedResult = await executeAll(crafted, log: try await ActivityLog.open(.inMemory))
@@ -230,7 +230,7 @@ struct ArchiveDiskTests {
     func anArchiveNameThatIsNotAFolderStopsTheAction(isLink: Bool) async throws {
         try await withTemporaryFolderAsync { folder in
             try writeOld(["a.pdf": "first"], in: folder)
-            let archive = ArchivePlanner.archiveURL(in: folder)
+            let archive = ArchivePlanner.archiveURL(in: .temporary(folder))
             let elsewhere = try TemporaryFolder.make()
             defer { elsewhere.remove() }
             if isLink {
@@ -256,7 +256,7 @@ struct ArchiveDiskTests {
             try writeOld(["a.pdf": "first", "b.pdf": "second"], in: folder)
             let plan = try await plan(folder)
             #expect(plan.changes.count == 2)
-            let archive = ArchivePlanner.archiveURL(in: folder)
+            let archive = ArchivePlanner.archiveURL(in: .temporary(folder))
             let elsewhere = try TemporaryFolder.make()
             defer { elsewhere.remove() }
             if isLink {
@@ -290,8 +290,8 @@ struct ArchiveOutOfBoundsTests {
             let archive = try RelocationPlans.record(named: CandidateEligibility.archiveFolderName, in: records)
             #expect(archive.kind == .folder)
             #expect(!records.contains { $0.url.deletingLastPathComponent().lastPathComponent == CandidateEligibility.archiveFolderName })
-            #expect(CandidateEligibility().refusal(for: archive, now: .now) == .excludedName)
-            #expect(FileMarker.marks(for: archive, now: .now, settings: CleanupSettings()).isEmpty)
+            #expect(CandidateEligibility().refusal(for: archive, in: .temporary(archive.url.deletingLastPathComponent()), now: .now) == .excludedName)
+            #expect(FileMarker.marks(for: archive, in: .temporary(archive.url.deletingLastPathComponent()), now: .now, settings: CleanupSettings()).isEmpty)
         }
     }
 
@@ -300,7 +300,7 @@ struct ArchiveOutOfBoundsTests {
     @Test(arguments: PlannersRespectKeptTests.plannedActions)
     func noPlannerNamesTheArchiveOrAnythingInIt(action: CleanupAction) async throws {
         try await withFakeDownloadsFolder { fixture in
-            let archive = ArchivePlanner.archiveURL(in: fixture.url)
+            let archive = ArchivePlanner.archiveURL(in: .temporary(fixture.url))
             var copies: [URL] = []
             for record in try await RelocationPlans.records(in: fixture.url)
             where record.kind != .symlink && record.displayName != CandidateEligibility.archiveFolderName {
@@ -318,7 +318,7 @@ struct ArchiveOutOfBoundsTests {
             let records = try await RelocationPlans.records(in: fixture.url) + (try await RelocationPlans.records(in: archive))
 
             let plan = try #require(
-                try await CleanupPlanners.plan(action, records: records, in: fixture.url, eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: .testing(applications: [fixture.applicationsURL]), settings: PlannersRespectKeptTests.settings)
+                try await CleanupPlanners.plan(action, records: records, in: .temporary(fixture.url), eligibility: CandidateEligibility(), keptItems: KeptItems(), installers: .testing(applications: [fixture.applicationsURL]), settings: PlannersRespectKeptTests.settings)
             )
             let named = plan.changes.map(\.id) + plan.skippedItems.map(\.url)
                 + plan.duplicateGroups.flatMap { [$0.kept.url] + $0.duplicates.map(\.url) }

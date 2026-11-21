@@ -36,7 +36,7 @@ struct NearDuplicatePlannerTests {
         contents: [String: UInt8],
         planner: NearDuplicatePlanner = NearDuplicatePlanner()
     ) -> CleanupPlan {
-        let candidates = planner.candidates(in: records, folderURL: Self.folder, now: Self.now)
+        let candidates = planner.candidates(in: records, folder: .temporary(Self.folder), now: Self.now)
         var hashes: [FileRecord.ID: ContentHash] = [:]
         for record in candidates {
             if let byte = contents[record.displayName] {
@@ -44,7 +44,7 @@ struct NearDuplicatePlannerTests {
             }
         }
         return NearDuplicatePlanner.makePlan(
-            folderURL: Self.folder,
+            folder: .temporary(Self.folder),
             nameGroups: NearDuplicatePlanner.nameGroups(of: candidates, caseSensitive: false),
             hashes: hashes
         )
@@ -86,7 +86,7 @@ struct NearDuplicatePlannerTests {
 
     @Test func namesMatchInAnyLetterCaseOnACaseInsensitiveVolume() {
         let records = [record("Report.PDF"), record("report (1).PDF")]
-        let candidates = NearDuplicatePlanner().candidates(in: records, folderURL: Self.folder, now: Self.now)
+        let candidates = NearDuplicatePlanner().candidates(in: records, folder: .temporary(Self.folder), now: Self.now)
 
         #expect(NearDuplicatePlanner.nameGroups(of: candidates, caseSensitive: false).count == 1)
         #expect(NearDuplicatePlanner.nameGroups(of: candidates, caseSensitive: true).isEmpty)
@@ -149,7 +149,7 @@ struct NearDuplicatePlannerTests {
             record("movie.mp4.crdownload"), record("movie (1).mp4.crdownload"),
             record("fresh.txt", age: 60), record("fresh (1).txt"),
         ]
-        let candidates = NearDuplicatePlanner().candidates(in: records, folderURL: Self.folder, now: Self.now)
+        let candidates = NearDuplicatePlanner().candidates(in: records, folder: .temporary(Self.folder), now: Self.now)
 
         #expect(NearDuplicatePlanner.nameGroups(of: candidates, caseSensitive: false).isEmpty)
     }

@@ -57,6 +57,9 @@ public struct ActivityRun: Sendable, Hashable, Identifiable {
     /// Where the run was started from.
     public let origin: RunOrigin
 
+    /// The managed folder the run was made in. Nil only for a row this version cannot read.
+    public let folderID: ManagedFolder.ID?
+
     /// The action code an undo run is stored with. No cleanup action has it.
     public static let undoActionCode = "undo"
 
@@ -90,7 +93,8 @@ public struct ActivityRun: Sendable, Hashable, Identifiable {
         undoneActionCode: String? = nil,
         bytesTakenFromTrash: Int64 = 0,
         undoneCount: Int = 0,
-        origin: RunOrigin = .app
+        origin: RunOrigin = .app,
+        folderID: ManagedFolder.ID? = nil
     ) {
         self.id = id
         self.actionCode = actionCode
@@ -107,6 +111,7 @@ public struct ActivityRun: Sendable, Hashable, Identifiable {
         self.bytesTakenFromTrash = bytesTakenFromTrash
         self.undoneCount = undoneCount
         self.origin = origin
+        self.folderID = folderID
     }
 }
 
@@ -291,31 +296,4 @@ public enum ActivityChangePresence: Sendable, Hashable {
 
     /// The place may not be looked at.
     case unknown
-}
-
-extension ActivityChange {
-    /// Looks, right now, for each change's file at its expected place. Reads names only, never content.
-    @concurrent
-    public static func presence(of changes: [ActivityChange]) async -> [ActivityChange.ID: ActivityChangePresence] {
-        var result: [ActivityChange.ID: ActivityChangePresence] = [:]
-        result.reserveCapacity(changes.count)
-        for change in changes {
-            guard let path = change.expectedPath else {
-                result[change.id] = .missing
-                continue
-            }
-            do throws(FileStatus.Failure) {
-                _ = try FileStatus.of(path: path)
-                result[change.id] = .present
-            } catch {
-                switch error {
-                case .notFound:
-                    result[change.id] = .missing
-                case .accessDenied, .other:
-                    result[change.id] = .unknown
-                }
-            }
-        }
-        return result
-    }
 }

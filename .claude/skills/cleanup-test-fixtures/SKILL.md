@@ -10,7 +10,7 @@ Smart OS File Store renames, moves and removes real files. Every cleanup feature
 ## Rules
 
 - Automated tests create their own folder under the system temporary directory and delete it when they finish.
-- For hand testing, create the folder with the script below and point the app at it. The app needs a debug-only way to choose the folder it scans (for example a launch argument or environment variable). If it does not have one yet, add that first.
+- For hand testing, create the folder with the script below and point the app at it with `-ScanFolder <path>`, or a whole fake home with `-DemoHome <path>` (both debug only).
 - When a new cleanup action is added, add the files that exercise it to both the script and the test helper, including its edge cases.
 
 ## Create a hand-testing folder
@@ -37,6 +37,23 @@ Run `scripts/make-fake-downloads.sh`. It makes a fresh `mktemp` folder holding `
 Every item that should be a candidate is dated two hours back, both its modification date and its Date Added, one second apart in the order the items were made, so the one-hour grace period does not hide it and the keep rule's "oldest first" sees the same order as before. The age cases are older still, and the fresh `.crdownload` is left as it is. No command-line tool sets Date Added, so the script does it with `scripts/set-dates.swift`. To try an action on files made seconds ago, launch a debug build with `-GracePeriodSeconds 0`.
 
 The script is the single source of truth for the fixture's contents. The test helper `FileStoreCoreTests/Support/FakeDownloadsFolder.swift` mirrors it case for case, with two documented differences: `big-video.mov` is 1 MiB, and the two disk images (`SomeApp-2.1.dmg`, `Locked-1.0.dmg`) are built only when a test asks for them (`FakeDownloadsFolder.make(includingDiskImage: true)`), because building one takes a second or two. Launch with `-ApplicationsFolder <FakeApplications>` as well as `-ScanFolder` to try Remove Used Installers; tests that mount images use their own private mount folder (`DiskImageMounts(root:)`), never the app's. Only ever delete a folder whose path came from `mktemp`.
+
+## A whole fake home
+
+`DEMO_HOME=1 scripts/make-fake-downloads.sh` builds a fake home in one call: the folder above as `Home/Downloads`, with `Home/Desktop` and `Home/Documents` beside it, and `FakeApplications/` as before. It also prints `Demo home: <path>`. Launch a debug build with `-DemoHome <that path>` (plus `-ApplicationsFolder` and, for files made just now, `-GracePeriodSeconds 0`): the three folders then stand in for the user's real ones, which are never looked up. The app shows Downloads only for now; Desktop and Documents are there for the engine's tests and for later segments.
+
+Desktop and Documents each hold a small set, in this order:
+
+| | Desktop | Documents |
+|---|---|---|
+| Two exact duplicates | `screenshot.png`, `screenshot copy.png` | `contract.pdf`, `contract (1).pdf` |
+| One name, different content | `todo.txt`, `todo (1).txt` | `letter.docx`, `letter (1).docx` |
+| A messy name whose clean form is free | `sketch (2).pdf` | `resume copy.docx` |
+| Old, never opened (2024-06-01) | `old-flyer.pdf` | `old-lease.pdf` |
+
+In tests, `withFakeHome { home in … }` (`FakeHome`, in `FileStoreCoreTests/Support/FakeDownloadsFolder.swift`) builds the same home; `home.folders` gives the three folders by kind. For tests of which folder a plan, a run or an undo belongs to, `ManagedHome` (in `Support/ManagedFolders.swift`) gives an empty home with Downloads and Desktop on a log's list.
+
+`-ScanFolder` still works as before and makes one folder Downloads, with no Desktop or Documents. If both are given, `-DemoHome` applies.
 
 ## What a cleanup feature must get right on this folder
 

@@ -82,7 +82,7 @@ enum FailedDownloads {
         return try await CleanupPlanners.plan(
             .clearFailedDownloads,
             records: records,
-            in: folder,
+            in: .temporary(folder),
             eligibility: CandidateEligibility(),
             keptItems: keptItems,
             installers: .testing(),

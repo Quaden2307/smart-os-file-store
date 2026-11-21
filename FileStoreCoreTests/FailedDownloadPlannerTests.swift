@@ -46,7 +46,7 @@ struct FailedDownloadPlannerTests {
     }
 
     private func plan(_ records: [FileRecord], planner: FailedDownloadPlanner? = nil) -> CleanupPlan {
-        (planner ?? self.planner).plan(records: records, in: Self.folder, now: Self.now)
+        (planner ?? self.planner).plan(records: records, in: .temporary(Self.folder), now: Self.now)
     }
 
     private func proposedNames(_ records: [FileRecord], planner: FailedDownloadPlanner? = nil) -> [String] {
@@ -174,7 +174,7 @@ struct FailedDownloadPlannerTests {
             record("note.download"),
         ]
         #expect(plan(records).isEmpty)
-        #expect(records.allSatisfy { !planner.isCandidate($0, now: Self.now) })
+        #expect(records.allSatisfy { !planner.isCandidate($0, in: .temporary(Self.folder), now: Self.now) })
     }
 
     @Test func extensionsMatchInAnyLetterCase() {
@@ -267,7 +267,7 @@ struct FailedDownloadPlannerTests {
         ]
         let proposed = Set(plan(records).changes.map(\.record.displayName))
         for item in records {
-            let marks = FileMarker.marks(for: item, now: Self.now, settings: CleanupSettings())
+            let marks = FileMarker.marks(for: item, in: .temporary(Self.folder), now: Self.now, settings: CleanupSettings())
             #expect(marks.contains(.failedDownload) == proposed.contains(item.displayName), "\(item.displayName): \(marks)")
         }
         #expect(proposed == ["movie.mp4.crdownload", "presentation.key.download"])
@@ -276,7 +276,7 @@ struct FailedDownloadPlannerTests {
     @Test func aKeptPartialIsMarkedKeptOnly() {
         let partial = record("movie.mp4.crdownload", identity: PersistentFileIdentity(volumeUUID: "V", fileNumber: 9))
         let list = KeptItems([KeptItem(identity: partial.persistentIdentity, path: partial.keptItemPath, keptAt: Self.now)])
-        let marks = FileMarker.marks(for: partial, now: Self.now, settings: CleanupSettings(), eligibility: CandidateEligibility(keptItems: list))
+        let marks = FileMarker.marks(for: partial, in: .temporary(Self.folder), now: Self.now, settings: CleanupSettings(), eligibility: CandidateEligibility(keptItems: list))
         #expect(marks == [.kept])
     }
 }

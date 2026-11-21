@@ -10,7 +10,7 @@ enum RelocationPlans {
     static let archiveReason = ProposedChange.Reason.neverOpened(downloadedOn: Date(timeIntervalSince1970: 1_735_722_000))
 
     static func records(in folder: URL) async throws -> [FileRecord] {
-        try await FolderScanner().scan(ScanLocation(folderURL: folder, source: .launchArgument)).records
+        try await FolderScanner().scan(.temporary(folder)).records
     }
 
     static func record(named name: String, in records: [FileRecord]) throws -> FileRecord {
@@ -23,7 +23,7 @@ enum RelocationPlans {
         let changes = try renames.map { rename in
             ProposedChange(record: try record(named: rename.name, in: records), operation: .rename(to: rename.newName), reason: .messyName(MessyNameFix(fixes: [])))
         }
-        return CleanupPlan(action: .fixMessyNames, folderURL: folder, changes: changes)
+        return CleanupPlan(action: .fixMessyNames, folder: .temporary(folder), changes: changes)
     }
 
     /// An Archive old downloads plan moving each file into its folder under its new name, in the
@@ -37,7 +37,7 @@ enum RelocationPlans {
                 reason: archiveReason
             )
         }
-        return CleanupPlan(action: .archiveOldDownloads, folderURL: folder, changes: changes)
+        return CleanupPlan(action: .archiveOldDownloads, folder: .temporary(folder), changes: changes)
     }
 
     static func outcome(for name: String, in result: CleanupResult) throws -> CleanupItemOutcome {

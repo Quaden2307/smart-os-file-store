@@ -74,6 +74,7 @@ extension CleanupExecutor {
             status,
             itemURL: itemURL,
             change: change,
+            in: context.folder,
             now: now,
             contents: contents,
             downloads: .allowed,

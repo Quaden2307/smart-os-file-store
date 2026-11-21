@@ -10,16 +10,17 @@ extension ArchivePlanner {
     @concurrent
     public func plan(
         records: [FileRecord],
-        in folderURL: URL,
+        in folder: ManagedFolder,
         now: Date = .now,
         timeZone: TimeZone = .current
     ) async throws(CleanupPlanningError) -> CleanupPlan {
-        let candidates = candidates(in: records, folderURL: folderURL, now: now)
+        let folderURL = folder.url
+        let candidates = candidates(in: records, folder: folder, now: now)
         // Unknown counts as not case-sensitive: more names clash, never fewer.
         let values = try? folderURL.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey])
         let caseSensitive = values?.volumeSupportsCaseSensitiveNames ?? false
 
-        let read = Self.readArchive(in: folderURL)
+        let read = Self.readArchive(in: folder)
         var entries: [ArchiveListing.Entry] = []
         var hashes: [FileRecord.ID: ContentHash] = [:]
         var skippedItems: [CleanupPlan.SkippedItem] = []
@@ -42,7 +43,7 @@ extension ArchivePlanner {
                 }
                 let theirs: ContentHash?
                 do throws(ContentHashError) {
-                    theirs = try await hasher.hash(contentsOf: Self.archiveURL(in: folderURL).appending(path: name), expectedSizeInBytes: size)
+                    theirs = try await hasher.hash(contentsOf: Self.archiveURL(in: folder).appending(path: name), expectedSizeInBytes: size)
                 } catch {
                     guard error != .cancelled else { throw .cancelled }
                     // Unreadable there: a different file, so this one is filed under a dated name.
@@ -54,6 +55,9 @@ extension ArchivePlanner {
                     if let known = hashCache?.hash(for: candidate) {
                         hashes[candidate.id] = known
                     } else {
+                        if candidate.isDataless {
+                            throw .notDownloaded(candidate.url)
+                        }
                         let hash = try await hasher.hash(contentsOf: candidate.url, expectedSizeInBytes: size)
                         hashes[candidate.id] = hash
                         hashCache?.store(hash, for: candidate)
@@ -80,7 +84,7 @@ extension ArchivePlanner {
             listing = ArchiveListing(problem: problem)
         }
         let plan = Self.makePlan(
-            folderURL: folderURL,
+            folder: folder,
             candidates: candidates,
             archive: listing,
             hashes: hashes,
@@ -102,8 +106,9 @@ extension ArchivePlanner {
         case folder(DirectoryHandle, [String])
     }
 
-    private static func readArchive(in folderURL: URL) -> ArchiveRead {
-        let name = CandidateEligibility.archiveFolderName
+    private static func readArchive(in folder: ManagedFolder) -> ArchiveRead {
+        let folderURL = folder.url
+        let name = folder.archiveFolderName
         guard let folder = try? DirectoryHandle.open(path: folderURL.path(percentEncoded: false)) else {
             return .problem(.unreadable)
         }
@@ -120,6 +125,10 @@ extension ArchivePlanner {
         }
         guard status.isDirectory else {
             return .problem(.notAFolder)
+        }
+        // A folder kept in the cloud: listing it would fetch it.
+        if status.isDataless {
+            return .problem(.unreadable)
         }
         let archive: DirectoryHandle
         do throws(DirectoryHandle.OpenFailure) {

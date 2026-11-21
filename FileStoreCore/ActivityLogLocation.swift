@@ -5,9 +5,9 @@ import Foundation
 ///
 /// The real log is one file in the user's Library:
 /// `~/Library/Application Support/<app identifier>/FileStore.sqlite`. Nothing in it leaves the Mac.
-/// When the scan folder is a debug override, the log is a separate database under the temporary
-/// directory, one per overridden folder, so hand testing on a fake folder never writes to the real
-/// log. Tests use a database in memory.
+/// When the folders are a debug override (`FolderOverride`), the log is a separate database under
+/// the temporary directory, one per overridden folder or demo home, so hand testing on fake folders
+/// never writes to the real log. Tests use a database in memory.
 public struct ActivityLogLocation: Sendable, Hashable {
     public enum Kind: Sendable, Hashable {
         /// The user's real log, in Application Support.
@@ -69,39 +69,42 @@ public struct ActivityLogLocation: Sendable, Hashable {
 
     public static let inMemory = ActivityLogLocation(kind: .inMemory, rootURL: nil, folderNames: [])
 
-    /// The location for a scan that resolved to `scan`: the real log for the Downloads folder, a
-    /// separate temporary one for a debug override.
+    /// The location for the folders `override` stands in for: the real log for the user's real
+    /// folders (no override), a separate temporary one for a debug override.
     public static func resolve(
-        for scan: ScanLocation,
+        for override: FolderOverride?,
         appIdentifier: String,
         roots: Roots = .standard
     ) throws(ActivityLogError) -> ActivityLogLocation {
-        switch scan.source {
-        case .downloadsFolder:
-            try applicationSupport(appIdentifier: appIdentifier, roots: roots)
-        case .launchArgument, .environmentVariable:
-            try temporary(key: scan.folderURL.path(percentEncoded: false), appIdentifier: appIdentifier, roots: roots)
+        guard let override else {
+            return try applicationSupport(appIdentifier: appIdentifier, roots: roots)
         }
+        return try temporary(
+            key: key(override.kind, path: override.folderURL.path(percentEncoded: false)),
+            appIdentifier: appIdentifier,
+            roots: roots
+        )
     }
 
-    /// The location when the scan folder could not be resolved. A broken override is still an
-    /// override: it gets a temporary log, never the real one.
+    /// The location when the folders could not be found. A broken override is still an override:
+    /// it gets a temporary log, never the real one. Only a standard folder the system does not
+    /// report leaves the real log's place as it is.
     public static func resolve(
-        forFailedScan error: ScanLocationError,
+        forFailedOverride error: FolderLocationError,
         appIdentifier: String,
         roots: Roots = .standard
     ) throws(ActivityLogError) -> ActivityLogLocation {
         switch error {
-        case .downloadsFolderUnavailable:
+        case .overrideDoesNotExist(let path, let source), .overrideIsNotAFolder(let path, let source):
+            try temporary(key: key(source.kind, path: path), appIdentifier: appIdentifier, roots: roots)
+        case .standardFolderUnavailable:
             try applicationSupport(appIdentifier: appIdentifier, roots: roots)
-        case .overrideValueMissing:
+        case .overrideValueMissing, .refused, .bookmarkUnusable:
             try temporary(key: "", appIdentifier: appIdentifier, roots: roots)
-        case .overrideDoesNotExist(let path, _), .overrideIsNotAFolder(let path, _):
-            try temporary(key: path, appIdentifier: appIdentifier, roots: roots)
         }
     }
 
-    /// The location for the current process: resolves the scan folder as the app does, then the log
+    /// The location for the current process: resolves the override as the app does, then the log
     /// that belongs to it.
     public static func resolve(
         arguments: [String] = ProcessInfo.processInfo.arguments,
@@ -109,13 +112,25 @@ public struct ActivityLogLocation: Sendable, Hashable {
         appIdentifier: String,
         roots: Roots = .standard
     ) throws(ActivityLogError) -> ActivityLogLocation {
-        let scan: ScanLocation
-        do throws(ScanLocationError) {
-            scan = try ScanLocation.resolve(arguments: arguments, environment: environment)
+        let override: FolderOverride?
+        do throws(FolderLocationError) {
+            override = try FolderOverride.resolve(arguments: arguments, environment: environment)
         } catch {
-            return try resolve(forFailedScan: error, appIdentifier: appIdentifier, roots: roots)
+            return try resolve(forFailedOverride: error, appIdentifier: appIdentifier, roots: roots)
         }
-        return try resolve(for: scan, appIdentifier: appIdentifier, roots: roots)
+        return try resolve(for: override, appIdentifier: appIdentifier, roots: roots)
+    }
+
+    /// What an override's log is named after. A scan folder's key is its path alone, as it was
+    /// before demo homes, so a fake folder from an earlier build finds its log again; a demo home's
+    /// is marked, so the two never share a log even at the same path.
+    private static func key(_ kind: FolderOverride.Kind, path: String) -> String {
+        switch kind {
+        case .scanFolder:
+            path
+        case .demoHome:
+            "demo-home:" + path
+        }
     }
 
     private static func applicationSupport(appIdentifier: String, roots: Roots) throws(ActivityLogError) -> ActivityLogLocation {
@@ -125,7 +140,7 @@ public struct ActivityLogLocation: Sendable, Hashable {
         return ActivityLogLocation(kind: .applicationSupport, rootURL: root, folderNames: [appIdentifier])
     }
 
-    /// One folder per overridden scan folder, named by a hash of its path, so the same fake folder
+    /// One folder per override, named by a hash of its key, so the same fake folder
     /// finds its log again on the next launch and two fake folders never share one.
     private static func temporary(key: String, appIdentifier: String, roots: Roots) throws(ActivityLogError) -> ActivityLogLocation {
         guard isOneFolderName(appIdentifier) else {

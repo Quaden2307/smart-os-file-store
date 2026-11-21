@@ -43,7 +43,7 @@ struct UndoReconcileTests {
             #expect(try await Fixtures.change(named: "a.txt", inRun: runID, log: reopened).undoneAt == nil)
             #expect(try await reopened.totals() == ActivityTotals(bytesMovedToTrash: 10, filesCleaned: 1))
 
-            let settled = try await UndoReconciler().reconcile(reopened)
+            let settled = try await UndoReconciler().reconcile(reopened, folders: .testing(downloads: folder))
 
             #expect(settled == UndoReconciler.Result(undone: 1, notUndone: 0))
             #expect(try await reopened.changes(inRun: undoRunID).map(\.outcome) == [.undone])
@@ -52,7 +52,7 @@ struct UndoReconcileTests {
             #expect(try await reopened.run(id: undoRunID)?.bytesTakenFromTrash == 10)
 
             // A second time finds nothing, and lowers nothing again.
-            #expect(try await UndoReconciler().reconcile(reopened) == UndoReconciler.Result(undone: 0, notUndone: 0))
+            #expect(try await UndoReconciler().reconcile(reopened, folders: .testing(downloads: folder)) == UndoReconciler.Result(undone: 0, notUndone: 0))
             #expect(try await reopened.totals() == .zero)
         }
     }
@@ -75,7 +75,7 @@ struct UndoReconcileTests {
 
             // Both spellings answer with the same file; the folder's listing tells which name it has.
             let reopened = try await ActivityLog.open(location)
-            #expect(try await UndoReconciler().reconcile(reopened) == UndoReconciler.Result(undone: 1, notUndone: 0))
+            #expect(try await UndoReconciler().reconcile(reopened, folders: .testing(downloads: folder)) == UndoReconciler.Result(undone: 1, notUndone: 0))
             #expect(try await Fixtures.change(named: "Report.txt", inRun: runID, log: reopened).undoneAt != nil)
         }
     }
@@ -86,12 +86,12 @@ struct UndoReconcileTests {
             let log = try await ActivityLog.open(location)
             try Fixtures.write(["a.txt": "ten bytes!"], in: folder)
             let (runID, trashURLs) = try await Fixtures.trashRun(["a.txt"], in: folder, to: trash, log: log)
-            let plan = try await UndoPlanner(trash: trash.locator).plan(.run(runID), log: log, folderURL: folder)
+            let plan = try await UndoPlanner(trash: trash.locator).plan(.run(runID), log: log, folders: .testing(downloads: folder))
             let step = try #require(plan.steps.first)
 
             // The started row goes in, then the app stops before the move.
             let undoRunID = try log.beginUndoRun(
-                UndoRunStart(target: plan.target, folderURL: folder, undoneActionCode: plan.undoneActionCode, confirmedCount: 1, startedAt: Fixtures.now)
+                UndoRunStart(target: plan.target, folderID: plan.folderID, folderURL: folder, undoneActionCode: plan.undoneActionCode, confirmedCount: 1, startedAt: Fixtures.now)
             )
             let trashURL = try #require(trashURLs["a.txt"])
             let fileNumber = try #require(DiskState.inode(of: trashURL))
@@ -103,7 +103,7 @@ struct UndoReconcileTests {
             try await log.close()
 
             let reopened = try await ActivityLog.open(location)
-            let settled = try await UndoReconciler().reconcile(reopened)
+            let settled = try await UndoReconciler().reconcile(reopened, folders: .testing(downloads: folder))
 
             #expect(settled == UndoReconciler.Result(undone: 0, notUndone: 1))
             #expect(try await reopened.changes(inRun: undoRunID).map(\.outcome) == [.notUndone(.interrupted)])

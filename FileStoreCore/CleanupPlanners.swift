@@ -39,7 +39,7 @@ public enum CleanupPlanners {
     public static func plan(
         _ action: CleanupAction,
         records: [FileRecord],
-        in folderURL: URL,
+        in folder: ManagedFolder,
         eligibility: CandidateEligibility,
         keptItems: KeptItems,
         installers: InstallerSources,
@@ -60,7 +60,7 @@ public enum CleanupPlanners {
             }
             do throws(DuplicatePlanError) {
                 return try await DuplicatePlanner(eligibility: eligibility, hashCache: hashCache)
-                    .plan(records: records, in: folderURL, now: now, onProgress: hashingProgress)
+                    .plan(records: records, in: folder, now: now, onProgress: hashingProgress)
             } catch {
                 switch error {
                 case .cancelled:
@@ -68,24 +68,24 @@ public enum CleanupPlanners {
                 }
             }
         case .failedDownloads:
-            return FailedDownloadPlanner(eligibility: eligibility).plan(records: records, in: folderURL, now: now)
+            return FailedDownloadPlanner(eligibility: eligibility).plan(records: records, in: folder, now: now)
         case .unpackedZips:
             return try await UnpackedZipPlanner(eligibility: eligibility)
-                .plan(records: records, in: folderURL, now: now, onProgress: onProgress)
+                .plan(records: records, in: folder, now: now, onProgress: onProgress)
         case .usedInstallers:
             return try await InstallerPlanner(eligibility: eligibility)
-                .plan(records: records, in: folderURL, sources: installers, now: now, onProgress: onProgress)
+                .plan(records: records, in: folder, sources: installers, now: now, onProgress: onProgress)
         case .messyNames:
-            return try await MessyNamePlanner(eligibility: eligibility, hashCache: hashCache).plan(records: records, in: folderURL, now: now)
+            return try await MessyNamePlanner(eligibility: eligibility, hashCache: hashCache).plan(records: records, in: folder, now: now)
         case .nearDuplicates:
             return try await NearDuplicatePlanner(eligibility: eligibility, hashCache: hashCache)
-                .plan(records: records, in: folderURL, now: now)
+                .plan(records: records, in: folder, now: now)
         case .archive:
-            return try await ArchivePlanner(eligibility: eligibility, settings: settings, hashCache: hashCache).plan(records: records, in: folderURL, now: now)
+            return try await ArchivePlanner(eligibility: eligibility, settings: settings, hashCache: hashCache).plan(records: records, in: folder, now: now)
         case .largeDownloads:
-            return LargeFilePlanner(eligibility: eligibility, settings: settings).plan(records: records, in: folderURL, now: now)
+            return LargeFilePlanner(eligibility: eligibility, settings: settings).plan(records: records, in: folder, now: now)
         case .emptyFolders:
-            return EmptyFolderPlanner(eligibility: eligibility).plan(records: records, in: folderURL, now: now)
+            return EmptyFolderPlanner(eligibility: eligibility).plan(records: records, in: folder, now: now)
         }
     }
 

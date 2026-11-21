@@ -227,7 +227,7 @@ struct FailedDownloadExecutorTests {
             )
             let plan = CleanupPlan(
                 action: .clearFailedDownloads,
-                folderURL: folder,
+                folder: log.downloads(at: folder),
                 changes: [
                     // A finished file dressed up as a failed download.
                     ProposedChange(record: finished, operation: .moveToTrash, reason: .failedDownload(stoppedOn: stoppedOn, finishedFileName: nil)),
@@ -257,7 +257,7 @@ struct FailedDownloadExecutorTests {
             let hash = try await ContentHasher().hash(contentsOf: partial.url)
             let plan = CleanupPlan(
                 action: .findDuplicates,
-                folderURL: folder,
+                folder: .temporary(folder),
                 changes: [ProposedChange(record: partial, operation: .moveToTrash, reason: .sameContent(asFileNamed: "song.mp3"))],
                 duplicateGroups: [DuplicateGroup(contentHash: hash, kept: kept, duplicates: [partial], fileSizeInBytes: 10)]
             )

@@ -63,10 +63,7 @@ final class ActivityListModel {
     private var generation = 0
 
     /// Reads the runs again, and the items of every open run with their files.
-    ///
-    /// - Parameter folderURL: The folder the app looks after, which undo puts files back into. Nil
-    ///   while it is not known; nothing can be undone then.
-    func reload(activity: ActivityLogModel, folderURL: URL?) {
+    func reload(activity: ActivityLogModel) {
         generation += 1
         if loadedOpening != activity.openings {
             // Another log: nothing read from the last one may stay.
@@ -91,7 +88,7 @@ final class ActivityListModel {
                 for run in runs where openAtStart.contains(run.id) {
                     changes[run.id] = try await log.changes(inRun: run.id)
                 }
-                let looked = await Self.look(at: changes, runs: runs, folderURL: folderURL)
+                let looked = try await Self.look(at: changes, runs: runs, log: log, folders: activity.folders)
                 guard generation == self.generation else { return }
                 let runIDs = Set(runs.map(\.id))
                 self.runs = runs
@@ -121,7 +118,7 @@ final class ActivityListModel {
 
     /// Opens or closes a run. Opening reads its items and their files again, so where each file is
     /// now is what Reveal in Finder goes by; what was read before shows meanwhile. Closing keeps it.
-    func setExpanded(_ runID: ActivityRun.ID, _ isExpanded: Bool, activity: ActivityLogModel, folderURL: URL?) {
+    func setExpanded(_ runID: ActivityRun.ID, _ isExpanded: Bool, activity: ActivityLogModel) {
         guard isExpanded else {
             expanded.remove(runID)
             return
@@ -133,7 +130,7 @@ final class ActivityListModel {
             do throws(ActivityLogError) {
                 let items = try await log.changes(inRun: runID)
                 let runs = runs.filter { $0.id == runID }
-                let looked = await Self.look(at: [runID: items], runs: runs, folderURL: folderURL)
+                let looked = try await Self.look(at: [runID: items], runs: runs, log: log, folders: activity.folders)
                 // A full read started meanwhile reads this run too, from a newer state of the log.
                 guard generation == self.generation else { return }
                 var updated = changes
@@ -253,22 +250,33 @@ final class ActivityListModel {
         var assessments: [ActivityChange.ID: UndoPlanner.Assessment] = [:]
     }
 
-    /// Looks at each change's places once, off the main actor, for both answers. Without a folder
-    /// nothing can be undone, and presence is read on its own.
+    /// Looks at each change's places once, off the main actor, for both answers. Each run is
+    /// judged in its own folder, wherever that is now, and with that folder's Trash; a run whose
+    /// folder cannot be found cannot be undone.
     @concurrent
-    private static func look(at changes: [ActivityRun.ID: [ActivityChange]], runs: [ActivityRun], folderURL: URL?) async -> Look {
-        let all = changes.values.flatMap { $0 }
-        guard let folderURL else {
-            return Look(presence: await ActivityChange.presence(of: all))
-        }
-        // The Trash is looked up once, not once per change.
-        let planner = UndoPlanner(trash: TrashLocator.system.resolved(for: folderURL))
-        let observations = await planner.observe(all, folderURL: folderURL)
+    private static func look(
+        at changes: [ActivityRun.ID: [ActivityChange]],
+        runs: [ActivityRun],
+        log: ActivityLog,
+        folders: FolderRegistry
+    ) async throws(ActivityLogError) -> Look {
         var look = Look()
+        // Each folder, and its Trash, is looked up once, not once per run or change.
+        var planners: [ManagedFolder.ID?: (folder: ManagedFolder?, planner: UndoPlanner)] = [:]
         for run in runs {
-            for change in changes[run.id] ?? [] {
+            guard let items = changes[run.id], !items.isEmpty else { continue }
+            let found: (folder: ManagedFolder?, planner: UndoPlanner)
+            if let known = planners[run.folderID] {
+                found = known
+            } else {
+                let folder = try await UndoPlanner.folder(of: run, log: log, folders: folders)
+                found = (folder, UndoPlanner(trash: folder.map { TrashLocator.system.resolved(for: $0.url) } ?? .system))
+                planners[run.folderID] = found
+            }
+            let observations = await found.planner.observe(items, folder: found.folder)
+            for change in items {
                 let observation = observations[change.id]
-                look.assessments[change.id] = planner.assess(change, in: run, observation: observation, folderURL: folderURL)
+                look.assessments[change.id] = found.planner.assess(change, in: run, observation: observation, folder: found.folder)
                 look.presence[change.id] = presence(of: change, in: observation)
             }
         }

@@ -17,7 +17,7 @@ struct EmptyFolderTests {
             try await CleanupPlanners.plan(
                 .removeEmptyFolders,
                 records: try await RelocationPlans.records(in: folder),
-                in: folder,
+                in: .temporary(folder),
                 eligibility: CandidateEligibility(),
                 keptItems: keptItems,
                 installers: .testing(applications: [])

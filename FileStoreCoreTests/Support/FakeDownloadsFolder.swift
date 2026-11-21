@@ -1,3 +1,4 @@
+import FileStoreCore
 import Foundation
 
 /// The same fake Downloads folder that `scripts/make-fake-downloads.sh` builds, created fresh under
@@ -208,10 +209,12 @@ struct FakeDownloadsFolder {
 
     private let root: TemporaryFolder
 
-    static func make(includingDiskImage: Bool = false) throws -> FakeDownloadsFolder {
+    /// - Parameter path: Where the folder is under the fixture's root. A fake home puts it at
+    ///   `Home/Downloads` (`FakeHome`).
+    static func make(includingDiskImage: Bool = false, at path: String = "FakeDownloads") throws -> FakeDownloadsFolder {
         let root = try TemporaryFolder.make(prefix: "FakeDownloads")
         let fixture = FakeDownloadsFolder(
-            url: root.url.appending(path: "FakeDownloads", directoryHint: .isDirectory),
+            url: root.url.appending(path: path, directoryHint: .isDirectory),
             applicationsURL: root.url.appending(path: "FakeApplications", directoryHint: .isDirectory),
             root: root
         )
@@ -532,4 +535,72 @@ func withFakeDownloadsFolder<T>(
     let folder = try FakeDownloadsFolder.make(includingDiskImage: includingDiskImage)
     defer { folder.remove() }
     return try await body(folder)
+}
+
+/// A fake home for `-DemoHome` and for tests of more than one folder: the fake Downloads folder as
+/// `Home/Downloads`, with a `Desktop` and a `Documents` beside it. Each of those two holds a small
+/// set: two exact duplicates, a pair with one name and different content, a messy name whose clean
+/// form is free, and an old file nobody opened. Mirrors `DEMO_HOME=1 scripts/make-fake-downloads.sh`.
+struct FakeHome {
+    /// The names in Desktop and in Documents, in the order they are made.
+    enum Names {
+        static let desktop = ["screenshot.png", "screenshot copy.png", "todo.txt", "todo (1).txt", "sketch (2).pdf", oldDesktopFile]
+        static let documents = ["contract.pdf", "contract (1).pdf", "letter.docx", "letter (1).docx", "resume copy.docx", oldDocumentsFile]
+        static let oldDesktopFile = "old-flyer.pdf"
+        static let oldDocumentsFile = "old-lease.pdf"
+    }
+
+    let downloads: FakeDownloadsFolder
+
+    /// The home itself: what `-DemoHome` is given.
+    var url: URL { downloads.url.deletingLastPathComponent() }
+
+    var desktopURL: URL { url.appending(path: "Desktop", directoryHint: .isDirectory) }
+
+    var documentsURL: URL { url.appending(path: "Documents", directoryHint: .isDirectory) }
+
+    /// The three standard folders, by kind.
+    var folders: [(kind: ManagedFolder.Kind, url: URL)] {
+        [(.downloads, downloads.url), (.desktop, desktopURL), (.documents, documentsURL)]
+    }
+
+    static func make() throws -> FakeHome {
+        let home = FakeHome(downloads: try FakeDownloadsFolder.make(at: "Home/Downloads"))
+        do {
+            try home.populate(home.desktopURL, Names.desktop, old: Names.oldDesktopFile, label: "desktop")
+            try home.populate(home.documentsURL, Names.documents, old: Names.oldDocumentsFile, label: "documents")
+        } catch {
+            home.remove()
+            throw error
+        }
+        return home
+    }
+
+    func remove() {
+        downloads.remove()
+    }
+
+    /// Writes `names` in order: the first two identical, the next two different, then one alone, then
+    /// the old file, dated like the fake Downloads folder's old manual and never opened.
+    private func populate(_ folder: URL, _ names: [String], old: String, label: String) throws {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        let texts = ["\(label) copy bytes", "\(label) copy bytes", "\(label) draft one", "\(label) draft two, edited", "\(label) messy name", "\(label) old file nobody opened"]
+        var settled: [URL] = []
+        for (name, text) in zip(names, texts) {
+            let file = folder.appending(path: name)
+            try Data(text.utf8).write(to: file)
+            if name != old {
+                settled.append(file)
+            }
+        }
+        try FileDates.settle(settled)
+        try FileDates.set(folder.appending(path: old), to: FakeDownloadsFolder.oldManualDate)
+    }
+}
+
+/// Runs `body` with a fresh fake home and removes it afterwards.
+func withFakeHome<T>(_ body: (FakeHome) async throws -> T) async throws -> T {
+    let home = try FakeHome.make()
+    defer { home.remove() }
+    return try await body(home)
 }

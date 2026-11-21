@@ -19,9 +19,10 @@ public struct EmptyFolderPlanner: Sendable {
     }
 
     /// The plan for `records`, from one scan of `folderURL`, at `now`.
-    public func plan(records: [FileRecord], in folderURL: URL, now: Date = .now) -> CleanupPlan {
+    public func plan(records: [FileRecord], in folder: ManagedFolder, now: Date = .now) -> CleanupPlan {
+        let folderURL = folder.url
         let folders = DuplicatePlanner.recordsDirectlyInside(folderURL, among: records)
-            .filter { $0.kind == .folder && eligibility.allows($0, now: now) }
+            .filter { $0.kind == .folder && eligibility.allows($0, in: folder, now: now) }
             .sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
         var changes: [ProposedChange] = []
         var skippedItems: [CleanupPlan.SkippedItem] = []
@@ -37,6 +38,6 @@ public struct EmptyFolderPlanner: Sendable {
                 break
             }
         }
-        return CleanupPlan(action: .removeEmptyFolders, folderURL: folderURL, changes: changes, skippedItems: skippedItems)
+        return CleanupPlan(action: .removeEmptyFolders, folder: folder, changes: changes, skippedItems: skippedItems)
     }
 }

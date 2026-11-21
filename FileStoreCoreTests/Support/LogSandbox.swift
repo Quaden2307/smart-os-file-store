@@ -25,16 +25,15 @@ struct LogSandbox {
         folder.remove()
     }
 
-    /// Where the real log would live: the location for a scan of the Downloads folder.
+    /// Where the real log would live: the location for the user's real folders.
     func realLocation() throws -> ActivityLogLocation {
-        let scan = ScanLocation(folderURL: folder.url.appending(path: "Downloads"), source: .downloadsFolder)
-        return try ActivityLogLocation.resolve(for: scan, appIdentifier: Self.appIdentifier, roots: roots)
+        try ActivityLogLocation.resolve(for: nil, appIdentifier: Self.appIdentifier, roots: roots)
     }
 
-    /// The location for a scan folder chosen by a debug override.
-    func overrideLocation(scanning scanFolder: URL, source: ScanLocation.Source = .launchArgument) throws -> ActivityLogLocation {
-        let scan = ScanLocation(folderURL: scanFolder, source: source)
-        return try ActivityLogLocation.resolve(for: scan, appIdentifier: Self.appIdentifier, roots: roots)
+    /// The location for a scan folder or a demo home chosen by a debug override.
+    func overrideLocation(scanning folder: URL, source: FolderOverride.Source = .scanFolderArgument) throws -> ActivityLogLocation {
+        let override = FolderOverride(source: source, folderURL: folder)
+        return try ActivityLogLocation.resolve(for: override, appIdentifier: Self.appIdentifier, roots: roots)
     }
 
     /// Everything under the stand-in Application Support folder, as relative paths.
@@ -162,7 +161,7 @@ enum LogSamples {
         afterEach: (Int) -> Void = { _ in }
     ) throws -> Int64 {
         let runID = try log.beginRun(
-            CleanupRunStart(action: .findDuplicates, folderURL: folderURL, confirmedCount: count, startedAt: startedAt)
+            CleanupRunStart(action: .findDuplicates, folder: log.downloads(at: folderURL), confirmedCount: count, startedAt: startedAt)
         )
         let hash = ContentHash(bytes: [UInt8](repeating: 0xAB, count: 32))
         for index in 0..<count {

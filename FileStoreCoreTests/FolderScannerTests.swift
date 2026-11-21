@@ -10,8 +10,8 @@ struct FolderScannerTests {
     private let scanner = FolderScanner()
 
     /// The source only matters for the app's debug status line.
-    private func location(_ url: URL) -> ScanLocation {
-        ScanLocation(folderURL: url, source: .launchArgument)
+    private func location(_ url: URL) -> ManagedFolder {
+        .temporary(url)
     }
 
     @Test func listsNormalFilesWithMetadata() async throws {
@@ -193,7 +193,8 @@ struct FolderScannerTests {
 
         #expect(result.records.isEmpty)
         #expect(result.skippedItems.isEmpty)
-        #expect(result.folderURL == location.folderURL)
+        #expect(result.folderURL == location.url)
+        #expect(result.folder.id == location.id)
     }
 
     @Test func missingFolderIsTypedError() async throws {
@@ -201,7 +202,7 @@ struct FolderScannerTests {
         defer { temp.remove() }
         let location = location(temp.url.appending(path: "does-not-exist", directoryHint: .isDirectory))
 
-        await #expect(throws: FolderScanError.folderNotFound(location.folderURL)) {
+        await #expect(throws: FolderScanError.folderNotFound(location.url)) {
             try await scanner.scan(location)
         }
     }
@@ -216,7 +217,7 @@ struct FolderScannerTests {
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: sealedPath) }
         let location = location(sealed)
 
-        await #expect(throws: FolderScanError.accessDenied(location.folderURL)) {
+        await #expect(throws: FolderScanError.accessDenied(location.url)) {
             try await scanner.scan(location)
         }
     }

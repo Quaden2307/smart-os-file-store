@@ -17,7 +17,7 @@ struct ChangeDuringUseTests {
     // MARK: - Helpers
 
     private func scan(_ folder: URL) async throws -> [FileRecord] {
-        try await scanner.scan(ScanLocation(folderURL: folder, source: .launchArgument)).records
+        try await scanner.scan(.temporary(folder)).records
     }
 
     private func exists(_ url: URL) -> Bool {
@@ -115,7 +115,7 @@ struct ChangeDuringUseTests {
         let last = Mutex<DuplicateScanProgress?>(nil)
         let grown = temp.url.appending(path: "x (1).bin")
 
-        let plan = try await planner.plan(records: records, in: temp.url) { progress in
+        let plan = try await planner.plan(records: records, in: .temporary(temp.url)) { progress in
             last.withLock { $0 = progress }
             once.run {
                 do {
@@ -156,7 +156,7 @@ struct ChangeDuringUseTests {
         let failures = ConcurrentLog<String>()
         let folder = temp.url
 
-        let plan = try await planner.plan(records: records, in: folder) { _ in
+        let plan = try await planner.plan(records: records, in: .temporary(folder)) { _ in
             once.run {
                 do {
                     let fileManager = FileManager.default
@@ -256,7 +256,7 @@ struct ChangeDuringUseTests {
 
         var scansDuringChanges = 0
         repeat {
-            let result = try await scanner.scan(ScanLocation(folderURL: folder, source: .launchArgument))
+            let result = try await scanner.scan(.temporary(folder))
             let seen = result.records.map(\.displayName) + result.skippedItems.map(\.url.lastPathComponent)
             #expect(Set(seen).isSubset(of: universe))
             #expect(result.records.count <= universe.count)
@@ -266,7 +266,7 @@ struct ChangeDuringUseTests {
 
         #expect(mutatorFailures.values.isEmpty)
         #expect(scansDuringChanges >= 1)
-        let settled = try await scanner.scan(ScanLocation(folderURL: folder, source: .launchArgument))
+        let settled = try await scanner.scan(.temporary(folder))
         #expect(settled.skippedItems.isEmpty)
         #expect(Set(settled.records.map(\.displayName)) == expected)
     }
@@ -287,7 +287,7 @@ struct ChangeDuringUseTests {
             ],
             in: folder
         )
-        let plan = try await planner.plan(records: scan(folder), in: folder)
+        let plan = try await planner.plan(records: scan(folder), in: .temporary(folder))
         // The larger group comes first, its duplicates in name order.
         #expect(plan.changes.map(\.record.displayName) == ["a (1).txt", "a (2).txt", "a (3).txt", "b (1).txt"])
         let once = Once()
@@ -332,7 +332,7 @@ struct ChangeDuringUseTests {
         let renamed = temp.url.appending(path: "Work-renamed", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
         try FileDates.writeSettled(["a.txt": "alpha", "a (1).txt": "alpha", "a (2).txt": "alpha"], in: folder)
-        let plan = try await planner.plan(records: scan(folder), in: folder)
+        let plan = try await planner.plan(records: scan(folder), in: .temporary(folder))
         #expect(plan.changes.count == 2)
         let once = Once()
         let failures = ConcurrentLog<String>()

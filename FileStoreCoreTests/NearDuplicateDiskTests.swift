@@ -15,7 +15,7 @@ struct NearDuplicateDiskTests {
             try await CleanupPlanners.plan(
                 .reviewNearDuplicates,
                 records: try await RelocationPlans.records(in: folder),
-                in: folder,
+                in: .temporary(folder),
                 eligibility: CandidateEligibility(),
                 keptItems: KeptItems(),
                 installers: .testing(applications: []),
@@ -130,7 +130,7 @@ struct NearDuplicateDiskTests {
             let other = ContentHash(bytes: Array(repeating: 2, count: 32))
             let plan = CleanupPlan(
                 action: .reviewNearDuplicates,
-                folderURL: folder,
+                folder: log.downloads(at: folder),
                 changes: [ProposedChange(record: alpha, operation: .moveToTrash, reason: .nearDuplicate(sameNameAs: "beta.txt"))],
                 nearDuplicateGroups: [
                     NearDuplicateGroup(cleanedName: "alpha.txt", members: [
@@ -250,19 +250,29 @@ struct NearDuplicateDiskTests {
         }
     }
 
-    @Test func theCacheKeepsOnlyTheFilesOfTheLatestScan() async throws {
-        try await withTemporaryFolderAsync { folder in
-            try FileDates.writeSettled(Self.pair, in: folder)
+    @Test func theCacheKeepsOnlyTheFilesOfAFoldersLatestScanAndLeavesOtherFoldersAlone() async throws {
+        try await withTemporaryFolderAsync { root in
+            let folder = root.appending(path: "Downloads", directoryHint: .isDirectory)
+            let other = root.appending(path: "Desktop", directoryHint: .isDirectory)
+            for url in [folder, other] {
+                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
+                try FileDates.writeSettled(Self.pair, in: url)
+            }
             let cache = ContentHashCache()
             let records = try await RelocationPlans.records(in: folder)
+            let otherRecords = try await RelocationPlans.records(in: other)
             let same = ContentHash(bytes: Array(repeating: 7, count: 32))
-            for record in records {
+            for record in records + otherRecords {
                 cache.store(same, for: record)
             }
             let remaining = try #require(records.first)
-            cache.keepOnly([remaining])
-            #expect(cache.count == 1)
+            cache.keepOnly([remaining], in: .temporary(folder))
+            // One folder's scan says nothing about another folder's files.
+            #expect(cache.count == 1 + otherRecords.count)
             #expect(cache.hash(for: remaining) == same)
+            #expect(otherRecords.allSatisfy { cache.hash(for: $0) == same })
+            cache.keepOnly([], in: .temporary(other))
+            #expect(cache.count == 1)
         }
     }
 
@@ -272,7 +282,7 @@ struct NearDuplicateDiskTests {
             _ = try await CleanupPlanners.plan(
                 .findDuplicates,
                 records: try await RelocationPlans.records(in: fixture.url),
-                in: fixture.url,
+                in: .temporary(fixture.url),
                 eligibility: CandidateEligibility(),
                 keptItems: KeptItems(),
                 installers: .testing(applications: []),

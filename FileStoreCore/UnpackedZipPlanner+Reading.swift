@@ -18,41 +18,42 @@ extension UnpackedZipPlanner {
     @concurrent
     public func plan(
         records: [FileRecord],
-        in folderURL: URL,
+        in folder: ManagedFolder,
         now: Date = .now,
         onProgress: (@Sendable (CleanupPlanningProgress) -> Void)? = nil
     ) async throws(CleanupPlanningError) -> CleanupPlan {
+        let folderURL = folder.url
         let clock = ContinuousClock()
         let start = clock.now
         try Self.throwIfCancelled()
 
         let inside = DuplicatePlanner.recordsDirectlyInside(folderURL, among: records)
-        let zips = candidates(in: inside, now: now).sorted { Self.isOrderedBefore($0.displayName, $1.displayName) }
-        let copyNames = Self.unpackedCopies(in: inside).map(\.displayName)
+        let zips = candidates(in: inside, folder: folder, now: now).sorted { Self.isOrderedBefore($0.displayName, $1.displayName) }
+        let copyNames = Self.unpackedCopies(in: inside, folder: folder).map(\.displayName)
         var progress = ItemCheckProgress(total: zips.count, onProgress: onProgress)
         progress.report(checked: 0)
         guard !zips.isEmpty else {
-            return Self.makePlan(folderURL: folderURL, findings: [])
+            return Self.makePlan(folder: folder, findings: [])
         }
 
-        let folder: DirectoryHandle
+        let handle: DirectoryHandle
         do throws(DirectoryHandle.OpenFailure) {
-            folder = try DirectoryHandle.open(path: folderURL.path(percentEncoded: false))
+            handle = try DirectoryHandle.open(path: folderURL.path(percentEncoded: false))
         } catch {
             Self.logger.error("Could not open the folder to read \(zips.count) zips")
-            return Self.makePlan(folderURL: folderURL, findings: zips.map { ($0, .notChecked(.folderUnavailable)) })
+            return Self.makePlan(folder: folder, findings: zips.map { ($0, .notChecked(.folderUnavailable)) })
         }
 
         var findings: [(record: FileRecord, finding: Finding)] = []
         findings.reserveCapacity(zips.count)
         for (index, zip) in zips.enumerated() {
             try Self.throwIfCancelled()
-            findings.append((zip, try check(zip, in: folder, copyNames: copyNames, now: now)))
+            findings.append((zip, try check(zip, in: handle, folder: folder, copyNames: copyNames, now: now)))
             progress.report(checked: index + 1)
         }
         try Self.throwIfCancelled()
 
-        let plan = Self.makePlan(folderURL: folderURL, findings: findings)
+        let plan = Self.makePlan(folder: folder, findings: findings)
         Self.logger.info(
             "Checked \(zips.count) of \(records.count) records as zips: \(plan.changes.count) unpacked, \(plan.skippedItems.count) not checked, in \((clock.now - start).milliseconds, format: .fixed(precision: 1)) ms"
         )
@@ -61,9 +62,18 @@ extension UnpackedZipPlanner {
 
     /// One zip: its listing, read through `folder`, where it would have been unpacked, and each place
     /// among `copyNames` that could hold it, in the order `candidateNames` gives.
-    private func check(_ zip: FileRecord, in folder: DirectoryHandle, copyNames: [String], now: Date) throws(CleanupPlanningError) -> Finding {
+    private func check(
+        _ zip: FileRecord,
+        in folder: DirectoryHandle,
+        folder managedFolder: ManagedFolder,
+        copyNames: [String],
+        now: Date
+    ) throws(CleanupPlanningError) -> Finding {
         let listing: ZipListing
         do throws(ZipListing.Failure) {
+            if zip.isDataless {
+                throw .notDownloaded
+            }
             // The zip the scan saw: its size and modification date.
             listing = try ZipListing.read(named: zip.displayName, in: folder, limits: .standard) { status in
                 guard let scannedDate = zip.dateModified else {
@@ -89,7 +99,7 @@ extension UnpackedZipPlanner {
             return .notUnpacked
         }
         for name in Self.candidateNames(for: expectation.name, among: copyNames) {
-            switch checkCopy(named: name, of: expectation, in: folder, now: now) {
+            switch checkCopy(named: name, of: expectation, in: folder, folder: managedFolder, now: now) {
             case .matches:
                 return .unpacked(to: name)
             case .missing, .notVerified, .recentlyChanged:
@@ -123,7 +133,13 @@ extension UnpackedZipPlanner {
     /// progress; it arrived (its Date Added) more than the grace period ago; and nothing in it that
     /// the zip names as a file or a link was written since then. A folder's own date is left out,
     /// so opening the copy in Finder, which writes a `.DS_Store` into it, does not hold the zip back.
-    func checkCopy(named name: String, of expectation: Expectation, in folder: DirectoryHandle, now: Date) -> CopyCheck {
+    func checkCopy(
+        named name: String,
+        of expectation: Expectation,
+        in folder: DirectoryHandle,
+        folder managedFolder: ManagedFolder,
+        now: Date
+    ) -> CopyCheck {
         let found: UnpackedTree.Reading
         do throws(UnpackedTree.ReadFailure) {
             found = try UnpackedTree.read(named: name, in: folder, expecting: expectation.tree)
@@ -152,6 +168,7 @@ extension UnpackedZipPlanner {
             isDownloading: FileRecord.isInProgressDownload(name: name),
             dateAdded: dateAdded,
             dateModified: found.newestChange ?? found.rootStatus.modificationDate,
+            in: managedFolder,
             now: now
         ) == nil
         return settled ? .matches(rootStatus: found.rootStatus) : .recentlyChanged

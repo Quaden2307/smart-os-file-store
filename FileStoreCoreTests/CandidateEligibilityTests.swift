@@ -80,10 +80,10 @@ struct CandidateEligibilityTests {
 
     @Test func excludesHiddenAndArchiveNamesInAnyCase() {
         for name in [".hidden", ".DS_Store", "Old downloads", "old downloads", "OLD DOWNLOADS"] {
-            #expect(CandidateEligibility.isExcludedName(name), "\(name) should be excluded")
+            #expect(CandidateEligibility.isExcludedName(name, archiveFolderName: ManagedFolder.temporary(URL(filePath: "/FakeDownloads")).archiveFolderName), "\(name) should be excluded")
         }
         for name in ["Old downloads 2", "Old download", "report.pdf", "Downloads"] {
-            #expect(!CandidateEligibility.isExcludedName(name), "\(name) should not be excluded")
+            #expect(!CandidateEligibility.isExcludedName(name, archiveFolderName: ManagedFolder.temporary(URL(filePath: "/FakeDownloads")).archiveFolderName), "\(name) should not be excluded")
         }
         #expect(CandidateEligibility.archiveFolderName == "Old downloads")
     }
@@ -103,7 +103,7 @@ struct CandidateEligibilityTests {
             record("Unconfirmed 48213.download"),
             record("presentation.key.download", kind: .package),
         ]
-        let allowed = records.filter { eligibility.allows($0, now: now) }.map(\.displayName)
+        let allowed = records.filter { eligibility.allows($0, in: .temporary($0.url.deletingLastPathComponent()), now: now) }.map(\.displayName)
         // Kinds are each action's own business: a settled folder passes the shared rules.
         #expect(allowed == ["settled.pdf", "Settled Folder"])
     }
@@ -114,7 +114,7 @@ struct CandidateEligibilityTests {
         let now = Self.now
         let old = now - 2 * Self.hour
         func refusal(_ name: String, downloading: Bool = false, added: Date? = old, modified: Date? = old) -> CandidateEligibility.Refusal? {
-            eligibility.refusal(name: name, isDownloading: downloading, dateAdded: added, dateModified: modified, now: now)
+            eligibility.refusal(name: name, isDownloading: downloading, dateAdded: added, dateModified: modified, in: .temporary(URL(filePath: "/FakeDownloads")), now: now)
         }
         #expect(refusal("report.pdf") == nil)
         #expect(refusal(".report.pdf") == .excludedName)

@@ -10,7 +10,7 @@ struct ArchivePlannerTests {
     private static let now = Date(timeIntervalSince1970: 1_800_000_000)
     private static let day: TimeInterval = 24 * 60 * 60
     private static let folder = URL(filePath: "/FakeDownloads", directoryHint: .isDirectory)
-    private static let archive = ArchivePlanner.archiveURL(in: folder)
+    private static let archive = ArchivePlanner.archiveURL(in: .temporary(folder))
     private static let utc = TimeZone(identifier: "UTC") ?? .gmt
 
     /// A file added `addedDaysAgo` days ago, opened `openedDaysAgo` days ago or never.
@@ -46,8 +46,8 @@ struct ArchivePlannerTests {
     ) -> CleanupPlan {
         let planner = ArchivePlanner(eligibility: eligibility, settings: settings)
         return ArchivePlanner.makePlan(
-            folderURL: Self.folder,
-            candidates: planner.candidates(in: records, folderURL: Self.folder, now: Self.now),
+            folder: .temporary(Self.folder),
+            candidates: planner.candidates(in: records, folder: .temporary(Self.folder), now: Self.now),
             archive: archive,
             hashes: hashes,
             caseSensitive: false,

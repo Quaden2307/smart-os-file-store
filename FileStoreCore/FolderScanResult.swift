@@ -15,7 +15,9 @@ public struct FolderScanResult: Sendable {
     }
 
     /// The folder that was scanned.
-    public let folderURL: URL
+    public let folder: ManagedFolder
+
+    public var folderURL: URL { folder.url }
 
     /// Every readable, non-hidden item at the top level, in file-system order.
     public let records: [FileRecord]
@@ -26,8 +28,8 @@ public struct FolderScanResult: Sendable {
     /// When the scan finished.
     public let scannedAt: Date
 
-    public init(folderURL: URL, records: [FileRecord], skippedItems: [SkippedItem], scannedAt: Date) {
-        self.folderURL = folderURL
+    public init(folder: ManagedFolder, records: [FileRecord], skippedItems: [SkippedItem], scannedAt: Date) {
+        self.folder = folder
         self.records = records
         self.skippedItems = skippedItems
         self.scannedAt = scannedAt

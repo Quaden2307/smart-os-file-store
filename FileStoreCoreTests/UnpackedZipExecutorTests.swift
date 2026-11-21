@@ -23,7 +23,7 @@ struct UnpackedZipExecutorTests {
     }
 
     private func execute(_ plan: CleanupPlan, recorder: any CleanupRecording, beforeChange: (@Sendable (ProposedChange) -> Void)? = nil) async -> CleanupResult {
-        await CleanupExecutor(recorder: recorder).execute(
+        await CleanupExecutor(recorder: testRecorder(recorder)).execute(
             plan: plan,
             confirmedChangeIDs: Set(plan.changes.map(\.id)),
             beforeChange: beforeChange
@@ -298,7 +298,7 @@ struct UnpackedZipExecutorTests {
             }
             let plan = CleanupPlan(
                 action: .removeUnpackedZips,
-                folderURL: folder,
+                folder: log.downloads(at: folder),
                 changes: [
                     // Not a zip, whatever the reason says.
                     try change(Zips.contract, .unpackedZip(unpackedTo: Zips.project)),
@@ -310,18 +310,18 @@ struct UnpackedZipExecutorTests {
             )
             let itself = CleanupPlan(
                 action: .removeUnpackedZips,
-                folderURL: folder,
+                folder: log.downloads(at: folder),
                 changes: [try change(Zips.contractZip, .unpackedZip(unpackedTo: Zips.contractZip))]
             )
             let path = CleanupPlan(
                 action: .removeUnpackedZips,
-                folderURL: folder,
+                folder: log.downloads(at: folder),
                 changes: [try change(Zips.projectZip, .unpackedZip(unpackedTo: "\(Zips.project)/\(Zips.source)"))]
             )
             // A `/` joined with a combining mark is one Swift character, and still a `/` to the system.
             let fusedSlash = CleanupPlan(
                 action: .removeUnpackedZips,
-                folderURL: folder,
+                folder: log.downloads(at: folder),
                 changes: [try change(Zips.projectZip, .unpackedZip(unpackedTo: "\(Zips.project)/\u{301}\(Zips.source)"))]
             )
 

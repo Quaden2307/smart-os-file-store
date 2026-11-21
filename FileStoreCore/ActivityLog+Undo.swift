@@ -25,7 +25,7 @@ extension ActivityLog {
     public func beginUndoRun(_ start: UndoRunStart) throws(ActivityLogError) -> Int64 {
         try write { db in
             try db.execute(
-                sql: "INSERT INTO runs (action, folderPath, startedAt, state, confirmedCount, undoneAction) VALUES (?, ?, ?, ?, ?, ?)",
+                sql: "INSERT INTO runs (action, folderPath, startedAt, state, confirmedCount, undoneAction, folderID) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 arguments: [
                     ActivityRun.undoActionCode,
                     start.folderURL.path(percentEncoded: false),
@@ -33,6 +33,7 @@ extension ActivityLog {
                     ActivityRun.State.running.logCode,
                     start.confirmedCount,
                     start.undoneActionCode,
+                    start.folderID?.uuidString,
                 ]
             )
             return db.lastInsertedRowID
@@ -50,7 +51,15 @@ extension ActivityLog {
                   change.operation.flatMap(UndoStep.Operation.init(reversing:)) == step.operation,
                   change.resultingPath == step.currentPath,
                   change.originalPath == step.originalPath,
-                  change.undoEvidence == step.evidence else {
+                  change.undoEvidence == step.evidence,
+                  // A change is undone only by a run in its own folder: the file goes back where it was.
+                  // Asked once per step of an undo, so the statement is kept.
+                  try Bool.fetchOne(
+                      try db.cachedStatement(
+                          sql: "SELECT EXISTS (SELECT 1 FROM changes JOIN runs ON runs.id = ? WHERE changes.id = ? AND changes.folderID = runs.folderID)"
+                      ),
+                      arguments: [intent.runID, step.changeID]
+                  ) == true else {
                 return .notAsRecorded
             }
             // Not undone, and no other row undoing it.
@@ -234,8 +243,8 @@ extension ActivityLog {
             INSERT INTO changes (
                 runID, sequence, operation, originalPath, resultingPath, sizeInBytes, dateModified, contentHash,
                 reasonCode, outcome, outcomeCode, outcomeDetail, errorDomain, errorCode, errorText,
-                attemptedAt, fileNumber, undoesChangeID, isFolder
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                attemptedAt, fileNumber, undoesChangeID, isFolder, folderID
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT folderID FROM runs WHERE id = ?))
             """)
         // A change refused before anything was known about it may be one this version cannot read;
         // its row keeps an operation code no version reads as one it knows.
@@ -245,7 +254,7 @@ extension ActivityLog {
             evidence?.dateModified?.timeIntervalSinceReferenceDate, evidence?.contentHash.map { Data($0.bytes) },
             undoReasonCode, outcome.outcome, outcome.code, outcome.detail, outcome.errorDomain, outcome.errorNumber, outcome.errorText,
             attemptedAt.timeIntervalSinceReferenceDate, evidence?.fileNumber.map(storedFileNumber), item.changeID,
-            evidence?.isFolder ?? false,
+            evidence?.isFolder ?? false, runID,
         ])
     }
 }

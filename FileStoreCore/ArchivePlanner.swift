@@ -40,20 +40,20 @@ public struct ArchivePlanner: Sendable {
     }
 
     /// The archive folder inside `folderURL`.
-    public static func archiveURL(in folderURL: URL) -> URL {
-        folderURL.appending(path: CandidateEligibility.archiveFolderName, directoryHint: .isDirectory)
+    public static func archiveURL(in folder: ManagedFolder) -> URL {
+        folder.url.appending(path: folder.archiveFolderName, directoryHint: .isDirectory)
     }
 
     // MARK: - Pure functions
 
     /// The regular files directly inside `folderURL` that the shared rules allow at `now` and that
     /// are marked Never opened or Unused.
-    public func candidates(in records: [FileRecord], folderURL: URL, now: Date) -> [FileRecord] {
-        DuplicatePlanner.recordsDirectlyInside(folderURL, among: records).filter { record in
-            guard record.kind == .file, eligibility.allows(record, now: now) else {
+    public func candidates(in records: [FileRecord], folder: ManagedFolder, now: Date) -> [FileRecord] {
+        DuplicatePlanner.recordsDirectlyInside(folder.url, among: records).filter { record in
+            guard record.kind == .file, eligibility.allows(record, in: folder, now: now) else {
                 return false
             }
-            let marks = FileMarker.marks(for: record, now: now, settings: settings, eligibility: eligibility)
+            let marks = FileMarker.marks(for: record, in: folder, now: now, settings: settings, eligibility: eligibility)
             return marks.contains(.neverOpened) || marks.contains(.unused)
         }
     }
@@ -67,7 +67,7 @@ public struct ArchivePlanner: Sendable {
     ///   - caseSensitive: Whether the volume tells names apart by letter case.
     ///   - timeZone: The time zone a Date Added is written in for a name that is taken.
     public static func makePlan(
-        folderURL: URL,
+        folder: ManagedFolder,
         candidates: [FileRecord],
         archive: ArchiveListing,
         hashes: [FileRecord.ID: ContentHash] = [:],
@@ -76,12 +76,12 @@ public struct ArchivePlanner: Sendable {
         timeZone: TimeZone
     ) -> CleanupPlan {
         if let problem = archive.problem {
-            return CleanupPlan(action: .archiveOldDownloads, folderURL: folderURL, changes: [], archiveProblem: problem)
+            return CleanupPlan(action: .archiveOldDownloads, folder: folder, changes: [], archiveProblem: problem)
         }
         func key(_ name: String) -> String {
             MessyNamePlanner.comparisonKey(name, caseSensitive: caseSensitive)
         }
-        let archiveURL = archiveURL(in: folderURL)
+        let archiveURL = archiveURL(in: folder)
         let entriesByKey = Dictionary(archive.entries.map { (key($0.name), $0) }, uniquingKeysWith: { first, _ in first })
         var taken = Set(entriesByKey.keys)
         var skippedItems = skippedItems
@@ -127,7 +127,7 @@ public struct ArchivePlanner: Sendable {
         let sortedSkips = skippedItems.sorted {
             $0.url.lastPathComponent.localizedStandardCompare($1.url.lastPathComponent) == .orderedAscending
         }
-        return CleanupPlan(action: .archiveOldDownloads, folderURL: folderURL, changes: changes, skippedItems: sortedSkips)
+        return CleanupPlan(action: .archiveOldDownloads, folder: folder, changes: changes, skippedItems: sortedSkips)
     }
 
     /// Why `record` is archived: when it was last opened, or, never opened, when it arrived.

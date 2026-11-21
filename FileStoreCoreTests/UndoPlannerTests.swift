@@ -24,7 +24,8 @@ struct UndoPlannerTests {
             doneCount: 3,
             skippedCount: 0,
             failedCount: 0,
-            bytesMovedToTrash: 300
+            bytesMovedToTrash: 300,
+            folderID: ManagedFolder.temporary(folder).id
         )
     }
 
@@ -84,7 +85,7 @@ struct UndoPlannerTests {
         run: ActivityRun = run(),
         observation: UndoObservation? = seen()
     ) -> UndoRefusal? {
-        planner.assess(change, in: run, observation: observation, folderURL: Self.folder).refusal
+        planner.assess(change, in: run, observation: observation, folder: .temporary(Self.folder)).refusal
     }
 
     // MARK: - Runs
@@ -97,7 +98,7 @@ struct UndoPlannerTests {
         ]
         let observations = Dictionary(uniqueKeysWithValues: changes.map { ($0.id, Self.seen()) })
 
-        let plan = planner.plan(target: .run(1), run: Self.run(), changes: changes, observations: observations, folderURL: Self.folder)
+        let plan = planner.plan(target: .run(1), run: Self.run(), changes: changes, observations: observations, folder: .temporary(Self.folder))
 
         #expect(plan.steps.map(\.originalName) == ["c.pdf", "b.pdf", "a.pdf"])
         #expect(plan.steps.allSatisfy { $0.operation == .putBackFromTrash })
@@ -117,7 +118,7 @@ struct UndoPlannerTests {
         var observations = Dictionary(uniqueKeysWithValues: changes.map { ($0.id, Self.seen()) })
         observations[15] = Self.seen(current: .nothing)
 
-        let plan = planner.plan(target: .run(1), run: Self.run(), changes: changes, observations: observations, folderURL: Self.folder)
+        let plan = planner.plan(target: .run(1), run: Self.run(), changes: changes, observations: observations, folder: .temporary(Self.folder))
 
         #expect(plan.steps.map(\.changeID) == [10])
         #expect(plan.refused.map(\.change.id) == [15, 14])
@@ -126,7 +127,7 @@ struct UndoPlannerTests {
 
     @Test func oneChangeIsAlwaysReportedWhateverTheReason() {
         let skipped = Self.change(id: 11, outcome: .skipped(.changedSinceScan))
-        let plan = planner.plan(target: .change(11), run: Self.run(), changes: [skipped], observations: [11: Self.seen()], folderURL: Self.folder)
+        let plan = planner.plan(target: .change(11), run: Self.run(), changes: [skipped], observations: [11: Self.seen()], folder: .temporary(Self.folder))
         #expect(plan.steps.isEmpty)
         #expect(plan.refused.map(\.refusal) == [.nothingChanged])
         #expect(refusal(Self.change(id: 12, undoneAt: Self.modified)) == .alreadyUndone)

@@ -11,7 +11,7 @@ import Synchronization
 /// there: the executor reads again the content of a copy the archive holds before trashing it, a
 /// near-duplicate is trashed only by the user's own tick, and a rename never overwrites. Tidy Now
 /// runs Find Duplicates first and those three after it, with one cache, so no file is read twice in
-/// one Tidy Now scan. Each search drops the hashes of files its scan no longer lists (`keepOnly`).
+/// one Tidy Now scan. Each search drops the hashes of files its folder's scan no longer lists (`keepOnly`).
 public final class ContentHashCache: Sendable {
     private struct Entry {
         let sizeInBytes: Int64
@@ -48,11 +48,29 @@ public final class ContentHashCache: Sendable {
         entries.withLock { $0[record.url] = Entry(sizeInBytes: size, dateModified: date, identity: identity, hash: hash) }
     }
 
-    /// Forgets the hash of every file `records` does not list, so the cache never holds more than
-    /// one scan's files.
-    public func keepOnly(_ records: [FileRecord]) {
+    /// Forgets the hash of every file directly inside `folder` that `records`, its latest scan, does
+    /// not list, so the cache never holds more than one scan's files of a folder. Another folder's
+    /// hashes stay.
+    public func keepOnly(_ records: [FileRecord], in folder: ManagedFolder) {
         let listed = Set(records.map(\.url))
-        entries.withLock { entries in entries = entries.filter { listed.contains($0.key) } }
+        // A directory listing spells its entries with links resolved (`/private/var/…` for a folder
+        // given as `/var/…`), so the folder is known by both spellings.
+        let prefixes = Set([folder.url.path(percentEncoded: false), FileStatus.realPath(of: folder.url)].compactMap(\.self).map { path in
+            path.hasSuffix("/") ? path : path + "/"
+        })
+        entries.withLock { entries in
+            entries = entries.filter { entry in
+                if listed.contains(entry.key) {
+                    return true
+                }
+                // Not listed: forgotten only when it was directly inside this folder.
+                let path = entry.key.path(percentEncoded: false)
+                guard let prefix = prefixes.first(where: path.hasPrefix) else {
+                    return true
+                }
+                return path.dropFirst(prefix.count).contains("/")
+            }
+        }
     }
 
     /// How many hashes are remembered.

@@ -23,15 +23,15 @@ public struct LargeFilePlanner: Sendable {
 
     /// The files and packages directly inside `folderURL` that the shared rules allow at `now` and
     /// that take at least the threshold on disk, largest first, then by name.
-    public func candidates(in records: [FileRecord], folderURL: URL, now: Date) -> [FileRecord] {
-        DuplicatePlanner.recordsDirectlyInside(folderURL, among: records)
+    public func candidates(in records: [FileRecord], folder: ManagedFolder, now: Date) -> [FileRecord] {
+        DuplicatePlanner.recordsDirectlyInside(folder.url, among: records)
             .filter { record in
                 guard record.kind == .file || record.kind == .package,
                       let sizeOnDisk = record.allocatedSizeInBytes,
                       sizeOnDisk >= settings.largeDownloadThreshold else {
                     return false
                 }
-                return eligibility.allows(record, now: now)
+                return eligibility.allows(record, in: folder, now: now)
             }
             .sorted { lhs, rhs in
                 let left = lhs.allocatedSizeInBytes ?? 0
@@ -51,9 +51,10 @@ public struct LargeFilePlanner: Sendable {
     }
 
     /// The review list for `records`, from one scan of `folderURL`, at `now`.
-    public func plan(records: [FileRecord], in folderURL: URL, now: Date = .now) -> CleanupPlan {
+    public func plan(records: [FileRecord], in folder: ManagedFolder, now: Date = .now) -> CleanupPlan {
+        let folderURL = folder.url
         let topLevel = DuplicatePlanner.recordsDirectlyInside(folderURL, among: records)
-        let changes = candidates(in: records, folderURL: folderURL, now: now).map { record in
+        let changes = candidates(in: records, folder: folder, now: now).map { record in
             ProposedChange(
                 record: record,
                 operation: .moveToTrash,
@@ -66,7 +67,7 @@ public struct LargeFilePlanner: Sendable {
         }
         return CleanupPlan(
             action: .reviewLargeDownloads,
-            folderURL: folderURL,
+            folder: folder,
             changes: changes,
             topLevelSizeOnDisk: topLevel.reduce(0) { $0 + ($1.allocatedSizeInBytes ?? 0) }
         )

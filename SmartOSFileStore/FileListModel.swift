@@ -7,8 +7,10 @@ import os
 @MainActor
 @Observable
 final class FileListModel {
-    /// The folder being scanned, or nil when it could not be resolved (see `failure`).
-    private(set) var location: ScanLocation?
+    /// The folder being scanned, or nil when it could not be found (see `failure`). It is found
+    /// without the activity log, so the list never waits for the log and still works without it;
+    /// its ID is therefore not the log's. Whatever writes to the log takes `ActivityLogModel.downloads`.
+    private(set) var folder: ManagedFolder?
 
     /// The rules every cleanup action shares, resolved once from the same launch arguments as the
     /// folder, so the search and the executor use the same grace period.
@@ -88,8 +90,8 @@ final class FileListModel {
     /// True when the folder was scanned successfully and holds nothing visible.
     var isEmpty: Bool { hasLoadedOnce && failure == nil && records.isEmpty }
 
-    /// True when a refresh can do something: the location resolved.
-    var canRefresh: Bool { location != nil }
+    /// True when a refresh can do something: the folder was found.
+    var canRefresh: Bool { folder != nil }
 
     /// True when the rows on screen are a complete, current listing: loaded without error and no
     /// scan in flight. Cleanup actions work on those rows, so they wait for this.
@@ -99,8 +101,9 @@ final class FileListModel {
     /// change, so Find Duplicates waits for this.
     var isChangingKept: Bool { pendingKeptOperations > 0 }
 
-    /// True when the Kept list can be changed: the log is open and the folder is known.
-    var canChangeKept: Bool { activity?.log != nil && location != nil }
+    /// True when the Kept list can be changed: the log is open, it knows Downloads, and the folder
+    /// is known.
+    var canChangeKept: Bool { activity?.downloads != nil && folder != nil }
 
     private var scanTask: Task<Void, Never>?
 
@@ -122,6 +125,8 @@ final class FileListModel {
     /// The time and settings the latest scan's marks were worked out with.
     private var markInputs: (now: Date, settings: CleanupSettings)?
     private let scanner = FolderScanner()
+    /// Finds Downloads and says whether it may be managed where it is.
+    private let registry: FolderRegistry
     private let logger = Logger(subsystem: "com.quaden2307.SmartOSFileStore", category: "FileList")
 
     init(
@@ -130,12 +135,13 @@ final class FileListModel {
     ) {
         eligibility = CandidateEligibility.resolve(arguments: arguments)
         applicationFolders = ApplicationFolders.resolve(arguments: arguments)
-        do throws(ScanLocationError) {
-            location = try ScanLocation.resolve(arguments: arguments, environment: environment)
+        registry = ActivityLogModel.folderRegistry(arguments: arguments, environment: environment)
+        do throws(FolderLocationError) {
+            folder = try registry.provisionalDownloads()
         } catch {
             failure = ScanFailure(error)
             hasLoadedOnce = true
-            logger.error("Scan location could not be resolved: \(String(describing: error), privacy: .private)")
+            logger.error("The Downloads folder could not be used: \(String(describing: error), privacy: .private)")
         }
     }
 
@@ -156,7 +162,7 @@ final class FileListModel {
     /// Starts a new scan, cancelling any that is still running. Once it has finished, the Kept list
     /// is read again, which drops the entries of items that no longer exist.
     func refresh() {
-        guard let location else { return }
+        guard let folder else { return }
         scanTask?.cancel()
         isLoading = true
         let scanner = scanner
@@ -167,12 +173,23 @@ final class FileListModel {
         let installedIDs = installedIDs
         // Marks from the last Tidy Now scan describe the listing it was given, not the new one.
         duplicateIDs = []
+        let registry = registry
         scanTask = Task {
+            // Before every listing, and off the main actor: where a link leads can change, and a
+            // disk that does not answer must not hold the window up.
+            if let refusal = await registry.refusal(for: folder) {
+                guard !Task.isCancelled else { return }
+                logger.error("The Downloads folder is refused: \(String(describing: refusal), privacy: .public)")
+                show(ScanFailure(FolderLocationError.refused(refusal)))
+                settle()
+                return
+            }
             let outcome: Result<ScanOutcome, FolderScanError>
             do throws(FolderScanError) {
-                let result = try await scanner.scan(location)
+                let result = try await scanner.scan(folder)
                 let marksByID = await Self.marks(
                     for: result.records,
+                    in: folder,
                     now: result.scannedAt,
                     settings: settings,
                     eligibility: eligibility,
@@ -198,14 +215,14 @@ final class FileListModel {
     /// Works out the Installed marks again from the facts the activity log holds: after a scan, and
     /// after Remove Used Installers has read installers.
     func reloadInstalledMarks() {
-        guard let log = activity?.log, let folderURL = location?.folderURL else { return }
+        guard let log = activity?.log, let folder else { return }
         installedTask?.cancel()
         let records = records
         let applicationFolders = applicationFolders
         installedTask = Task {
             let ids = await InstallerPlanner.strongMatches(
                 among: records,
-                in: folderURL,
+                in: folder,
                 applicationFolders: applicationFolders,
                 cache: log,
                 receipts: .system
@@ -242,9 +259,9 @@ final class FileListModel {
         switch keepToggle(for: ids) {
         case .keep:
             let toKeep = selected.filter { !keptItems.contains($0) }
-            enqueueKeptOperation(keeping: toKeep) { log throws(ActivityLogError) in try await log.keep(toKeep) }
+            enqueueKeptOperation(keeping: toKeep) { log, folder throws(ActivityLogError) in try await log.keep(toKeep, in: folder) }
         case .stopKeeping:
-            enqueueKeptOperation { log throws(ActivityLogError) in try await log.stopKeeping(selected) }
+            enqueueKeptOperation { log, _ throws(ActivityLogError) in try await log.stopKeeping(selected) }
         case nil:
             break
         }
@@ -254,18 +271,18 @@ final class FileListModel {
     /// items in the listing are marked. `onFinish` hears whether the list could be changed.
     func keep(_ records: [FileRecord], onFinish: @escaping @MainActor (Bool) -> Void) {
         let toKeep = records.filter { recordsByID[$0.id] != nil }
-        enqueueKeptOperation(keeping: toKeep, onFinish: onFinish) { log throws(ActivityLogError) in try await log.keep(toKeep) }
+        enqueueKeptOperation(keeping: toKeep, onFinish: onFinish) { log, folder throws(ActivityLogError) in try await log.keep(toKeep, in: folder) }
     }
 
     /// Empties the Kept list. The window asks first.
     func stopKeepingAll() {
-        enqueueKeptOperation { log throws(ActivityLogError) in try await log.stopKeepingAll() }
+        enqueueKeptOperation { log, _ throws(ActivityLogError) in try await log.stopKeepingAll() }
     }
 
     /// Reads the Kept list again: after a scan, when the log has opened or been replaced, and after
     /// the preview has marked files Kept.
     func reloadKeptItems() {
-        enqueueKeptOperation { _ in }
+        enqueueKeptOperation { _, _ in }
     }
 
     /// Runs `operation` on the open log once every earlier Kept operation has finished, then reads
@@ -278,9 +295,9 @@ final class FileListModel {
     private func enqueueKeptOperation(
         keeping: [FileRecord] = [],
         onFinish: (@MainActor (Bool) -> Void)? = nil,
-        _ operation: @escaping @Sendable (ActivityLog) async throws(ActivityLogError) -> Void
+        _ operation: @escaping @Sendable (ActivityLog, ManagedFolder) async throws(ActivityLogError) -> Void
     ) {
-        guard let activity, let log = activity.log, let folderURL = location?.folderURL else {
+        guard let activity, let log = activity.log, let folder = activity.downloads else {
             onFinish?(false)
             return
         }
@@ -291,9 +308,9 @@ final class FileListModel {
             await previous?.value
             var changed = false
             do throws(ActivityLogError) {
-                try await operation(log)
+                try await operation(log, folder)
                 changed = true
-                let kept = try await log.keptItems(forFolder: folderURL)
+                let kept = try await log.keptItems(for: folder)
                 apply(kept)
                 if keeping.contains(where: { !kept.contains($0) }) {
                     refresh()
@@ -329,7 +346,7 @@ final class FileListModel {
     /// Works the marks out again for the records on screen, off the main actor, with the Kept list
     /// as it is now. A later scan or change replaces the result before it lands.
     private func remark() {
-        guard let markInputs else { return }
+        guard let markInputs, let folder else { return }
         marksTask?.cancel()
         let records = records
         let eligibility = eligibility.keeping(keptItems)
@@ -338,6 +355,7 @@ final class FileListModel {
         marksTask = Task {
             let marksByID = await Self.marks(
                 for: records,
+                in: folder,
                 now: markInputs.now,
                 settings: markInputs.settings,
                 eligibility: eligibility,
@@ -385,18 +403,28 @@ final class FileListModel {
                 "Listed \(result.records.count) items, skipped \(result.skippedItems.count), marked \(self.marksByID.count); sorting and filtering on the main actor took \((clock.now - start).milliseconds, format: .fixed(precision: 1)) ms"
             )
         case .failure(let error):
-            failure = ScanFailure(error)
-            records = []
-            sortedRecords = []
-            visibleRecords = []
-            visibleBytes = 0
-            marksTask?.cancel()
-            marksByID = [:]
-            markInputs = nil
-            skippedItems = []
-            totalBytes = 0
+            show(ScanFailure(error))
             logger.error("Scan failed: \(String(describing: error), privacy: .private)")
         }
+        settle()
+    }
+
+    /// Shows `failure` in place of the list, with nothing of an earlier listing left.
+    private func show(_ failure: ScanFailure) {
+        self.failure = failure
+        records = []
+        sortedRecords = []
+        visibleRecords = []
+        visibleBytes = 0
+        marksTask?.cancel()
+        marksByID = [:]
+        markInputs = nil
+        skippedItems = []
+        totalBytes = 0
+    }
+
+    /// A listing has ended, with a list or with a failure.
+    private func settle() {
         isLoading = false
         hasLoadedOnce = true
         scanGeneration += 1
@@ -438,6 +466,7 @@ final class FileListModel {
     @concurrent
     private nonisolated static func marks(
         for records: [FileRecord],
+        in folder: ManagedFolder,
         now: Date,
         settings: CleanupSettings,
         eligibility: CandidateEligibility,
@@ -448,6 +477,7 @@ final class FileListModel {
         for record in records {
             let marks = FileMarker.marks(
                 for: record,
+                in: folder,
                 now: now,
                 settings: settings,
                 eligibility: eligibility,

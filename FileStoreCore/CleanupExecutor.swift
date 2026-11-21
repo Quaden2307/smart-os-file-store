@@ -84,14 +84,15 @@ public struct CleanupExecutor: Sendable {
         let run = await run(
             [Segment(plan: plan, changes: plan.changes)],
             confirmedChangeIDs: confirmedChangeIDs,
-            start: { count in CleanupRunStart(action: plan.action, folderURL: plan.folderURL, confirmedCount: count, startedAt: .now) },
+            folder: plan.folder,
+            start: { count in CleanupRunStart(action: plan.action, folder: plan.folder, confirmedCount: count, startedAt: .now) },
             now: now,
             onProgress: onProgress,
             beforeChange: beforeChange
         )
         let result = CleanupResult(
             action: plan.action,
-            folderURL: plan.folderURL,
+            folder: plan.folder,
             items: run.items.map(\.item),
             wasCancelled: run.wasCancelled,
             logFailure: run.logFailure,
@@ -123,10 +124,14 @@ public struct CleanupExecutor: Sendable {
     /// own order, as one run of the activity log. Each item is checked by the rules of the plan
     /// that proposed it, against that plan's groups and kept copies.
     ///
-    /// - Parameter start: The run's first row, for the number of confirmed changes.
+    /// - Parameters:
+    ///   - folder: The one folder the run belongs to. A change of a plan made for another folder is
+    ///     skipped as outside it, whatever its path says.
+    ///   - start: The run's first row, for the number of confirmed changes.
     func run(
         _ segments: [Segment],
         confirmedChangeIDs: Set<ProposedChange.ID>,
+        folder runFolder: ManagedFolder,
         start: (Int) -> CleanupRunStart,
         now: Date,
         onProgress: (@Sendable (CleanupExecutionProgress) -> Void)?,
@@ -159,6 +164,24 @@ public struct CleanupExecutor: Sendable {
         var contexts: [CleanupAction: (context: PlanContext, folder: DirectoryHandle?)] = [:]
         var verifiedKept: [URL: VerifiedFile] = [:]
         for (plan, confirmed) in confirmedSegments where !confirmed.isEmpty {
+            // The same folder at the same place: a folder's ID alone says nothing about where a plan
+            // was made for it.
+            guard plan.folder == runFolder, plan.folderURL == runFolder.url else {
+                for change in confirmed {
+                    defer { sequence += 1 }
+                    let item = CleanupItemResult(change: change, outcome: .skipped(journal.isStopped ? .activityLogUnavailable : .outsideFolder))
+                    if !journal.isStopped {
+                        journal.startItem(sequence: sequence)
+                        journal.complete(item)
+                    }
+                    outcome.items.append((plan.action, item))
+                    Self.log(item)
+                    onProgress?(
+                        CleanupExecutionProgress(itemsCompleted: outcome.items.count, itemsTotal: total, bytesFreed: bytesFreed)
+                    )
+                }
+                continue
+            }
             let (context, folder) = contexts[plan.action] ?? {
                 let context = PlanContext(plan: plan, confirmed: confirmedChangeIDs.intersection(plan.changes.map(\.id)))
                 // Checks that look up names do it through one handle on the folder, opened only if it
@@ -409,6 +432,7 @@ public struct CleanupExecutor: Sendable {
     /// asked for the change's permit.
     ///
     /// - Parameters:
+    ///   - managedFolder: The plan's folder, whose archive is left alone.
     ///   - contents: For a folder, what is inside it, just read: its size and last change are then
     ///     the contents' total and the later of the folder's date and the newest inside, as the scan
     ///     recorded them (`FileRecord.lastChange`). Nil for a file, whose own size and date count.
@@ -420,6 +444,7 @@ public struct CleanupExecutor: Sendable {
         _ status: FileStatus,
         itemURL: URL,
         change: ProposedChange,
+        in managedFolder: ManagedFolder,
         now: Date,
         contents: PackageContents? = nil,
         downloads: CandidateEligibility.DownloadsInProgress = .refused,
@@ -441,6 +466,7 @@ public struct CleanupExecutor: Sendable {
             isDownloading: FileRecord.isInProgressDownload(itemURL),
             dateAdded: dateAdded,
             dateModified: lastChange,
+            in: managedFolder,
             now: now,
             downloads: downloads
         ) {
@@ -559,7 +585,10 @@ public typealias TrashExecutor = CleanupExecutor
 struct PlanContext: Sendable {
     let action: CleanupAction
 
-    let folderURL: URL
+    /// The plan's folder. Nothing outside it is changed.
+    let folder: ManagedFolder
+
+    var folderURL: URL { folder.url }
 
     /// Nil when the folder cannot be read or is not a folder; nothing is changed then.
     let folderIdentity: FileIdentity?
@@ -587,7 +616,7 @@ struct PlanContext: Sendable {
 
     init(plan: CleanupPlan, confirmed: Set<ProposedChange.ID>) {
         action = plan.action
-        folderURL = plan.folderURL
+        folder = plan.folder
         let folderStatus = try? FileStatus.of(path: plan.folderURL.path(percentEncoded: false), followingLinks: true)
         folderIdentity = folderStatus?.isDirectory == true ? folderStatus?.identity : nil
         volume = VolumeIdentity.of(folderPath: plan.folderURL.path(percentEncoded: false))

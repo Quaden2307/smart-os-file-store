@@ -20,7 +20,7 @@ struct LargeDownloadDiskTests {
             try await CleanupPlanners.plan(
                 .reviewLargeDownloads,
                 records: try await RelocationPlans.records(in: folder),
-                in: folder,
+                in: .temporary(folder),
                 eligibility: CandidateEligibility(),
                 keptItems: KeptItems(),
                 installers: .testing(applications: []),
@@ -105,7 +105,7 @@ struct LargeDownloadDiskTests {
                 try await CleanupPlanners.plan(
                     .reviewLargeDownloads,
                     records: try await RelocationPlans.records(in: fixture.url),
-                    in: fixture.url,
+                    in: .temporary(fixture.url),
                     eligibility: CandidateEligibility(),
                     keptItems: KeptItems(),
                     installers: .testing(applications: [])

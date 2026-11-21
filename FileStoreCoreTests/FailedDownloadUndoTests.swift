@@ -54,9 +54,9 @@ struct FailedDownloadUndoTests {
 
             // Activity looks only at the folder, so it still offers the undo…
             let change = try await Fixtures.change(named: Partials.safari, inRun: runID, log: log)
-            let observations = await UndoPlanner(trash: trash.locator).observe([change], folderURL: folder)
+            let observations = await UndoPlanner(trash: trash.locator).observe([change], folder: log.downloads(at: folder))
             let run = try #require(try await log.run(id: runID))
-            let assessment = UndoPlanner(trash: trash.locator).assess(change, in: run, observation: observations[change.id], folderURL: folder)
+            let assessment = UndoPlanner(trash: trash.locator).assess(change, in: run, observation: observations[change.id], folder: log.downloads(at: folder))
             #expect(assessment.refusal == nil)
 
             // …and the executor, which reads inside, refuses it.
@@ -101,7 +101,7 @@ struct FailedDownloadUndoTests {
             try await log.close()
 
             let reopened = try await ActivityLog.open(location)
-            let settled = try await UndoReconciler().reconcile(reopened)
+            let settled = try await UndoReconciler().reconcile(reopened, folders: .testing(downloads: folder.url))
 
             #expect(settled == UndoReconciler.Result(undone: 1, notUndone: 0))
             #expect(try await Fixtures.change(named: Partials.safari, inRun: runID, log: reopened).undoneAt != nil)

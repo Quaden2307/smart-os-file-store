@@ -65,7 +65,7 @@ final class CleanupSearchModel {
     func start(
         _ action: CleanupAction,
         records: [FileRecord],
-        folderURL: URL,
+        folder: ManagedFolder,
         eligibility: CandidateEligibility,
         applicationFolders: [URL],
         log: ActivityLog,
@@ -80,7 +80,7 @@ final class CleanupSearchModel {
         logger.info("Planning \(action.definition.identifier, privacy: .public) over \(records.count) records")
         let opening = activity.openings
         let hashCache = hashCache
-        hashCache.keepOnly(records)
+        hashCache.keepOnly(records, in: folder)
         // The thresholds the file list marks with, read the same way, so the two never disagree.
         let settings = CleanupSettings.load(from: UserDefaults.standard)
 
@@ -88,12 +88,12 @@ final class CleanupSearchModel {
         searchTask = Task { [weak self] in
             let outcome: Result<CleanupPlan?, CleanupPlanningError>
             do throws(ActivityLogError) {
-                let keptItems = try await log.keptItems(forFolder: folderURL)
+                let keptItems = try await log.keptItems(for: folder)
                 do throws(CleanupPlanningError) {
                     let plan = try await CleanupPlanners.plan(
                         action,
                         records: records,
-                        in: folderURL,
+                        in: folder,
                         eligibility: eligibility,
                         keptItems: keptItems,
                         installers: .standard(applicationFolders: applicationFolders, cache: log),

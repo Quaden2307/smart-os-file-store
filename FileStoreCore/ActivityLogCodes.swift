@@ -26,6 +26,29 @@ extension CleanupAction {
     }
 }
 
+extension ManagedFolder.Kind {
+    var logCode: String {
+        switch self {
+        case .downloads:
+            "downloads"
+        case .desktop:
+            "desktop"
+        case .documents:
+            "documents"
+        case .custom:
+            "custom"
+        }
+    }
+
+    /// Nil for a kind this version does not know: its folder is left alone, not guessed at.
+    init?(logCode: String) {
+        guard let kind = Self.allCases.first(where: { $0.logCode == logCode }) else {
+            return nil
+        }
+        self = kind
+    }
+}
+
 extension RunOrigin {
     /// Nil for the app itself, which is every run made before the column existed.
     var logCode: String? {

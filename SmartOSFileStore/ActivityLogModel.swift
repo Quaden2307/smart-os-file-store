@@ -45,16 +45,47 @@ final class ActivityLogModel {
     /// Where the log lives. Nil when that could not be worked out.
     let location: ActivityLogLocation?
 
+    /// Finds the managed folders, from the same launch arguments as the log's place.
+    let folders: FolderRegistry
+
+    /// Downloads as the open log knows it, read when that log was opened. Whatever is recorded in
+    /// the log (a cleanup, a Kept mark) names this folder: a log started fresh has a new ID for it.
+    /// Nil while no log is open, and when Downloads cannot be used.
+    var downloads: ManagedFolder? {
+        log == nil ? nil : openedDownloads
+    }
+
+    private var openedDownloads: ManagedFolder?
+
     private var hasStartedOpening = false
     private let logger = Logger(subsystem: "com.quaden2307.SmartOSFileStore", category: "ActivityLog")
 
     /// The app's own identifier names the log's folder in Application Support.
     private static let fallbackAppIdentifier = "com.quaden2307.SmartOSFileStore"
 
+    /// The registry for this copy of the app. The app's own folders are never managed: the log's,
+    /// and the one disk images are read in.
+    static func folderRegistry(
+        arguments: [String] = ProcessInfo.processInfo.arguments,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> FolderRegistry {
+        let location = try? ActivityLogLocation.resolve(
+            arguments: arguments,
+            environment: environment,
+            appIdentifier: Bundle.main.bundleIdentifier ?? fallbackAppIdentifier
+        )
+        return FolderRegistry.forProcess(
+            arguments: arguments,
+            environment: environment,
+            appDataFolders: [location?.folderURL, DiskImageMounts.shared.root].compactMap(\.self)
+        )
+    }
+
     init(
         arguments: [String] = ProcessInfo.processInfo.arguments,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) {
+        folders = Self.folderRegistry(arguments: arguments, environment: environment)
         do throws(ActivityLogError) {
             location = try ActivityLogLocation.resolve(
                 arguments: arguments,
@@ -158,7 +189,7 @@ final class ActivityLogModel {
                 // it was undoing. A row that cannot be settled stays started, in a run marked
                 // interrupted, for the next launch; the log is still usable.
                 do throws(ActivityLogError) {
-                    _ = try await UndoReconciler().reconcile(opened)
+                    _ = try await UndoReconciler().reconcile(opened, folders: folders)
                 } catch {
                     logger.error("Interrupted undos could not be settled: \(String(describing: error), privacy: .public)")
                 }
@@ -170,6 +201,7 @@ final class ActivityLogModel {
                 }
                 totals = try await opened.totals()
                 latestCleanupRun = try await opened.latestCleanupRun()
+                openedDownloads = try await folders.folders(in: opened).first { $0.kind == .downloads }
                 openings += 1
                 state = .ready(opened)
             } catch {

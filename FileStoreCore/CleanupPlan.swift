@@ -21,7 +21,9 @@ public struct CleanupPlan: Sendable, Hashable {
     public let action: CleanupAction
 
     /// The folder the action was planned for. Every change lies directly inside it.
-    public let folderURL: URL
+    public let folder: ManagedFolder
+
+    public var folderURL: URL { folder.url }
 
     /// Every proposed change, in the order the preview shows them.
     public let changes: [ProposedChange]
@@ -52,7 +54,7 @@ public struct CleanupPlan: Sendable, Hashable {
 
     public init(
         action: CleanupAction,
-        folderURL: URL,
+        folder: ManagedFolder,
         changes: [ProposedChange],
         duplicateGroups: [DuplicateGroup] = [],
         nearDuplicateGroups: [NearDuplicateGroup] = [],
@@ -62,7 +64,7 @@ public struct CleanupPlan: Sendable, Hashable {
         topLevelSizeOnDisk: Int64? = nil
     ) {
         self.action = action
-        self.folderURL = folderURL
+        self.folder = folder
         self.changes = changes
         self.duplicateGroups = duplicateGroups
         self.nearDuplicateGroups = nearDuplicateGroups
@@ -73,8 +75,8 @@ public struct CleanupPlan: Sendable, Hashable {
     }
 
     /// A plan that proposes nothing.
-    public static func empty(action: CleanupAction, folderURL: URL) -> CleanupPlan {
-        CleanupPlan(action: action, folderURL: folderURL, changes: [])
+    public static func empty(action: CleanupAction, folder: ManagedFolder) -> CleanupPlan {
+        CleanupPlan(action: action, folder: folder, changes: [])
     }
 
     public var isEmpty: Bool { changes.isEmpty }

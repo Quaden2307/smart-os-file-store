@@ -19,9 +19,6 @@ struct ActivityView: View {
     /// The window's keyboard focus, which the View menu moves here when it switches to Activity.
     var focus: FocusState<SidebarSection?>.Binding
 
-    /// The folder the app looks after, which undo puts files back into. Nil while it is not known.
-    let folderURL: URL?
-
     /// False while the window is busy (a search, a preview or another undo): Undo then does nothing.
     let canUndo: Bool
 
@@ -42,13 +39,10 @@ struct ActivityView: View {
                 // A run ended, an undo ended, or the log was opened or replaced.
                 reload()
             }
-            .onChange(of: folderURL) {
-                reload()
-            }
     }
 
     private func reload() {
-        model.reload(activity: activity, folderURL: folderURL)
+        model.reload(activity: activity)
     }
 
     @ViewBuilder
@@ -150,7 +144,7 @@ struct ActivityView: View {
                 selection.insert(.run(runID))
             }
         }
-        model.setExpanded(runID, isExpanded, activity: activity, folderURL: folderURL)
+        model.setExpanded(runID, isExpanded, activity: activity)
     }
 
     /// A row's Undo state, greyed out while the window is busy.

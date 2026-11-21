@@ -24,18 +24,20 @@ struct ActivityLogSchemaTests {
             #expect(databaseURL.lastPathComponent == "FileStore.sqlite")
             #expect(canonicalPath(databaseURL.deletingLastPathComponent()).hasSuffix("/Application Support/" + LogSandbox.appIdentifier))
 
-            // The migrations made exactly the six tables, with one totals row and one maintenance row.
+            // The migrations made exactly the seven tables, with one totals row, one maintenance row
+            // and one folder: Downloads.
             try await log.close()
             let raw = try RawDatabase(databaseURL)
             let tables = try raw.text(
                 "SELECT group_concat(name, ',') FROM (SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'grdb_%' ORDER BY name)"
             )
-            #expect(tables == "changes,installerFacts,keptItems,maintenance,runs,totals")
+            #expect(tables == "changes,folders,installerFacts,keptItems,maintenance,runs,totals")
+            #expect(try raw.text("SELECT group_concat(kind, ',') FROM folders") == "downloads")
             #expect(try raw.text("SELECT count(*) FROM installerFacts") == "0")
             #expect(try raw.text("SELECT count(*) FROM keptItems") == "0")
             #expect(try raw.text("SELECT count(*) FROM totals") == "1")
             #expect(try raw.text("SELECT count(*) FROM maintenance") == "1")
-            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6")
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6,v7")
         }
     }
 
@@ -61,15 +63,8 @@ struct ActivityLogSchemaTests {
         try await withLogSandbox { sandbox in
             let location = try sandbox.realLocation()
             let databaseURL = try #require(location.databaseURL)
-            let log = try await ActivityLog.open(location, now: now)
-            let runID = try LogSamples.writeRun(to: log, startedAt: now, count: 2)
-            try await log.close()
             // What the version before chat cleanups left: no `runs.origin`, and migrations up to `v5`.
-            do {
-                let raw = try RawDatabase(databaseURL)
-                try raw.execute("ALTER TABLE runs DROP COLUMN origin")
-                try raw.execute("DELETE FROM grdb_migrations WHERE identifier = 'v6'")
-            }
+            let runID = try LegacyLog.make(at: location, version: 5, startedAt: now)
 
             let upgraded = try await ActivityLog.open(location, now: now)
             #expect(try await upgraded.run(id: runID)?.origin == .app)
@@ -77,7 +72,7 @@ struct ActivityLogSchemaTests {
             try await upgraded.close()
 
             let raw = try RawDatabase(databaseURL)
-            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6")
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6,v7")
             #expect(try raw.text("SELECT count(*) FROM runs WHERE origin IS NULL") == "1")
         }
     }
@@ -86,18 +81,9 @@ struct ActivityLogSchemaTests {
         try await withLogSandbox { sandbox in
             let location = try sandbox.realLocation()
             let databaseURL = try #require(location.databaseURL)
-            let log = try await ActivityLog.open(location, now: now)
-            let runID = try LogSamples.writeRun(to: log, startedAt: now, count: 2)
-            try await log.close()
             // What the version before segment 7 left: no `changes.isFolder`, no `installerFacts`, and
             // migrations up to `v3`.
-            do {
-                let raw = try RawDatabase(databaseURL)
-                try raw.execute("DROP TABLE installerFacts")
-                try raw.execute("ALTER TABLE changes DROP COLUMN isFolder")
-                try raw.execute("ALTER TABLE runs DROP COLUMN origin")
-                try raw.execute("DELETE FROM grdb_migrations WHERE identifier IN ('v4', 'v5', 'v6')")
-            }
+            let runID = try LegacyLog.make(at: location, version: 3, startedAt: now)
 
             let upgraded = try await ActivityLog.open(location, now: now)
             let changes = try await upgraded.changes(inRun: runID)
@@ -106,7 +92,7 @@ struct ActivityLogSchemaTests {
             try await upgraded.close()
 
             let raw = try RawDatabase(databaseURL)
-            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6")
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6,v7")
             #expect(try raw.text("SELECT count(*) FROM changes WHERE isFolder = 0") == "2")
             // Only 0 and 1 are a value it may hold.
             #expect(throws: (any Error).self) {
@@ -122,7 +108,7 @@ struct ActivityLogSchemaTests {
             let log = try await ActivityLog.open(location, now: now)
             // A row in flight, so the write-ahead file and its index exist.
             _ = try log.beginRun(
-                CleanupRunStart(action: .findDuplicates, folderURL: LogSamples.folderURL, confirmedCount: 1, startedAt: now)
+                CleanupRunStart(action: .findDuplicates, folder: log.downloads(at: LogSamples.folderURL), confirmedCount: 1, startedAt: now)
             )
 
             let path = databaseURL.path(percentEncoded: false)
@@ -154,6 +140,61 @@ struct ActivityLogSchemaTests {
         #expect(try await log.totals().filesCleaned == 2)
     }
 
+    /// Every version that shipped before folders: its rows are kept, all of them belong to the one
+    /// Downloads folder the migration makes, and a row without a folder is refused from then on.
+    @Test(arguments: 1...LegacyLog.newestVersion)
+    func aLogFromAnyEarlierVersionGainsFoldersAndItsRowsBelongToDownloads(version: Int) async throws {
+        try await withLogSandbox { sandbox in
+            let location = try sandbox.realLocation()
+            let databaseURL = try #require(location.databaseURL)
+            let runID = try LegacyLog.make(at: location, version: version, count: 3, startedAt: now)
+
+            let upgraded = try await ActivityLog.open(location, now: now)
+            let run = try #require(try await upgraded.run(id: runID))
+            #expect(run.folderPath == LegacyLog.folderPath)
+            #expect(run.doneCount == 3)
+            #expect(run.origin == .app)
+            let changes = try await upgraded.changes(inRun: runID)
+            #expect(changes.map(\.originalPath) == (1...3).map { "\(LegacyLog.folderPath)/report (\($0)).pdf" })
+            #expect(changes.allSatisfy { $0.outcome == .trashed && !$0.isFolder })
+            #expect(try await upgraded.totals() == ActivityTotals(bytesMovedToTrash: 3_072, filesCleaned: 3))
+            // The Kept list a version from 3 on left is still there, entry for entry.
+            #expect(try upgraded.currentKeptItems().items.map(\.path).sorted() == (version >= 3 ? ["kept by path.pdf", "kept.pdf"] : []).map { "\(LegacyLog.folderPath)/\($0)" })
+            try await upgraded.close()
+
+            let raw = try RawDatabase(databaseURL)
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6,v7")
+            // One folder, Downloads, under an ID that is a UUID and not its path.
+            #expect(try raw.text("SELECT count(*) FROM folders") == "1")
+            let downloads = try #require(try raw.text("SELECT id FROM folders WHERE kind = 'downloads' AND removedAt IS NULL"))
+            #expect(UUID(uuidString: downloads) != nil)
+            #expect(run.folderID == UUID(uuidString: downloads))
+            for table in ["runs", "changes", "keptItems"] {
+                #expect(try raw.text("SELECT count(*) FROM \(table) WHERE folderID IS NOT '\(downloads)'") == "0", "\(table)")
+            }
+            // A row must name a folder, and one the table holds.
+            #expect(throws: (any Error).self) {
+                try raw.execute("INSERT INTO runs (action, folderPath, startedAt, state, confirmedCount) VALUES ('findDuplicates', '/x', 0, 'finished', 0)")
+            }
+            #expect(throws: (any Error).self) {
+                try raw.execute("UPDATE changes SET folderID = NULL")
+            }
+            #expect(throws: (any Error).self) {
+                try raw.execute("PRAGMA foreign_keys = ON; UPDATE runs SET folderID = 'no such folder'")
+            }
+            // A standard folder has one row, and neither a name nor a bookmark.
+            #expect(throws: (any Error).self) {
+                try raw.execute("INSERT INTO folders (id, kind) VALUES ('\(UUID().uuidString)', 'downloads')")
+            }
+            #expect(throws: (any Error).self) {
+                try raw.execute("INSERT INTO folders (id, kind, displayName) VALUES ('\(UUID().uuidString)', 'desktop', 'Desktop')")
+            }
+            #expect(throws: (any Error).self) {
+                try raw.execute("INSERT INTO folders (id, kind) VALUES ('\(UUID().uuidString)', 'custom')")
+            }
+        }
+    }
+
     @Test func aDatabaseFromANewerVersionIsRefusedAndLeftAsItIs() async throws {
         try await withLogSandbox { sandbox in
             let location = try sandbox.realLocation()
@@ -173,7 +214,7 @@ struct ActivityLogSchemaTests {
             }
 
             let raw = try RawDatabase(databaseURL)
-            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6,v999")
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6,v7,v999")
             #expect(try raw.text("SELECT count(*) FROM runs") == "1")
         }
     }

@@ -49,14 +49,14 @@ struct TidyNowResolveTests {
     static func duplicates(kept: FileRecord, _ copies: [FileRecord], byte: UInt8 = 1) -> CleanupPlan {
         CleanupPlan(
             action: .findDuplicates,
-            folderURL: folder,
+            folder: .temporary(folder),
             changes: copies.map { trash($0, .sameContent(asFileNamed: kept.displayName)) },
             duplicateGroups: [DuplicateGroup(contentHash: hash(byte), kept: kept, duplicates: copies, fileSizeInBytes: 1_000)]
         )
     }
 
     static func plan(_ action: CleanupAction, _ changes: [ProposedChange]) -> CleanupPlan {
-        CleanupPlan(action: action, folderURL: folder, changes: changes)
+        CleanupPlan(action: action, folder: .temporary(folder), changes: changes)
     }
 
     static func resolve(_ plans: [CleanupPlan], kept: [FileRecord] = []) -> [CleanupAction: CleanupPlan] {
@@ -215,7 +215,7 @@ struct TidyNowResolveTests {
         let other = Self.record("todo (1).txt")
         let near = CleanupPlan(
             action: .reviewNearDuplicates,
-            folderURL: Self.folder,
+            folder: .temporary(Self.folder),
             changes: [first, second].map { Self.trash($0, .nearDuplicate(sameNameAs: "todo")) },
             nearDuplicateGroups: [NearDuplicateGroup(cleanedName: "todo", members: [
                 .init(record: first, contentHash: Self.hash(1)), .init(record: second, contentHash: Self.hash(2)),
@@ -303,7 +303,7 @@ struct TidyNowResolveTests {
             groups.append(DuplicateGroup(contentHash: Self.hash(UInt8(byte)), kept: keptCopy, duplicates: copies, fileSizeInBytes: 1_000))
             duplicateChanges += copies.map { Self.trash($0, .sameContent(asFileNamed: keptCopy.displayName)) }
         }
-        plans.append(CleanupPlan(action: .findDuplicates, folderURL: Self.folder, changes: duplicateChanges, duplicateGroups: groups))
+        plans.append(CleanupPlan(action: .findDuplicates, folder: .temporary(Self.folder), changes: duplicateChanges, duplicateGroups: groups))
         var nearGroups: [NearDuplicateGroup] = []
         var nearUsed: Set<URL> = []
         for byte in 1...2 {
@@ -313,7 +313,7 @@ struct TidyNowResolveTests {
         }
         plans.append(CleanupPlan(
             action: .reviewNearDuplicates,
-            folderURL: Self.folder,
+            folder: .temporary(Self.folder),
             changes: nearGroups.flatMap { $0.members.map { Self.trash($0.record, .nearDuplicate(sameNameAs: "x")) } },
             nearDuplicateGroups: nearGroups
         ))

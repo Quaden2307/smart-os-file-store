@@ -34,19 +34,22 @@ public struct UndoPlanner: Sendable {
     /// - Parameters:
     ///   - run: The run the target belongs to.
     ///   - changes: The target's changes: every change of the run, or the one change.
-    ///   - folderURL: The folder the app looks after now. A run made in another folder is not undone.
+    ///   - folder: The folder the run was made in, as `FolderRegistry` finds it now, whatever folder
+    ///     the app is showing. Nil when it cannot be found; nothing is undone then.
     public func plan(
         target: UndoTarget,
         run: ActivityRun,
         changes: [ActivityChange],
         observations: [ActivityChange.ID: UndoObservation],
-        folderURL: URL
+        folder: ManagedFolder?
     ) -> UndoPlan {
         var steps: [UndoStep] = []
         var refused: [UndoPlan.Refused] = []
+        // Where the run saw its folder stands in for one that cannot be found: every step is refused.
+        let folderURL = folder?.url ?? URL(filePath: run.folderPath, directoryHint: .isDirectory)
         let planner = UndoPlanner(trash: trash.resolved(for: folderURL))
         for change in changes {
-            switch planner.assess(change, in: run, observation: observations[change.id], folderURL: folderURL) {
+            switch planner.assess(change, in: run, observation: observations[change.id], folder: folder) {
             case .undoable(let step):
                 steps.append(step)
             case .notUndoable(let refusal):
@@ -61,7 +64,14 @@ public struct UndoPlanner: Sendable {
         // The reverse of the order the run made them in.
         steps.sort { ($0.sequence, $0.changeID) > ($1.sequence, $1.changeID) }
         refused.sort { ($0.change.sequence, $0.change.id) > ($1.change.sequence, $1.change.id) }
-        return UndoPlan(target: target, folderURL: folderURL, undoneActionCode: run.actionCode, steps: steps, refused: refused)
+        return UndoPlan(
+            target: target,
+            folderID: run.folderID,
+            folderURL: folderURL,
+            undoneActionCode: run.actionCode,
+            steps: steps,
+            refused: refused
+        )
     }
 
     /// Whether `change` can be undone, by the log and by what was seen. The first rule that fails decides.
@@ -69,11 +79,11 @@ public struct UndoPlanner: Sendable {
         _ change: ActivityChange,
         in run: ActivityRun,
         observation: UndoObservation?,
-        folderURL: URL
+        folder: ManagedFolder?
     ) -> Assessment {
         let operation: UndoStep.Operation
         let currentPath: String
-        switch evaluate(change, in: run, folderURL: folderURL) {
+        switch evaluate(change, in: run, folder: folder) {
         case .reversed(let reversal, let path):
             (operation, currentPath) = (reversal, path)
         case .refused(let refusal):
@@ -135,7 +145,7 @@ public struct UndoPlanner: Sendable {
     }
 
     /// The rules the log alone can answer: how the change is reversed, or why it cannot be.
-    private func evaluate(_ change: ActivityChange, in run: ActivityRun, folderURL: URL) -> Verdict {
+    private func evaluate(_ change: ActivityChange, in run: ActivityRun, folder: ManagedFolder?) -> Verdict {
         if run.isUndo || change.undoesChangeID != nil {
             return .refused(.isAnUndo)
         }
@@ -159,11 +169,17 @@ public struct UndoPlanner: Sendable {
         case (nil, _), (_, .unrecognized), (.moveToTrash, _), (.rename, _), (.move, _), (.putBackFromTrash, _):
             return .refused(.unknownToThisVersion)
         }
-        // Only the folder the app looks after, and only one visible name in it. That the file was
-        // directly inside that folder is for the observation to say: the scan may spell the folder
-        // another way than the run does.
+        // Only the run's own folder, found now, and only one visible name in it. A folder that is
+        // gone, or that the log names no more, is not looked for anywhere else.
+        guard let folder else {
+            return .refused(.folderUnavailable)
+        }
+        // And only where the run saw it: the log holds each file's whole path, so a folder that
+        // has moved since is left alone (decision record 0026). That the file was directly inside
+        // is for the observation to say: the scan may spell the folder another way than the run does.
+        let folderURL = folder.url
         let folderPath = folderURL.path(percentEncoded: false)
-        guard UndoPaths.components(of: run.folderPath) == UndoPaths.components(of: folderPath) else {
+        guard folder.id == run.folderID, UndoPaths.components(of: run.folderPath) == UndoPaths.components(of: folderPath) else {
             return .refused(.otherFolder)
         }
         guard let originalName = UndoPaths.name(of: change.originalPath), UndoPaths.isSingleName(originalName) else {
@@ -192,9 +208,9 @@ public struct UndoPlanner: Sendable {
 
     /// Looks, right now, at each change's current and original places. Reads `lstat` only.
     @concurrent
-    public func observe(_ changes: [ActivityChange], folderURL: URL) async -> [ActivityChange.ID: UndoObservation] {
-        let folder = try? FileStatus.of(path: folderURL.path(percentEncoded: false), followingLinks: true)
-        let folderIdentity = folder?.isDirectory == true ? folder?.identity : nil
+    public func observe(_ changes: [ActivityChange], folder: ManagedFolder?) async -> [ActivityChange.ID: UndoObservation] {
+        let status = folder.flatMap { try? FileStatus.of(path: $0.url.path(percentEncoded: false), followingLinks: true) }
+        let folderIdentity = status?.isDirectory == true ? status?.identity : nil
         var result: [ActivityChange.ID: UndoObservation] = [:]
         result.reserveCapacity(changes.count)
         // The changes of a run share one folder; each folder spelling is looked at once.
@@ -223,10 +239,12 @@ public struct UndoPlanner: Sendable {
     /// The plan for `target`, read from `log` and the disk now. A target the log no longer holds
     /// (its run was pruned) gives a plan with nothing in it: there is nothing left to undo.
     ///
+    /// - Parameter folders: Finds the folder the target's run was made in, which is where its files
+    ///   go back, whether or not that folder is still on the list.
     /// - Throws: When the log cannot be read.
     @concurrent
-    public func plan(_ target: UndoTarget, log: ActivityLog, folderURL: URL) async throws(ActivityLogError) -> UndoPlan {
-        let nothing = UndoPlan(target: target, folderURL: folderURL, undoneActionCode: "", steps: [], refused: [])
+    public func plan(_ target: UndoTarget, log: ActivityLog, folders: FolderRegistry) async throws(ActivityLogError) -> UndoPlan {
+        let nothing = UndoPlan(target: target, folderID: nil, folderURL: URL(filePath: "/"), undoneActionCode: "", steps: [], refused: [])
         let run: ActivityRun
         let changes: [ActivityChange]
         switch target {
@@ -243,8 +261,17 @@ public struct UndoPlanner: Sendable {
             run = found
             changes = [change]
         }
-        let observations = await observe(changes, folderURL: folderURL)
-        return plan(target: target, run: run, changes: changes, observations: observations, folderURL: folderURL)
+        let folder = try await Self.folder(of: run, log: log, folders: folders)
+        let observations = await observe(changes, folder: folder)
+        return plan(target: target, run: run, changes: changes, observations: observations, folder: folder)
+    }
+
+    /// The folder `run` was made in, where it is now. Nil when it cannot be found.
+    public static func folder(of run: ActivityRun, log: ActivityLog, folders: FolderRegistry) async throws(ActivityLogError) -> ManagedFolder? {
+        guard let folderID = run.folderID else {
+            return nil
+        }
+        return try await folders.folder(id: folderID, in: log)
     }
 }
 

@@ -273,7 +273,7 @@ struct InstallerRuleTests {
             record("Old downloads"),
         ]
         let kept = KeptItems([KeptItem(identity: identity, path: "/Users/someone/Downloads/Kept.dmg", keptAt: now)])
-        let candidates = InstallerPlanner(eligibility: CandidateEligibility(keptItems: kept)).candidates(in: records, now: now)
+        let candidates = InstallerPlanner(eligibility: CandidateEligibility(keptItems: kept)).candidates(in: records, folder: .temporary(URL(filePath: "/Users/someone/Downloads")), now: now)
         #expect(candidates.map(\.displayName) == ["SomeApp.dmg", "Tool.pkg", "App.zip"])
         #expect(InstallerPlanner.kind(ofName: "SomeApp.DMG") == .diskImage)
         #expect(InstallerPlanner.kind(ofName: "Tool.pkg") == .package)
@@ -287,7 +287,7 @@ struct InstallerRuleTests {
         let strong = UsedInstallerEvidence(strength: .strong, name: "SomeApp", version: "2.1", installedAppPath: "/Applications/SomeApp.app", bundleIdentifier: "com.example.SomeApp")
         let possible = UsedInstallerEvidence(strength: .possible, name: "Gizmo", version: nil, installedAppPath: "/Applications/Gizmo.app", bundleIdentifier: nil)
         let folder = URL(filePath: "/Users/someone/Downloads", directoryHint: .isDirectory)
-        let plan = InstallerPlanner.makePlan(folderURL: folder, findings: [
+        let plan = InstallerPlanner.makePlan(folder: .temporary(folder), findings: [
             (record("b.dmg"), .proposed(possible)),
             (record("a.zip"), .proposed(strong)),
             (record("c.pkg"), .notProposed),

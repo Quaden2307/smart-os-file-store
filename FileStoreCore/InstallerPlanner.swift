@@ -12,7 +12,7 @@ import UniformTypeIdentifiers
 ///   name (`InstallerName`).
 /// - Not proposed: no match, or an installed version older than the installer's.
 ///
-/// The rule is pure: `candidates(in:now:)`, `evidence(fileName:facts:apps:receipts:)` and
+/// The rule is pure: `candidates(in:folder:now:)`, `evidence(fileName:facts:apps:receipts:)` and
 /// `makePlan(folderURL:findings:factsRead:)` work on values alone. Only
 /// `plan(records:in:sources:now:onProgress:)` reads the disk, and it only reads.
 public struct InstallerPlanner: Sendable {
@@ -75,12 +75,12 @@ public struct InstallerPlanner: Sendable {
     /// The installers that may be proposed at `now`: regular files whose scanned type is exactly the
     /// one their name gives, that the shared rules allow. Folders (a bundle-style package), links
     /// and other formats never are.
-    public func candidates(in records: [FileRecord], now: Date) -> [FileRecord] {
+    public func candidates(in records: [FileRecord], folder: ManagedFolder, now: Date) -> [FileRecord] {
         records.filter { record in
             guard record.kind == .file, let kind = Self.kind(ofName: record.displayName) else {
                 return false
             }
-            return record.contentType == Self.type(of: kind) && eligibility.allows(record, now: now)
+            return record.contentType == Self.type(of: kind) && eligibility.allows(record, in: folder, now: now)
         }
     }
 
@@ -157,7 +157,7 @@ public struct InstallerPlanner: Sendable {
     /// The plan from each installer's finding, for `folderURL`. Changes and items not checked are in
     /// name order. Pure: nothing here touches the disk.
     public static func makePlan(
-        folderURL: URL,
+        folder: ManagedFolder,
         findings: [(record: FileRecord, finding: Finding)],
         factsRead: [InstallerFactsEntry] = []
     ) -> CleanupPlan {
@@ -177,7 +177,7 @@ public struct InstallerPlanner: Sendable {
         skippedItems.sort { UnpackedZipPlanner.isOrderedBefore($0.url.lastPathComponent, $1.url.lastPathComponent) }
         return CleanupPlan(
             action: .removeUsedInstallers,
-            folderURL: folderURL,
+            folder: folder,
             changes: changes,
             skippedItems: skippedItems,
             installerFactsRead: factsRead

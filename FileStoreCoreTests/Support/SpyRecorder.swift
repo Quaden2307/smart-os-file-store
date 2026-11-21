@@ -141,7 +141,8 @@ final class SpyRecorder: CleanupRecording {
 
     func beginRun(_ start: CleanupRunStart) throws(ActivityLogError) -> Int64 {
         try admit(.beginRun)
-        let id = try log?.beginRun(start)
+        // The call is remembered as the executor made it; the log gets it under its own Downloads.
+        let id: Int64? = if let log { try log.beginRun(start.recorded(in: log)) } else { nil }
         return remember(.beginRun(start), keepingID: id)
     }
 
@@ -222,7 +223,54 @@ extension ActivityLog {
 /// A test wrote a started row for a file it had not marked Kept, and the log said it was Kept.
 struct UnexpectedlyKept: Error {}
 
+extension CleanupRunStart {
+    /// This run as `log` can record it: in the log's own Downloads folder, said to be where the
+    /// run's folder is. A test's plans name a stand-in folder under an ID of its own
+    /// (`ManagedFolder.temporary`), and a log takes no run for a folder it does not hold.
+    ///
+    /// Only a stand-in is replaced. A run that names any other folder (one the log gave a test, or
+    /// one it does not hold) goes to the log exactly as the executor made it.
+    func recorded(in log: ActivityLog) -> CleanupRunStart {
+        guard self.folder.id == ManagedFolder.temporary(folderURL).id else {
+            return self
+        }
+        let folder = log.downloads(at: folderURL)
+        guard let action else {
+            return .tidyNow(folder: folder, confirmedCount: confirmedCount, startedAt: startedAt, origin: origin)
+        }
+        var start = CleanupRunStart(action: action, folder: folder, confirmedCount: confirmedCount, startedAt: startedAt)
+        start.origin = origin
+        return start
+    }
+}
+
+/// `recorder` as a test's executor should be given it: a log is wrapped so its runs go under its own
+/// Downloads folder (see `CleanupExecutor.init(recorder:)` below); any other recorder is itself.
+func testRecorder(_ recorder: any CleanupRecording) -> any CleanupRecording {
+    (recorder as? ActivityLog).map { SpyRecorder(forwardingTo: $0) } ?? recorder
+}
+
 extension CleanupExecutor {
+    /// The executor of a test that reads the log afterwards: every run is recorded in `log`, under
+    /// the log's own Downloads folder (`CleanupRunStart.recorded(in:)`), whatever stand-in folder
+    /// the plan was made for. A test about which folder a run belongs to hands the engine's own
+    /// initialiser the log as `any CleanupRecording`, and nothing is changed on the way.
+    init(
+        recorder log: ActivityLog,
+        hasher: ContentHasher = ContentHasher(),
+        eligibility: CandidateEligibility = CandidateEligibility(),
+        applicationFolders: [URL] = [],
+        receipts: InstallReceipts = .system
+    ) {
+        self.init(
+            recorder: SpyRecorder(forwardingTo: log),
+            hasher: hasher,
+            eligibility: eligibility,
+            applicationFolders: applicationFolders,
+            receipts: receipts
+        )
+    }
+
     /// The executor as most tests use it: recording into a throwaway `SpyRecorder`. The engine
     /// itself has no executor without a recorder; tests about the log pass their own.
     init(hasher: ContentHasher = ContentHasher(), eligibility: CandidateEligibility = CandidateEligibility()) {

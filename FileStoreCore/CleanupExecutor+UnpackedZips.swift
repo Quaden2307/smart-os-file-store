@@ -56,13 +56,13 @@ extension CleanupExecutor {
         let readDateAdded = { () throws(FileStatus.Failure) -> Date? in
             try FileStatus.dateAdded(path: name, relativeTo: folder.descriptor)
         }
-        if let refused = sharedRefusal(status, itemURL: itemURL, change: change, now: now, readDateAdded: readDateAdded) {
+        if let refused = sharedRefusal(status, itemURL: itemURL, change: change, in: context.folder, now: now, readDateAdded: readDateAdded) {
             return refused
         }
 
         // The match, made again from the disk as it is now.
         let copy: FileStatus
-        switch verifiedCopy(named: copyName, ofZipNamed: name, checked: status, in: folder, now: now) {
+        switch verifiedCopy(named: copyName, ofZipNamed: name, checked: status, in: folder, folder: context.folder, now: now) {
         case .verified(let copyStatus):
             copy = copyStatus
         case .refused(let outcome):
@@ -126,6 +126,7 @@ extension CleanupExecutor {
         ofZipNamed name: String,
         checked status: FileStatus,
         in folder: DirectoryHandle,
+        folder managedFolder: ManagedFolder,
         now: Date
     ) -> VerifiedCopy {
         // The listing, read from the very file just checked.
@@ -155,7 +156,7 @@ extension CleanupExecutor {
         }
 
         // Every entry, read now, and whether the copy has settled, by the planner's own check.
-        switch UnpackedZipPlanner(eligibility: eligibility).checkCopy(named: copyName, of: expectation, in: folder, now: now) {
+        switch UnpackedZipPlanner(eligibility: eligibility).checkCopy(named: copyName, of: expectation, in: folder, folder: managedFolder, now: now) {
         case .matches(let rootStatus):
             return .verified(rootStatus)
         case .missing:

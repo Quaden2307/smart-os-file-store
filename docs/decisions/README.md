@@ -54,3 +54,4 @@ One short record per segment for each decision a reader of the code would otherw
 - [0023. Cleanups from the chat bar](0023-cleanups-from-the-chat-bar.md)
 - [0024. The design system and the window shell](0024-design-system-and-window-shell.md)
 - [0025. One card, one sheet, one progress line, one state, and the first run](0025-unified-cards-states-and-first-run.md)
+- [0026. Managed folders: the engine learns about more than one folder](0026-managed-folders.md)

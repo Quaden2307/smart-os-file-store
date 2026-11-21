@@ -76,7 +76,7 @@ The one large symbol is the system's, in a state (`StateView`). No sheet has a s
 
 ### Sizes: `Design.Size`
 
-`progressBar` 240 · `progressBarCompact` 120 (one row in a list of several things in progress) · `sizeColumn` 72 (a size at the end of a row) · `checkbox` 16 (the width the system checkbox takes in a row).
+`progressBar` 240 · `progressBarCompact` 120 (one row in a list of several things in progress) · `sizeColumn` 72 (a size at the end of a row) · `checkbox` 16 (the width the system checkbox takes in a row) · `conversationReserve` 440 (the window height the chat's conversation leaves for the toolbar, the list and the bar).
 
 ### Sheets: `Design.Sheet`
 
@@ -215,6 +215,7 @@ Swift Charts, which ships with macOS. Tokens in `Design.Chart`.
 - Direct labels where they fit; exact values in the legend table, on hover and in the accessibility tree (every mark has a label and a value). Monospaced digits.
 - No pie or donut charts, no 3D, no gradients, no gridlines unless they help reading. No animation beyond a short fade in (`Design.Chart.appear`).
 - A legend doubles as a table of exact sizes and counts.
+- Activity's insights scroll once they reach `Design.Chart.insightsMaxHeight` (360), so the list of cleanups keeps its room.
 - Bars in a list row are `Design.Chart.barHeight`; the thin bar beside a ranked file is `Design.Chart.thinBar`.
 - Sizes are space on disk; cloud-only files count as zero and the screen says so. Space a cleanup would get back is "moved to the Trash", never "freed".
 

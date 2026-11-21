@@ -28,11 +28,16 @@ struct ChatSection: View {
                 ConversationPanel(chat: chat, files: lists, maxHeight: chat.panelRoom, showInList: showInList, cardActions: cardActions)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            if availability == .available {
-                ChatBar(chat: chat, isFocused: isFocused, folderName: files.displayName, canTakeKeyboard: canTakeKeyboard)
-            } else {
-                ChatUnavailableBar(availability: availability)
+            Group {
+                if availability == .available {
+                    ChatBar(chat: chat, isFocused: isFocused, folderName: files.displayName, canTakeKeyboard: canTakeKeyboard)
+                } else {
+                    ChatUnavailableBar(availability: availability)
+                }
             }
+            // The bar is never squeezed out of the window: the conversation gives way first.
+            .fixedSize(horizontal: false, vertical: true)
+            .layoutPriority(1)
         }
         .clipped()
         .motion(Design.Chat.panel, value: chat.isPanelOpen)

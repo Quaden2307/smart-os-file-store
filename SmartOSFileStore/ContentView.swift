@@ -97,6 +97,11 @@ struct ContentView: View {
 
     var body: some View {
         observingSettings(observingFolders(observingChanges(publishingCommandTargets(splitView))))
+            // The conversation's room, from the window's own height, which the panel cannot change:
+            // measured on the column it sits in, a panel that grew would make room for itself and
+            // push the list under the toolbar and the bar out of the window. What is left is for a
+            // few rows of the list with its filter and header, the status line and the chat bar.
+            .onGeometryChange(for: CGFloat.self, of: \.size.height) { chat.panelRoom = max(0, $0 - Design.Size.conversationReserve) }
             // Every number in the window and its sheets, so counts, sizes and dates line up.
             .monospacedDigit()
     }
@@ -418,8 +423,7 @@ struct ContentView: View {
         // Finder's does, the filter becomes a menu and the toolbar puts what does not fit in its
         // overflow menu.
         .frame(minWidth: 720, minHeight: 480)
-        // The conversation leaves room for a few rows of the list, the status line and the bar.
-        .onGeometryChange(for: CGFloat.self, of: \.size.height) { chat.panelRoom = $0 - 260 }
+
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 // The first step of a cleanup: every action at once. Its shortcut is in the Clean Up menu.
@@ -980,7 +984,11 @@ private extension View {
     /// The place on screen, or one kept alive out of sight: invisible, and taking no clicks, no
     /// keyboard focus and no VoiceOver attention.
     func placeShown(_ isShown: Bool) -> some View {
-        opacity(isShown ? 1 : 0)
+        // Any height the window gives: a place out of sight (Activity's insights, say) must never
+        // make the window's column taller than the window and push the list and the chat bar out.
+        frame(minHeight: 0, maxHeight: .infinity)
+            .clipped()
+            .opacity(isShown ? 1 : 0)
             .motion(Design.Motion.quick, value: isShown)
             .allowsHitTesting(isShown)
             .disabled(!isShown)

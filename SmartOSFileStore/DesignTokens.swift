@@ -57,6 +57,9 @@ enum Design {
         static let progressBarCompact: CGFloat = 120
         /// A size at the end of a row, wide enough for "999.9 MB".
         static let sizeColumn: CGFloat = 72
+        /// The window height kept clear of the chat's conversation: the toolbar, the filter bar,
+        /// the list's header and a few rows, the status line, the example questions and the bar.
+        static let conversationReserve: CGFloat = 440
         /// The width the system's checkbox takes in a row, for rows that leave its place empty.
         static let checkbox: CGFloat = 16
     }
@@ -76,6 +79,8 @@ enum Design {
         static let folderBar: CGFloat = 20
         /// The weekly chart at the top of Activity.
         static let insightsHeight: CGFloat = 180
+        /// The most of Activity's height the insights take before they scroll.
+        static let insightsMaxHeight: CGFloat = 360
         /// The width a row's bar is drawn in.
         static let rowBarWidth: CGFloat = 160
         /// The fade a chart arrives with, and nothing more.

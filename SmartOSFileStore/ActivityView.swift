@@ -104,7 +104,11 @@ struct ActivityView: View {
     private var runList: some View {
         VStack(spacing: 0) {
             if let insights, !insights.isEmpty {
-                InsightsHeader(insights: insights, folderName: folderName(id:), selectedWeek: $weekFilter)
+                // Scrolls in a short window, so the list of cleanups below always has room.
+                ScrollView {
+                    InsightsHeader(insights: insights, folderName: folderName(id:), selectedWeek: $weekFilter)
+                }
+                .frame(maxHeight: Design.Chart.insightsMaxHeight)
                 Divider()
             }
             folderFilterBar

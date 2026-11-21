@@ -23,9 +23,15 @@ struct ConversationPanel: View {
     @State private var isFollowing = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// In a short window the panel may be shorter than its usual least height, never taller
+    /// than the room there is.
     private var heights: ClosedRange<CGFloat> {
-        Self.minHeight...max(Self.minHeight, maxHeight)
+        let most = max(Self.leastRoom, maxHeight)
+        return min(Self.minHeight, most)...most
     }
+
+    /// The least the panel is drawn at, however short the window.
+    static let leastRoom: CGFloat = 96
 
     /// The kept height as drawn: inside `heights`, or the least of them when what was kept is not
     /// a number (clamping passes NaN through, and the handle's VoiceOver value would trap on it).

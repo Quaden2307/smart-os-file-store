@@ -2,7 +2,7 @@
 
 A Mac file browser that cleans up after itself, with Apple Intelligence built in.
 
-[![Watch the demo](docs/media/demo-poster.png)](docs/media/demo.mp4)
+[![Watch the demo on YouTube](docs/media/demo-poster.png)](https://youtu.be/WS7LjVyksO4)
 
 ## Features
 

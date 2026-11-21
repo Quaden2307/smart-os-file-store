@@ -48,7 +48,7 @@ struct ContentView: View {
 
     /// True while the welcome is up, the first time the window opens. The folder is read once it
     /// closes.
-    @State private var isShowingWelcome = FirstRun.needsWelcome(in: UserDefaults.standard)
+    @State private var isShowingWelcome = FirstRun.needsWelcome(in: UserDefaults.standard) && !DebugSnapshot.skipsWelcome
 
     /// The folders the welcome's switches asked to turn on as it closes.
     @State private var welcomeTurnsOn: Set<ManagedFolder.Kind> = []
@@ -250,6 +250,7 @@ struct ContentView: View {
                 if let start = DebugSnapshot.startPlace() {
                     section = start
                 }
+                DebugSnapshot.applyWindowSize()
                 lists.connect(to: activity)
                 chat.connect(files: model, lists: lists, activity: activity, hashCache: search.hashCache)
                 activity.open()

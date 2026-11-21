@@ -228,6 +228,9 @@ final class ActivityLogModel {
                     _ = try await folders.add(.desktop, to: opened)
                     _ = try await folders.add(.documents, to: opened)
                 }
+                if DemoHistory.isAsked {
+                    await DemoHistory.seed(opened, folders: try await folders.folders(in: opened))
+                }
                 folderEntries = try await folders.entries(in: opened)
                 folderRevision += 1
                 openings += 1

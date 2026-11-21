@@ -60,3 +60,4 @@ One short record per segment for each decision a reader of the code would otherw
 - [0029. The chat bar works across folders](0029-chat-across-folders.md)
 - [0030. The storage view](0030-storage-view.md)
 - [0031. What the app has cleaned, over time](0031-cleanup-insights.md)
+- [0032. Demo mode](0032-demo-mode.md)

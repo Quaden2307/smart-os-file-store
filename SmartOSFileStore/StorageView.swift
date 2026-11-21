@@ -108,7 +108,8 @@ private struct StorageFolderBars: View {
                     }
                 }
             }
-            .frame(height: CGFloat(folders.count) * (Design.Chart.folderBar + Design.Space.m) + Design.Space.xl)
+            // Room above each bar for its folder's name.
+            .frame(height: CGFloat(folders.count) * (Design.Chart.folderBar + Design.Space.xl + Design.Space.l) + Design.Space.xl)
             .accessibilityLabel("Space by folder and kind")
             legend
         }

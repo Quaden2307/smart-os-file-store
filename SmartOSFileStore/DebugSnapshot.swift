@@ -31,6 +31,34 @@ enum DebugSnapshot {
         #endif
     }
 
+    /// `-SkipWelcome`: the welcome is not shown, and nothing is stored about it.
+    static var skipsWelcome: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("-SkipWelcome")
+        #else
+        false
+        #endif
+    }
+
+    /// `-WindowSize 1440x900`: the main window at that size, centred on its screen, for recording.
+    @MainActor
+    static func applyWindowSize(arguments: [String] = ProcessInfo.processInfo.arguments) {
+        #if DEBUG
+        guard let index = arguments.firstIndex(of: "-WindowSize"), arguments.index(after: index) < arguments.endIndex else { return }
+        let parts = arguments[arguments.index(after: index)].split(separator: "x").compactMap { Double($0) }
+        guard parts.count == 2 else { return }
+        // On the next turn, once the window is on screen with its restored frame.
+        Task { @MainActor in
+            guard let window = NSApplication.shared.windows.first(where: { $0.isVisible && $0.canBecomeMain }),
+                  let screen = window.screen ?? NSScreen.main else { return }
+            let visible = screen.visibleFrame
+            let size = NSSize(width: parts[0], height: parts[1])
+            let origin = NSPoint(x: visible.midX - size.width / 2, y: visible.midY - size.height / 2)
+            window.setFrame(NSRect(origin: origin, size: size), display: true)
+        }
+        #endif
+    }
+
     /// `-TurnOnStandardFolders`: Desktop and Documents are on from the start, for a demo home.
     static var turnsOnStandardFolders: Bool {
         #if DEBUG
@@ -61,7 +89,11 @@ enum DebugSnapshot {
         guard let name = snapshotName else { return }
         let size = NSSize(width: 1_440, height: 900)
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
-        let host = NSHostingView(rootView: view.frame(width: size.width, height: size.height))
+        // Off screen the window draws no background of its own: one appearance throughout, so text
+        // and the background behind it match.
+        let dark = ProcessInfo.processInfo.arguments.contains("-SnapshotDark")
+        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        let host = NSHostingView(rootView: view.frame(width: size.width, height: size.height).background(.background))
         window.contentView = host
         offscreenWindow = window
         Task { @MainActor in

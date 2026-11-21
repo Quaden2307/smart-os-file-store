@@ -62,6 +62,20 @@ Version 0.3 needs macOS 27. It is in progress; this is what is in so far.
   - When Apple Intelligence cannot answer (turned off, still downloading, not supported on this Mac or in its language), the bar is one line saying why, with a button to System Settings where that helps. Everything else works as before. Settings has **Use Apple Intelligence**, on by default, to turn the chat off.
 - **One look, written down.** The app is black, white and greys with the accent chosen in System Settings, in light and dark mode, on a 4 point grid with five text sizes. The sidebar groups its places under quiet headings with a count on each (items in Downloads, cleanups in Activity). Tidy now is the toolbar's one filled button. The file list has Finder's density without stripes, and marks are quiet grey tags. In a narrow window the filter becomes a menu and the toolbar moves what does not fit into its overflow menu; macOS remembers the window's size and the sidebar's width. Text inside windows is sentence case ("Tidy now", "Date added"); menus keep the Mac's Title Case. Switching place and opening a cleanup in Activity use short transitions, none when Reduce Motion is on. Every sheet shares one header, one footer and three sizes; every result (a preview, a confirmation, what a cleanup did, what an undo put back, an answer in the chat) is summed up in one card with its numbers; work in progress is one line with a count; and an empty, loading or failed screen is one symbol, one sentence and at most one button. The first time the app opens, a welcome says what it does and what it promises, and the folder is read after it closes. The rules, the values and the standard components are in [docs/design.md](docs/design.md).
 
+## Screenshots
+
+At 1440 × 900 points, from the demo home (docs/demo.md), drawn by the app off screen (`-SnapshotTo`), so the toolbar is missing; replace them with screen captures when convenient.
+
+| Main window | Storage | Insights |
+|---|---|---|
+| ![Main window on the demo home's Downloads](docs/screenshots/downloads.png) | ![Storage view](docs/screenshots/storage.png) | ![Insights at the top of Activity](docs/screenshots/activity.png) |
+
+A preview and the chat are still to be captured: sheets and the chat's answers do not draw off screen.
+
+## Demo
+
+`scripts/run-demo.sh` opens the app on a fictional home folder, ready to record (docs/demo.md, docs/recording-checklist.md).
+
 ## What it does not do yet
 
 - The chat cannot change a card by talking yet ("leave out the PDFs"), there is no New Chat, and it knows names, sizes, dates, sources and marks, not what files contain. The on-device model is small: it sometimes picks the wrong cleanup or the wrong dates, which is what "What I understood" and Review are for. While typing in the chat bar, ⌘Z does not undo typing (and never starts undoing a cleanup).

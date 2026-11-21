@@ -14,7 +14,7 @@ How long the engine takes on a large folder. Each run of the benchmark adds a ro
 - **Times:** the median of five runs after one warm-up run, with the minimum and maximum in brackets. The files were just written, so the disk cache is warm.
 - **Memory:** the test process's physical footprint, sampled while hashing and after each step. Growth is the sampled peak minus the footprint before the first run. The lifetime peak covers the whole process, setup included.
 
-The benchmark is not part of the normal test run; README.md has the command. It checks only that the answers are right (record, source, mark and group counts, and that both sorts agree), never a time.
+The benchmark is not part of the normal test run; docs/development.md has the command. It checks only that the answers are right (record, source, mark and group counts, and that both sorts agree), never a time.
 
 ## Results
 
@@ -72,7 +72,7 @@ Find Duplicates alone takes about 2 s on this folder (above); the rest is the ot
 
 ## Version 0.2 at 10,000 and 50,000 files
 
-Segment 15 ran the whole benchmark plan twice in Release on the Mac above, at the default 10,000 small files and at 50,000 (`TEST_RUNNER_SMARTOS_BENCHMARK_FILES=50000`, see README.md), on `ac083fe` plus that segment. Segment 1's baseline is the first row of the first table: a scan of 10,003 items in 645.8 ms, Find Duplicates in 2,204.0 ms, 78.3 MiB at the peak.
+Segment 15 ran the whole benchmark plan twice in Release on the Mac above, at the default 10,000 small files and at 50,000 (`TEST_RUNNER_SMARTOS_BENCHMARK_FILES=50000`, see docs/development.md), on `ac083fe` plus that segment. Segment 1's baseline is the first row of the first table: a scan of 10,003 items in 645.8 ms, Find Duplicates in 2,204.0 ms, 78.3 MiB at the peak.
 
 | Files | Scan with metadata | Tidy Now scan | Peak footprint while planning Tidy Now (growth) | Undo of a 1,000-item run |
 |---|---|---|---|---|

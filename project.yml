@@ -71,6 +71,8 @@ targets:
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         NSPrincipalClass: NSApplication
         NSDownloadsFolderUsageDescription: Smart OS File Store lists and cleans up files in your Downloads folder only when you ask it to.
+        NSDesktopFolderUsageDescription: Smart OS File Store lists and cleans up files on your Desktop only when you ask it to.
+        NSDocumentsFolderUsageDescription: Smart OS File Store lists and cleans up files in your Documents folder only when you ask it to.
 
   FileStoreCore:
     type: framework

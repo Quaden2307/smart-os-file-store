@@ -24,6 +24,10 @@
 	<string>public.app-category.productivity</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>Smart OS File Store lists and cleans up files on your Desktop only when you ask it to.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Smart OS File Store lists and cleans up files in your Documents folder only when you ask it to.</string>
 	<key>NSDownloadsFolderUsageDescription</key>
 	<string>Smart OS File Store lists and cleans up files in your Downloads folder only when you ask it to.</string>
 	<key>NSPrincipalClass</key>

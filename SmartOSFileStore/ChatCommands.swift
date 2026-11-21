@@ -17,7 +17,7 @@ struct ChatCommands: Commands {
 
     var body: some Commands {
         CommandGroup(before: .toolbar) {
-            Button("Ask About Downloads") {
+            Button("Ask About This Folder") {
                 target?.focus()
             }
             .keyboardShortcut("k", modifiers: .command)

@@ -113,6 +113,7 @@ A `Label` in a `List` section, with the system's `.badge()` for the count.
 
 - Do: one outline symbol; a section heading in sentence case; a count whose noun is clear from the row ("Downloads 59" is items) and is spoken in full ("59 items").
 - Do not: colour the symbol, show a count of zero, or draw the selection yourself.
+- A folder that is off (Desktop, Documents) shows its name in secondary colour with an "Off" badge; one that cannot be found shows a warning symbol as its badge. Selecting either shows a `StateView` with its one action. Add folder… is the section's last row, a plain button with a plus.
 
 ### Table row
 

@@ -52,10 +52,33 @@ final class ActivityLogModel {
     /// the log (a cleanup, a Kept mark) names this folder: a log started fresh has a new ID for it.
     /// Nil while no log is open, and when Downloads cannot be used.
     var downloads: ManagedFolder? {
-        log == nil ? nil : openedDownloads
+        folder(at: .standard(.downloads))
     }
 
-    private var openedDownloads: ManagedFolder?
+    /// The folders on the open log's list, found or not, in the order they were added. Read when the
+    /// log opens, after every change to the list, and when the app comes back to the front or a disk
+    /// is connected, so a folder on a disk that was away comes back by itself.
+    private(set) var folderEntries: [FolderEntry] = []
+
+    /// Increases whenever `folderEntries` was read again.
+    private(set) var folderRevision = 0
+
+    /// The folder at `place` as the open log knows it, when it was found. Whatever is recorded in
+    /// the log names this folder. Nil while no log is open.
+    func folder(at place: FolderPlace) -> ManagedFolder? {
+        guard log != nil else { return nil }
+        return entry(at: place)?.folder
+    }
+
+    /// The entry at `place`, found or not.
+    func entry(at place: FolderPlace) -> FolderEntry? {
+        folderEntries.first { FolderPlace($0) == place }
+    }
+
+    /// The folder a plan or run was made for, when it is still on the open log's list.
+    func isListed(_ folder: ManagedFolder) -> Bool {
+        log != nil && folderEntries.contains { $0.id == folder.id }
+    }
 
     private var hasStartedOpening = false
     private let logger = Logger(subsystem: "com.quaden2307.SmartOSFileStore", category: "ActivityLog")
@@ -201,7 +224,12 @@ final class ActivityLogModel {
                 }
                 totals = try await opened.totals()
                 latestCleanupRun = try await opened.latestCleanupRun()
-                openedDownloads = try await folders.folders(in: opened).first { $0.kind == .downloads }
+                if DebugSnapshot.turnsOnStandardFolders {
+                    _ = try await folders.add(.desktop, to: opened)
+                    _ = try await folders.add(.documents, to: opened)
+                }
+                folderEntries = try await folders.entries(in: opened)
+                folderRevision += 1
                 openings += 1
                 state = .ready(opened)
             } catch {
@@ -210,6 +238,70 @@ final class ActivityLogModel {
             }
             isRecovering = false
             revision += 1
+        }
+    }
+
+    // MARK: - The folder list
+
+    /// Reads the folder list again, for a folder that came back or went away.
+    func reloadFolders() {
+        guard let log else { return }
+        Task {
+            do throws(ActivityLogError) {
+                let entries = try await folders.entries(in: log)
+                // Unchanged: no view needs to redraw, and no list is read again.
+                guard entries.map(\.signature) != folderEntries.map(\.signature) else { return }
+                folderEntries = entries
+                folderRevision += 1
+            } catch {
+                fail(error)
+            }
+        }
+    }
+
+    /// Turns on Desktop or Documents. Reading it, which is when macOS asks, is the list's job.
+    func turnOn(_ kind: ManagedFolder.Kind) async -> FolderLocationError? {
+        await change { log, folders throws(ActivityLogError) in
+            try await folders.add(kind, to: log).failure
+        }
+    }
+
+    /// Adds a folder the user chose. Nil when it was added; otherwise why not.
+    func addFolder(at url: URL) async -> FolderLocationError? {
+        await change { log, folders throws(ActivityLogError) in
+            try await folders.add(customFolderAt: url, to: log).failure
+        }
+    }
+
+    /// Gives a custom folder a new name in the app. Nothing on disk changes.
+    func setDisplayName(of id: ManagedFolder.ID, to name: String) async {
+        _ = await change { log, folders throws(ActivityLogError) in
+            try await folders.setDisplayName(of: id, to: name, in: log)
+            return nil
+        }
+    }
+
+    /// Takes a folder off the list. Nothing on disk changes, and its runs stay in Activity.
+    func remove(_ entry: FolderEntry) async {
+        _ = await change { log, folders throws(ActivityLogError) in
+            try await folders.remove(folderID: entry.id, from: log)
+            return nil
+        }
+    }
+
+    private func change(
+        _ operation: @Sendable (ActivityLog, FolderRegistry) async throws(ActivityLogError) -> FolderLocationError?
+    ) async -> FolderLocationError? {
+        guard let log else { return nil }
+        do throws(ActivityLogError) {
+            let refusal = try await operation(log, folders)
+            folderEntries = try await folders.entries(in: log)
+            folderRevision += 1
+            revision += 1
+            return refusal
+        } catch {
+            fail(error)
+            return nil
         }
     }
 
@@ -240,5 +332,32 @@ final class ActivityLogModel {
                 logger.error("The failed activity log could not be closed: \(String(describing: error), privacy: .public)")
             }
         }
+    }
+}
+
+/// Where in the sidebar a folder sits: one of the standard folders, which has one place whatever
+/// its ID, or a custom folder by its ID.
+enum FolderPlace: Hashable {
+    case standard(ManagedFolder.Kind)
+    case custom(ManagedFolder.ID)
+
+    init(_ entry: FolderEntry) {
+        self = entry.kind == .custom ? .custom(entry.id) : .standard(entry.kind)
+    }
+
+    /// The standard folders, in the sidebar's order.
+    static let standardPlaces: [FolderPlace] = [.standard(.downloads), .standard(.desktop), .standard(.documents)]
+}
+
+private extension Result {
+    var failure: Failure? {
+        if case .failure(let error) = self { error } else { nil }
+    }
+}
+
+private extension FolderEntry {
+    /// What the sidebar shows of an entry, to tell whether a fresh read changed anything.
+    var signature: String {
+        "\(id)|\(storedName ?? "")|\(folder?.url.path(percentEncoded: false) ?? "-")|\(folder?.displayName ?? "")"
     }
 }

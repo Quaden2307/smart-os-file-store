@@ -5,6 +5,15 @@ struct SmartOSFileStoreApp: App {
     /// The activity log, one for the whole app: every cleanup writes to it and Activity shows it.
     @State private var activity = ActivityLogModel()
 
+    init() {
+        // Debug builds only, with -SnapshotTo: the window drawn off screen for a check of its look.
+        if DebugSnapshot.snapshotName != nil {
+            let activity = ActivityLogModel()
+            _activity = State(initialValue: activity)
+            DebugSnapshot.renderOffscreen(ContentView().environment(activity))
+        }
+    }
+
     var body: some Scene {
         Window("Smart OS File Store", id: "main") {
             ContentView()

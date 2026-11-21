@@ -7,10 +7,23 @@ import os
 @MainActor
 @Observable
 final class FileListModel {
-    /// The folder being scanned, or nil when it could not be found (see `failure`). It is found
-    /// without the activity log, so the list never waits for the log and still works without it;
-    /// its ID is therefore not the log's. Whatever writes to the log takes `ActivityLogModel.downloads`.
+    /// The folder being scanned, or nil when it could not be found (see `failure`). Downloads is
+    /// found without the activity log, so its list never waits for the log and still works without
+    /// it; its ID is therefore not the log's. Whatever writes to the log takes `logFolder`.
     private(set) var folder: ManagedFolder?
+
+    /// Where this list sits in the sidebar.
+    let place: FolderPlace
+
+    /// The folder's name as the sidebar shows it.
+    var displayName: String {
+        guard let folder, folder.kind == .custom else { return (folder?.kind ?? .downloads).standardName }
+        return logFolder?.displayName ?? folder.displayName
+    }
+
+    /// The folder as the open activity log knows it: what every cleanup, undo and Kept mark of this
+    /// list names. Nil while no log is open or the log cannot find the folder.
+    var logFolder: ManagedFolder? { activity?.folder(at: place) }
 
     /// The rules every cleanup action shares, resolved once from the same launch arguments as the
     /// folder, so the search and the executor use the same grace period.
@@ -103,7 +116,7 @@ final class FileListModel {
 
     /// True when the Kept list can be changed: the log is open, it knows Downloads, and the folder
     /// is known.
-    var canChangeKept: Bool { activity?.downloads != nil && folder != nil }
+    var canChangeKept: Bool { logFolder != nil && folder != nil }
 
     private var scanTask: Task<Void, Never>?
 
@@ -129,20 +142,44 @@ final class FileListModel {
     private let registry: FolderRegistry
     private let logger = Logger(subsystem: "com.quaden2307.SmartOSFileStore", category: "FileList")
 
+    /// The Downloads list, which is found without the log so it can be read before the log opens.
     init(
         arguments: [String] = ProcessInfo.processInfo.arguments,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) {
+        place = .standard(.downloads)
         eligibility = CandidateEligibility.resolve(arguments: arguments)
         applicationFolders = ApplicationFolders.resolve(arguments: arguments)
         registry = ActivityLogModel.folderRegistry(arguments: arguments, environment: environment)
         do throws(FolderLocationError) {
             folder = try registry.provisionalDownloads()
         } catch {
-            failure = ScanFailure(error)
+            failure = ScanFailure(error, kind: .downloads)
             hasLoadedOnce = true
             logger.error("The Downloads folder could not be used: \(String(describing: error), privacy: .private)")
         }
+    }
+
+    /// The list of another managed folder, as the open log found it.
+    init(
+        folder: ManagedFolder,
+        place: FolderPlace,
+        activity: ActivityLogModel,
+        arguments: [String] = ProcessInfo.processInfo.arguments
+    ) {
+        self.place = place
+        self.folder = folder
+        self.activity = activity
+        eligibility = CandidateEligibility.resolve(arguments: arguments)
+        applicationFolders = ApplicationFolders.resolve(arguments: arguments)
+        registry = activity.folders
+    }
+
+    /// The folder was found at a new place (a custom folder renamed or moved): it is read there.
+    func relocate(to folder: ManagedFolder) {
+        guard place != .standard(.downloads), self.folder?.url != folder.url else { return }
+        self.folder = folder
+        refresh()
     }
 
     /// A finished scan and the marks worked out from it.
@@ -179,8 +216,8 @@ final class FileListModel {
             // disk that does not answer must not hold the window up.
             if let refusal = await registry.refusal(for: folder) {
                 guard !Task.isCancelled else { return }
-                logger.error("The Downloads folder is refused: \(String(describing: refusal), privacy: .public)")
-                show(ScanFailure(FolderLocationError.refused(refusal)))
+                logger.error("A managed folder is refused: \(String(describing: refusal), privacy: .public)")
+                show(ScanFailure(FolderLocationError.refused(refusal), kind: folder.kind))
                 settle()
                 return
             }
@@ -297,7 +334,7 @@ final class FileListModel {
         onFinish: (@MainActor (Bool) -> Void)? = nil,
         _ operation: @escaping @Sendable (ActivityLog, ManagedFolder) async throws(ActivityLogError) -> Void
     ) {
-        guard let activity, let log = activity.log, let folder = activity.downloads else {
+        guard let activity, let log = activity.log, let folder = logFolder else {
             onFinish?(false)
             return
         }

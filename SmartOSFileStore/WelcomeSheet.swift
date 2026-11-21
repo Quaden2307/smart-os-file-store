@@ -1,9 +1,13 @@
+import FileStoreCore
 import SwiftUI
 
 /// The welcome, shown once over the main window before the folder is first read: what the app does
 /// in three lines, what it promises, and one button. The folder is read when it closes, so the
 /// Mac's question about Downloads comes after the promise, not before it.
 struct WelcomeSheet: View {
+    /// Desktop and Documents, turned on as the welcome closes when their switch is on.
+    @Binding var turnOn: Set<ManagedFolder.Kind>
+
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -24,7 +28,11 @@ struct WelcomeSheet: View {
                     line("arrow.uturn.backward", Text("Every change can be undone."))
                     line("lock", Text("Nothing leaves this Mac."))
                 }
-                Text("Next, your Mac may ask to let the app read Downloads.")
+                group(Text("Also look after")) {
+                    folderToggle(.desktop)
+                    folderToggle(.documents)
+                }
+                Text("Next, your Mac may ask to let the app read each folder.")
                     .font(Design.Typography.secondary)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -35,11 +43,25 @@ struct WelcomeSheet: View {
                 dismiss()
             }
             .keyboardShortcut(.defaultAction)
-            .help("Close this and read the Downloads folder (Return)")
+            .help("Close this and read your folders (Return)")
         }
         .onExitCommand {
             dismiss()
         }
+    }
+
+    private func folderToggle(_ kind: ManagedFolder.Kind) -> some View {
+        Toggle(
+            kind.standardName,
+            isOn: Binding(
+                get: { turnOn.contains(kind) },
+                set: { isOn in
+                    if isOn { turnOn.insert(kind) } else { turnOn.remove(kind) }
+                }
+            )
+        )
+        .toggleStyle(.checkbox)
+        .help("You can turn it on or off later in the sidebar")
     }
 
     private func group(_ title: Text, @ViewBuilder lines: () -> some View) -> some View {

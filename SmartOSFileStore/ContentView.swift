@@ -7,14 +7,29 @@ import SwiftUI
 /// or the loading, empty and error states in its place; Activity is every confirmed cleanup.
 struct ContentView: View {
     @Environment(ActivityLogModel.self) private var activity
-    @State private var model = FileListModel()
+    /// One file list per managed folder.
+    @State private var lists = FolderListsModel()
     @State private var search = CleanupSearchModel()
 
     // Watched only, so marks follow a threshold changed in Settings at once; the list reads them itself.
     @AppStorage(CleanupSettings.unusedAfterDaysKey) private var unusedAfterDays = CleanupSettings.defaultUnusedAfterDays
     @AppStorage(CleanupSettings.oldAfterDaysKey) private var oldAfterDays = CleanupSettings.defaultOldAfterDays
-    @State private var selection: Set<FileRecord.ID> = []
+    /// Each folder's selected rows, kept while another place is shown.
+    @State private var selections: [FolderPlace: Set<FileRecord.ID>] = [:]
     @State private var section: SidebarSection = .downloads
+
+    /// The folder shown last: Activity keeps it as the folder a cleanup acts on and the status line
+    /// and the chat describe.
+    @State private var lastFolderPlace: FolderPlace = .standard(.downloads)
+
+    /// The custom folder being renamed, if any.
+    @State private var renaming: RenamingFolder?
+
+    /// Why the folder the user chose was not added, while that is shown.
+    @State private var addFolderRefusal: String?
+
+    /// True while the folder picker is up.
+    @State private var isChoosingFolder = false
     @State private var activityList = ActivityListModel()
     @State private var activitySelection: Set<ActivityRowID> = []
     @State private var undo = UndoModel()
@@ -31,6 +46,9 @@ struct ContentView: View {
     /// True while the welcome is up, the first time the window opens. The folder is read once it
     /// closes.
     @State private var isShowingWelcome = FirstRun.needsWelcome(in: UserDefaults.standard)
+
+    /// The folders the welcome's switches asked to turn on as it closes.
+    @State private var welcomeTurnsOn: Set<ManagedFolder.Kind> = []
 
     /// Which place's list has keyboard focus, when the View menu moves it there.
     @FocusState private var focusedPlace: SidebarSection?
@@ -51,8 +69,31 @@ struct ContentView: View {
     /// The file a chat row asked the list to show.
     @State private var fileToReveal: FileTableView.Reveal?
 
+    /// The folder a cleanup, the status line and the chat are about.
+    private var currentPlace: FolderPlace { section.folderPlace ?? lastFolderPlace }
+
+    /// The list of the folder on screen, or of the last folder shown. Downloads when that folder is
+    /// off or cannot be found.
+    private var model: FileListModel { lists.list(at: currentPlace) ?? lists.downloads }
+
+    /// True when the folder place on screen has a list to show.
+    private var showsList: Bool {
+        guard let place = section.folderPlace else { return false }
+        return lists.list(at: place) != nil
+    }
+
+    private var selection: Set<FileRecord.ID> {
+        get { selections[model.place] ?? [] }
+        nonmutating set { selections[model.place] = newValue }
+    }
+
+    private var selectionBinding: Binding<Set<FileRecord.ID>> {
+        let place = model.place
+        return Binding(get: { selections[place] ?? [] }, set: { selections[place] = $0 })
+    }
+
     var body: some View {
-        observingChanges(publishingCommandTargets(splitView))
+        observingSettings(observingFolders(observingChanges(publishingCommandTargets(splitView))))
             // Every number in the window and its sheets, so counts, sizes and dates line up.
             .monospacedDigit()
     }
@@ -61,9 +102,13 @@ struct ContentView: View {
         NavigationSplitView {
             Sidebar(
                 selection: $section,
-                itemCount: model.itemCount,
+                folders: sidebarFolders,
                 // A closed log has no count: the list keeps its last runs until a log opens again.
-                cleanupCount: activity.log == nil ? 0 : activityList.runs.count { !$0.isUndo }
+                cleanupCount: activity.log == nil ? 0 : activityList.runs.count { !$0.isUndo },
+                canChangeFolders: canChangeFolders,
+                actions: SidebarFolderActions(
+                    turnOn: turnOn, add: { isChoosingFolder = true }, addDropped: addFolders, startRenaming: startRenaming, remove: removeFolder
+                )
             )
             .navigationSplitViewColumnWidth(min: 160, ideal: 200, max: 280)
         } detail: {
@@ -116,7 +161,26 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $isShowingWelcome, onDismiss: startAfterWelcome) {
-            WelcomeSheet()
+            WelcomeSheet(turnOn: $welcomeTurnsOn)
+        }
+        .sheet(item: $renaming) { folder in
+            RenameFolderSheet(name: folder.name) { name in
+                Task { await activity.setDisplayName(of: folder.id, to: name) }
+            }
+        }
+        .fileImporter(isPresented: $isChoosingFolder, allowedContentTypes: [.folder]) { result in
+            if case .success(let url) = result {
+                addFolders([url])
+            }
+        }
+        .alert(
+            "Folder can’t be added",
+            isPresented: Binding(get: { addFolderRefusal != nil }, set: { if !$0 { addFolderRefusal = nil } }),
+            presenting: addFolderRefusal
+        ) { _ in
+            Button("OK") {}
+        } message: { sentence in
+            Text(sentence)
         }
     }
 
@@ -133,13 +197,26 @@ struct ContentView: View {
             .focusedSceneValue(\.selectedFileURLs, actsOnWindow ? selectedURLs : nil)
             .focusedSceneValue(
                 \.selectedDownloadAddresses,
-                actsOnWindow && section == .downloads ? model.downloadAddresses(for: selection) : nil
+                actsOnWindow && showsList ? model.downloadAddresses(for: selection) : nil
             )
-            .focusedSceneValue(\.fileListFilter, actsOnWindow && section == .downloads ? $model.filter : nil)
-            .focusedSceneValue(\.placeSwitcher, actsOnWindow ? PlaceSwitcher(show: show) : nil)
+            .focusedSceneValue(\.fileListFilter, filterTarget)
+            .focusedSceneValue(\.placeSwitcher, placeSwitcher)
             // Not while typing in the chat bar: there Command-Z must never start undoing a cleanup.
             .focusedSceneValue(\.undoCommands, actsOnWindow && !isChatFocused ? undoCommands : nil)
-            .focusedSceneValue(\.keepCommands, actsOnWindow && section == .downloads ? keepCommands : nil)
+            .focusedSceneValue(\.keepCommands, actsOnWindow && showsList ? keepCommands : nil)
+    }
+
+    private var filterTarget: Binding<FileListFilter>? {
+        guard actsOnWindow, showsList else { return nil }
+        let model = model
+        return Binding(get: { model.filter }, set: { model.filter = $0 })
+    }
+
+    private var placeSwitcher: PlaceSwitcher? {
+        guard actsOnWindow else { return nil }
+        let choosing = $isChoosingFolder
+        let addFolder: (@MainActor @Sendable () -> Void)? = canChangeFolders ? { @MainActor @Sendable in choosing.wrappedValue = true } : nil
+        return PlaceSwitcher(show: show, addFolder: addFolder)
     }
 
     private func publishingCleanupTargets(_ view: some View) -> some View {
@@ -152,19 +229,31 @@ struct ContentView: View {
     /// The welcome closed, by its button or by Escape: it is never shown again, and the folder is read.
     private func startAfterWelcome() {
         FirstRun.markWelcomeShown(in: UserDefaults.standard)
-        model.refresh()
+        lists.downloads.refresh()
+        lists.sync(readingNew: false)
+        for list in lists.all where list.place != .standard(.downloads) {
+            list.refresh()
+        }
+        // Turning a folder on is what makes macOS ask about it, so it waits for the welcome.
+        for kind in welcomeTurnsOn.sorted(by: { $0 == .desktop && $1 == .documents }) {
+            turnOn(kind)
+        }
+        welcomeTurnsOn = []
     }
 
     private func observingChanges(_ view: some View) -> some View {
         view
             .onAppear {
-                model.connect(to: activity)
+                if let start = DebugSnapshot.startPlace() {
+                    section = start
+                }
+                lists.connect(to: activity)
                 chat.connect(files: model, activity: activity, hashCache: search.hashCache)
                 activity.open()
                 // The first time, the welcome comes before the folder is read, and so before the
                 // Mac asks about Downloads.
                 if !isShowingWelcome {
-                    model.refresh()
+                    lists.downloads.refresh()
                 }
                 // Makes the folder disk images are read in, and detaches what a crashed run left
                 // mounted there. Once per launch; a search waits for it.
@@ -187,11 +276,44 @@ struct ContentView: View {
                 // a sheet or the Settings window closing, which change no file.
                 if chat.hasWaitingCard, canStartCleanup {
                     model.refresh()
-                } else if model.failure?.isPermissionDenied == true, model.canRefresh {
+                }
+                for list in lists.all where list.failure?.isPermissionDenied == true && list.canRefresh && list !== model {
                     // Back from the privacy settings, where access may have been turned on.
+                    list.refresh()
+                }
+                if model.failure?.isPermissionDenied == true, model.canRefresh, !chat.hasWaitingCard {
                     model.refresh()
                 }
+                // A folder that was away may be back, or one that was there may be gone.
+                activity.reloadFolders()
             }
+    }
+
+    /// The folder list's changes: a disk connected or gone, a folder added, taken off or renamed.
+    private func observingFolders(_ view: some View) -> some View {
+        view
+            .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didMountNotification)) { _ in
+                activity.reloadFolders()
+            }
+            .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didUnmountNotification)) { _ in
+                activity.reloadFolders()
+            }
+            .onChange(of: activity.folderRevision) {
+                // Behind the welcome nothing is read; it reads every folder as it closes.
+                lists.sync(readingNew: !isShowingWelcome)
+                // A folder taken off the list leaves its place; Downloads is always there.
+                if case .folder(.custom(let id)) = section, activity.entry(at: .custom(id)) == nil {
+                    section = .downloads
+                }
+                if case .custom(let id) = lastFolderPlace, activity.entry(at: .custom(id)) == nil {
+                    lastFolderPlace = .standard(.downloads)
+                }
+                chat.show(files: model)
+            }
+    }
+
+    private func observingSettings(_ view: some View) -> some View {
+        view
             .onChange(of: model.scanGeneration) {
                 // The listing was replaced: drop selected rows that are gone, so menu commands never
                 // act on files that are no longer listed, and forget per-file icons.
@@ -203,10 +325,10 @@ struct ContentView: View {
                 keepSelectionVisible()
             }
             .onChange(of: unusedAfterDays) {
-                model.applySettings()
+                lists.all.forEach { $0.applySettings() }
             }
             .onChange(of: oldAfterDays) {
-                model.applySettings()
+                lists.all.forEach { $0.applySettings() }
             }
             .onChange(of: model.marksRevision) {
                 // Marks changed with the Kept list, so the Kept filter may hide selected rows now,
@@ -220,11 +342,18 @@ struct ContentView: View {
                 activitySelection = []
                 // Behind the welcome nothing looks into the folder; the first scan reloads both.
                 guard !isShowingWelcome else { return }
-                model.reloadKeptItems()
-                // Its installer facts are the ones the Installed marks come from.
-                model.reloadInstalledMarks()
+                for list in lists.all {
+                    list.reloadKeptItems()
+                    // Its installer facts are the ones the Installed marks come from.
+                    list.reloadInstalledMarks()
+                }
             }
             .onChange(of: section) { _, section in
+                if let place = section.folderPlace {
+                    lastFolderPlace = place
+                }
+                // The chat answers about the folder on screen.
+                chat.show(files: model)
                 guard placeToFocus == section else { return }
                 placeToFocus = nil
                 // On the next turn, once the place is usable again.
@@ -242,7 +371,7 @@ struct ContentView: View {
             // and open cleanups while the other is shown.
             ZStack {
                 content
-                    .placeShown(section == .downloads)
+                    .placeShown(section != .activity)
                 ActivityView(
                     activity: activity,
                     model: activityList,
@@ -265,7 +394,7 @@ struct ContentView: View {
             }
             ActivityLogNotices(activity: activity)
             Divider()
-            StatusBar(model: model, activity: activity, showsFileCounts: section == .downloads)
+            StatusBar(model: model, activity: activity, showsFileCounts: showsList)
             Divider()
             ChatSection(chat: chat, files: model, isFocused: $isChatFocused, showInList: showInList, cardActions: cardActions)
         }
@@ -324,8 +453,8 @@ struct ContentView: View {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
                 .keyboardShortcut("r", modifiers: .command)
-                .help(section == .downloads ? Text("Refresh the list (⌘R)") : Text("Read the activity log again (⌘R)"))
-                .disabled(isShowingWelcome || (section == .downloads ? !model.canRefresh : activity.log == nil))
+                .help(section != .activity ? Text("Refresh the list (⌘R)") : Text("Read the activity log again (⌘R)"))
+                .disabled(isShowingWelcome || (section != .activity ? !(showsList && model.canRefresh) : activity.log == nil))
             }
         }
     }
@@ -374,8 +503,8 @@ struct ContentView: View {
     private func startUndo(_ target: UndoTarget) {
         guard canStartUndo, let log = activity.log else { return }
         undo.start(target, log: log, activity: activity) {
-            // Files moved back, so the rows on screen are stale.
-            model.refresh()
+            // Files moved back, into whichever folder their run was made in.
+            lists.all.forEach { $0.refresh() }
         }
     }
 
@@ -433,8 +562,11 @@ struct ContentView: View {
 
     private func refresh() {
         switch section {
-        case .downloads:
-            model.refresh()
+        case .folder:
+            if showsList {
+                model.refresh()
+            }
+            activity.reloadFolders()
         case .activity:
             activityList.reload(activity: activity)
         }
@@ -444,8 +576,8 @@ struct ContentView: View {
     /// files are still where the log says.
     private var selectedURLs: [URL] {
         switch section {
-        case .downloads:
-            Array(selection)
+        case .folder:
+            showsList ? Array(selection) : []
         case .activity:
             activityList.revealableURLs(for: activitySelection)
         }
@@ -456,7 +588,7 @@ struct ContentView: View {
     /// preview the user is still looking at. Without a working activity log that knows Downloads
     /// nothing may be cleaned up, so nothing is searched for either.
     private var canStartCleanup: Bool {
-        model.isSettled && !search.isRunning && search.presentedPlan == nil && tidyNow == nil && activity.downloads != nil
+        model.isSettled && !search.isRunning && search.presentedPlan == nil && tidyNow == nil && model.logFolder != nil
             && !undo.isBusy && !model.isChangingKept && !isConfirmingStopKeepingAll
             && confirmingCard == nil && !chat.isCleaningUp
     }
@@ -500,7 +632,7 @@ struct ContentView: View {
         }
         selection = [id]
         fileToReveal = FileTableView.Reveal(id: id)
-        show(.downloads)
+        show(.folder(model.place))
     }
 
     // MARK: - Cleanup cards in the chat
@@ -530,7 +662,7 @@ struct ContentView: View {
     }
 
     private func startCleanup(_ action: CleanupAction) {
-        guard canStartCleanup, let log = activity.log, let folder = activity.downloads else { return }
+        guard canStartCleanup, let log = activity.log, let folder = model.logFolder else { return }
         search.start(
             action,
             records: model.records,
@@ -545,7 +677,8 @@ struct ContentView: View {
 
     /// Starts Tidy Now over the listed files, under the same rule as any cleanup.
     private func startTidyNow() {
-        guard canStartCleanup, let log = activity.log, let folder = activity.downloads else { return }
+        guard canStartCleanup, let log = activity.log, let folder = model.logFolder else { return }
+        let model = model
         let tidy = TidyNowModel(
             eligibility: model.eligibility,
             applicationFolders: model.applicationFolders,
@@ -573,6 +706,41 @@ struct ContentView: View {
 
     @ViewBuilder
     private var content: some View {
+        if let place = section.folderPlace, place != .standard(.downloads), lists.list(at: place) == nil {
+            folderNotShown(place)
+        } else {
+            listContent
+        }
+    }
+
+    /// A folder place with no list: Desktop or Documents not turned on yet, or a folder that cannot
+    /// be found now.
+    @ViewBuilder
+    private func folderNotShown(_ place: FolderPlace) -> some View {
+        if let entry = activity.entry(at: place), case .failure(let error) = entry.state {
+            let failure = ScanFailure(error, kind: entry.kind, name: entry.storedName)
+            ScanErrorView(failure: failure, retry: activity.reloadFolders)
+        } else if case .standard(let kind) = place, activity.log == nil {
+            StateView(title: Text(kind.standardName), symbol: kind.systemImage, message: Text("Waiting for the activity log."))
+        } else if case .standard(let kind) = place {
+            StateView(
+                title: Text("\(kind.standardName) is off"),
+                symbol: kind.systemImage,
+                message: Text("Turn it on to list and clean up its files. Your Mac may ask once whether Smart OS File Store can read it.")
+            ) {
+                Button("Turn on \(kind.standardName)") {
+                    turnOn(kind)
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!canChangeFolders)
+            }
+        } else {
+            StateView.loading
+        }
+    }
+
+    @ViewBuilder
+    private var listContent: some View {
         if let failure = model.failure {
             ScanErrorView(failure: failure, retry: model.canRefresh ? model.refresh : nil)
         } else if isShowingWelcome {
@@ -584,19 +752,97 @@ struct ContentView: View {
             StateView(
                 title: Text("Folder is empty"),
                 symbol: "folder",
-                message: Text("Files you download are listed here.")
+                message: model.place == .standard(.downloads) ? Text("Files you download are listed here.") : Text("Files you put in this folder are listed here.")
             )
         } else {
             VStack(spacing: 0) {
-                FileFilterBar(filter: $model.filter)
+                FileFilterBar(filter: Bindable(model).filter)
                 Divider()
                 FileTableView(
-                    model: model, selection: $selection, isShown: section == .downloads, canChangeKept: canChangeKept,
+                    model: model, selection: selectionBinding, isShown: section != .activity, canChangeKept: canChangeKept,
                     reveal: fileToReveal
                 )
-                    .focused($focusedPlace, equals: .downloads)
+                .focused($focusedPlace, equals: .folder(model.place))
+                // Each folder's table is its own, with its own columns and scroll position.
+                .id(model.place)
             }
         }
+    }
+
+    // MARK: - Folders
+
+    /// False until the activity log is open, and while something that reads or moves files is under
+    /// way: the folder list lives in the log, and a run's folder must stay on it.
+    private var canChangeFolders: Bool {
+        activity.log != nil && !search.isRunning && search.presentedPlan == nil && tidyNow == nil && !undo.isBusy
+            && !chat.isCleaningUp && !isShowingWelcome
+    }
+
+    /// Downloads, Desktop and Documents, each shown or offered, then the folders the user added.
+    private var sidebarFolders: [SidebarFolderRow] {
+        var rows: [SidebarFolderRow] = []
+        for place in FolderPlace.standardPlaces {
+            guard case .standard(let kind) = place else { continue }
+            rows.append(SidebarFolderRow(place: place, name: kind.standardName, kind: kind, state: rowState(place)))
+        }
+        for entry in activity.folderEntries where entry.kind == .custom {
+            let place = FolderPlace(entry)
+            let name = entry.folder?.displayName ?? entry.storedName ?? ManagedFolder.Kind.custom.standardName
+            rows.append(SidebarFolderRow(place: place, name: name, kind: .custom, state: rowState(place)))
+        }
+        return rows
+    }
+
+    private func rowState(_ place: FolderPlace) -> SidebarFolderRow.State {
+        if let list = lists.list(at: place) {
+            return .shown(count: list.itemCount)
+        }
+        if let entry = activity.entry(at: place), entry.folder == nil {
+            return .unavailable
+        }
+        return .off
+    }
+
+    /// Turns on Desktop or Documents and shows it. Its list is read once the log has it, which is
+    /// when macOS asks.
+    private func turnOn(_ kind: ManagedFolder.Kind) {
+        guard canChangeFolders || isShowingWelcome else { return }
+        section = .folder(.standard(kind))
+        Task {
+            if let error = await activity.turnOn(kind) {
+                addFolderRefusal = error.addFolderSentence
+            }
+        }
+    }
+
+    /// Adds folders the user chose or dragged in, one after another; the first refused one says why.
+    private func addFolders(_ urls: [URL]) {
+        guard canChangeFolders else { return }
+        Task {
+            for url in urls {
+                if let error = await activity.addFolder(at: url) {
+                    addFolderRefusal = error.addFolderSentence
+                    return
+                }
+                if let added = activity.folderEntries.last(where: { $0.kind == .custom }) {
+                    section = .folder(FolderPlace(added))
+                }
+            }
+        }
+    }
+
+    private func startRenaming(_ place: FolderPlace) {
+        guard case .custom(let id) = place, let entry = activity.entry(at: place) else { return }
+        renaming = RenamingFolder(id: id, name: entry.folder?.displayName ?? entry.storedName ?? "")
+    }
+
+    /// Takes a folder off the sidebar: nothing on disk changes, and its runs stay in Activity.
+    private func removeFolder(_ place: FolderPlace) {
+        guard canChangeFolders, let entry = activity.entry(at: place), entry.kind != .downloads else { return }
+        if section == .folder(place) {
+            section = .downloads
+        }
+        Task { await activity.remove(entry) }
     }
 }
 
@@ -633,7 +879,7 @@ private struct PresentedPlanSheet: View {
         self.onUndo = onUndo
         // A plan names its folder by the ID the log gave it. One made before the log was replaced
         // names a folder the open log does not hold, and cannot be carried out in it.
-        _log = State(initialValue: plan.folder == activity.downloads ? activity.log : nil)
+        _log = State(initialValue: activity.isListed(plan.folder) ? activity.log : nil)
     }
 
     var body: some View {
@@ -655,6 +901,12 @@ private struct PresentedPlanSheet: View {
             ActivityLogUnavailableSheet(activity: activity)
         }
     }
+}
+
+/// A custom folder whose name is being changed.
+private struct RenamingFolder: Identifiable {
+    let id: ManagedFolder.ID
+    let name: String
 }
 
 /// A cleanup card of the chat whose Confirm is asking its question, with the card's plan.

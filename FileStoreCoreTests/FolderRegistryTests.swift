@@ -294,4 +294,43 @@ struct FolderRegistryTests {
             #expect(try await demo.registry.folder(id: added.id, in: log) == nil)
         }
     }
+
+    @Test func aMissingCustomFolderStaysListedUnderItsNameAndANewOneIsNotIt() async throws {
+        try await withTemporaryFolderAsync { root in
+            let demo = try DemoHome(root: root)
+            let log = try await ActivityLog.open(.inMemory)
+            let projects = demo.url("Projects")
+            try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: false)
+            let added = try await demo.registry.add(customFolderAt: projects, to: log).get()
+            try await demo.registry.setDisplayName(of: added.id, to: "  Work  ", in: log)
+            try await demo.registry.setDisplayName(of: added.id, to: "   ", in: log)
+
+            let hidden = demo.url(".away")
+            try FileManager.default.moveItem(at: projects, to: hidden)
+            try FileManager.default.removeItem(at: hidden)
+            let gone = try #require(try await demo.registry.entries(in: log).first { $0.id == added.id })
+            #expect(gone.folder == nil)
+            #expect(gone.storedName == "Work")
+
+            try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: false)
+            // A new folder at the old place is not the one that was added.
+            #expect(try await demo.registry.entries(in: log).first { $0.id == added.id }?.folder == nil)
+            #expect(try await demo.registry.folders(in: log).map(\.kind) == [.downloads])
+        }
+    }
+
+    @Test func aRenamedCustomFolderKeepsItsIDAndFilesOnDisk() async throws {
+        try await withTemporaryFolderAsync { root in
+            let demo = try DemoHome(root: root)
+            let log = try await ActivityLog.open(.inMemory)
+            let projects = demo.url("Projects")
+            try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: false)
+            let added = try await demo.registry.add(customFolderAt: projects, to: log).get()
+            try await demo.registry.setDisplayName(of: added.id, to: "Work", in: log)
+            let found = try #require(try await demo.registry.folders(in: log).first { $0.id == added.id })
+            #expect(found.displayName == "Work")
+            expectSameFolder(found.url, projects)
+            #expect(FileManager.default.fileExists(atPath: projects.path(percentEncoded: false)))
+        }
+    }
 }

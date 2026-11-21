@@ -24,6 +24,9 @@ struct ActivityView: View {
 
     let undo: @MainActor (UndoTarget) -> Void
 
+    /// The folder whose runs are listed, or nil for every folder.
+    @State private var folderFilter: ManagedFolder.ID?
+
     var body: some View {
         content
             .onAppear {
@@ -71,11 +74,56 @@ struct ActivityView: View {
     /// List's outline loses track of a group whose rows change while it is open (the items arrive
     /// after a placeholder), and then never closes it again.
     private var runList: some View {
+        VStack(spacing: 0) {
+            folderFilterBar
+            Divider()
+            runs
+        }
+    }
+
+    /// The folders that have runs, for the filter.
+    private var runFolders: [(id: ManagedFolder.ID, name: String)] {
+        var seen: Set<ManagedFolder.ID> = []
+        var folders: [(id: ManagedFolder.ID, name: String)] = []
+        for run in model.runs {
+            guard let id = run.folderID, seen.insert(id).inserted else { continue }
+            folders.append((id, folderName(of: run)))
+        }
+        return folders.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    private var folderFilterBar: some View {
+        HStack {
+            Picker("Folder", selection: $folderFilter) {
+                Text("All folders").tag(ManagedFolder.ID?.none)
+                ForEach(runFolders, id: \.id) { folder in
+                    Text(folder.name).tag(ManagedFolder.ID?.some(folder.id))
+                }
+            }
+            .pickerStyle(.menu)
+            .fixedSize()
+            .help("Show the cleanups of one folder")
+            Spacer()
+        }
+        .padding(.horizontal, Design.Space.l)
+        .padding(.vertical, Design.Space.s)
+    }
+
+    /// The name a run's folder goes by now, or the name it had when the run was made.
+    private func folderName(of run: ActivityRun) -> String {
+        if let id = run.folderID, let entry = activity.folderEntries.first(where: { $0.id == id }) {
+            return entry.kind == .custom ? (entry.folder?.displayName ?? entry.storedName ?? "") : entry.kind.standardName
+        }
+        return URL(filePath: run.folderPath).lastPathComponent
+    }
+
+    private var runs: some View {
         List(selection: $selection) {
-            ForEach(model.runs) { run in
+            ForEach(model.runs.filter { folderFilter == nil || $0.folderID == folderFilter }) { run in
                 let isExpanded = model.isExpanded(run.id)
                 ActivityRunRow(
                     run: run,
+                    folderName: folderName(of: run),
                     isExpanded: isExpanded,
                     undoAvailability: availability(model.undoAvailability(for: run)),
                     toggle: { setExpanded(run.id, !isExpanded) },

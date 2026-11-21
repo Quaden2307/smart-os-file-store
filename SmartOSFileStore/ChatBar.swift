@@ -27,7 +27,7 @@ struct ChatSection: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             if availability == .available {
-                ChatBar(chat: chat, isFocused: isFocused, canTakeKeyboard: canTakeKeyboard)
+                ChatBar(chat: chat, isFocused: isFocused, folderName: files.displayName, canTakeKeyboard: canTakeKeyboard)
             } else {
                 ChatUnavailableBar(availability: availability)
             }
@@ -63,6 +63,9 @@ struct ChatBar: View {
     @Bindable var chat: ChatModel
     var isFocused: FocusState<Bool>.Binding
 
+    /// The folder on screen, which the questions are about.
+    var folderName: String
+
     /// False while the window is opening, when the field must not be handed the keyboard.
     var canTakeKeyboard = true
 
@@ -91,14 +94,14 @@ struct ChatBar: View {
                 .accessibilityLabel("Example questions")
             }
             HStack(alignment: .bottom, spacing: Design.Chat.rowGap) {
-                TextField("Ask about your Downloads", text: $chat.draft, axis: .vertical)
+                TextField("Ask about \(folderName)", text: $chat.draft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .lineLimit(1...6)
                     .focused(isFocused)
                     .disabled(!canTakeKeyboard)
                     .onSubmit(chat.send)
                     .padding(.vertical, Design.Chat.fieldInset)
-                    .accessibilityLabel("Question about your Downloads")
+                    .accessibilityLabel("Question about \(folderName)")
                     .help("Ask about the files in this folder (⌘K). Answers are worked out on this Mac.")
                 if !chat.messages.isEmpty, !chat.isPanelOpen {
                     Button {

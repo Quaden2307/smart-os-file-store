@@ -9,6 +9,8 @@ struct ActivityRunRow: View {
     static let itemIndent = Design.Icon.size + Design.Space.s
 
     let run: ActivityRun
+    /// The folder the run was made in, as the sidebar names it.
+    let folderName: String
     let isExpanded: Bool
     let undoAvailability: UndoAvailability
     let toggle: @MainActor () -> Void
@@ -33,7 +35,7 @@ struct ActivityRunRow: View {
             CardHeader(title: Text(run.title), isHeading: false) {
                 counts
             } trailing: {
-                ForEach([run.stateLabel, run.originLabel, run.undoLabel].compactMap(\.self), id: \.self) { label in
+                ForEach([folderName, run.stateLabel, run.originLabel, run.undoLabel].compactMap(\.self), id: \.self) { label in
                     Badge(Text(label))
                 }
                 UndoButton(availability: undoAvailability, help: Text("Put this cleanup’s files back where they were"), undo: undo)

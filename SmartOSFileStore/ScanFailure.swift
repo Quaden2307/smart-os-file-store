@@ -13,20 +13,25 @@ struct ScanFailure: Equatable {
     /// True when macOS blocked access, so the view can offer the privacy settings.
     let isPermissionDenied: Bool
 
-    /// Why Downloads could not be found. The other kinds of folder are not shown yet, so every
-    /// case speaks of Downloads.
-    init(_ error: FolderLocationError) {
+    /// Why a managed folder could not be found. `name` is a custom folder's name.
+    init(_ error: FolderLocationError, kind: ManagedFolder.Kind, name: String? = nil) {
         isPermissionDenied = false
+        let folder = name ?? kind.standardName
         switch error {
         case .refused:
-            title = String(localized: "Downloads folder can’t be used")
+            title = String(localized: "“\(folder)” can’t be used")
             message = String(
-                localized: "Your Downloads folder leads to a place Smart OS File Store does not look after, such as your home folder, the top of a disk, or a system or cloud-storage folder. Move Downloads to an ordinary folder, then click Try again."
+                localized: "“\(folder)” leads to a place Smart OS File Store does not look after, such as your home folder, the top of a disk, or a system or cloud-storage folder. Move it to an ordinary folder, then click Try again."
             )
-        case .standardFolderUnavailable, .bookmarkUnusable:
-            title = String(localized: "Downloads folder not found")
+        case .standardFolderUnavailable:
+            title = String(localized: "“\(folder)” not found")
             message = String(
-                localized: "Your Downloads folder could not be located. Check that a Downloads folder exists in your home folder, then open Smart OS File Store again."
+                localized: "Your \(folder) folder could not be located. Check that it exists in your home folder, then open Smart OS File Store again."
+            )
+        case .bookmarkUnusable:
+            title = String(localized: "“\(folder)” is not available")
+            message = String(
+                localized: "Its disk may be disconnected, or the folder was moved to the Trash. It comes back here by itself when it can be found again."
             )
         case .overrideValueMissing(let source):
             title = String(localized: "No folder to scan")
@@ -90,6 +95,22 @@ extension FolderOverride.Source {
             String(localized: "SMARTOS_DEMO_HOME environment variable")
         case .scanFolderVariable:
             String(localized: "SMARTOS_SCAN_FOLDER environment variable")
+        }
+    }
+}
+
+extension ManagedFolder.Kind {
+    /// A standard folder's name, as Finder shows it. A custom folder has its own.
+    var standardName: String {
+        switch self {
+        case .downloads:
+            String(localized: "Downloads")
+        case .desktop:
+            String(localized: "Desktop")
+        case .documents:
+            String(localized: "Documents")
+        case .custom:
+            String(localized: "Folder")
         }
     }
 }

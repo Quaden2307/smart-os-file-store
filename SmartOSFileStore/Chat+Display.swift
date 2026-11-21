@@ -78,7 +78,8 @@ extension CleanupRequest {
         }
         var parts = [titles.formatted(.list(type: .and, width: .narrow))] + (query?.lookedUpParts ?? [])
         if let archiveAfterDays {
-            parts.append(String(localized: "archive what was not opened for ^[\(archiveAfterDays) day](inflect: true)"))
+            // String(localized:) leaves inflection markup raw; AttributedString applies it.
+            parts.append(String(AttributedString(localized: "archive what was not opened for ^[\(archiveAfterDays) day](inflect: true)").characters))
         }
         if let largeFileMB {
             parts.append(String(localized: "large from \((Int64(largeFileMB) * 1_000_000).formattedFileSize)"))

@@ -139,4 +139,25 @@ struct ManagedFolderExecutorTests {
             #expect(try await home.log.changes(inRun: run.id).map(\.outcome).contains(.skipped(.outsideFolder)))
         }
     }
+
+    /// A copy of a Desktop file in Downloads is not a duplicate of it: duplicates are found within
+    /// one folder, and cleaning Desktop lists and changes nothing in Downloads.
+    @Test func aCleanupInOneFolderNeverListsOrChangesAFileInAnother() async throws {
+        try await withTemporaryFolderAsync { root in
+            let home = try await ManagedHome(root: root)
+            try FileDates.writeSettled(["report.pdf": "same", "report (1).pdf": "same"], in: home.desktop.url)
+            try FileDates.writeSettled(["report (2).pdf": "same", "solo.txt": "solo"], in: home.downloads.url)
+            let downloadsBefore = DiskState.snapshot(of: home.downloads.url)
+            let desktopRecords = try await RelocationPlans.records(in: home.desktop.url)
+
+            let plan = try await DuplicatePlanner().plan(records: desktopRecords, in: home.desktop)
+            #expect(plan.changes.map(\.record.url.lastPathComponent) == ["report (1).pdf"])
+            #expect(plan.changes.allSatisfy { $0.record.url.deletingLastPathComponent().standardizedFileURL == home.desktop.url.standardizedFileURL })
+
+            let result = await execute(plan, home)
+            #expect(result.trashedCount == 1)
+            #expect(DiskState.entryNames(in: home.desktop.url) == ["report.pdf"])
+            #expect(DiskState.snapshot(of: home.downloads.url) == downloadsBefore)
+        }
+    }
 }

@@ -97,16 +97,34 @@ public struct FolderRegistry: Sendable {
     /// other, the one added first stays.
     @concurrent
     public func folders(in log: ActivityLog) async throws(ActivityLogError) -> [ManagedFolder] {
-        var found: [ManagedFolder] = []
+        try await entries(in: log).compactMap(\.folder)
+    }
+
+    /// Every folder on the list, in the order they were added, each with where it is now or why it
+    /// cannot be used: a custom folder on a disk that is not connected, or one that was deleted,
+    /// stays on the list under its last known name and is found again when it is back.
+    @concurrent
+    public func entries(in log: ActivityLog) async throws(ActivityLogError) -> [FolderEntry] {
+        var found: [URL] = []
+        var entries: [FolderEntry] = []
         for stored in try log.storedFolders() where !stored.isRemoved {
-            switch locate(stored, among: found.map(\.url), log: log) {
-            case .success(let folder):
-                found.append(folder)
-            case .failure(let error):
+            let result = locate(stored, among: found, log: log)
+            if case .success(let folder) = result {
+                found.append(folder.url)
+            } else if case .failure(let error) = result {
                 Self.logger.notice("A managed folder could not be used: \(String(describing: error), privacy: .private)")
             }
+            entries.append(FolderEntry(id: stored.id, kind: stored.kind, storedName: stored.displayName, state: result))
         }
-        return found
+        return entries
+    }
+
+    /// Gives a custom folder a new name in the app. Nothing on disk changes.
+    @concurrent
+    public func setDisplayName(of id: ManagedFolder.ID, to name: String, in log: ActivityLog) async throws(ActivityLogError) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        try log.renameFolder(id: id, to: trimmed)
     }
 
     /// The folder with `id`, whether it is on the list or was taken off it, where it is now. Undo
@@ -176,6 +194,12 @@ public struct FolderRegistry: Sendable {
     @concurrent
     public func remove(_ folder: ManagedFolder, from log: ActivityLog, now: Date = .now) async throws(ActivityLogError) {
         try log.removeFolder(id: folder.id, at: now)
+    }
+
+    /// Takes the folder with `id` off the list, found or not.
+    @concurrent
+    public func remove(folderID id: ManagedFolder.ID, from log: ActivityLog, now: Date = .now) async throws(ActivityLogError) {
+        try log.removeFolder(id: id, at: now)
     }
 
     // MARK: - Where a folder is
@@ -278,4 +302,20 @@ public struct FolderRegistry: Sendable {
         }
         return .success(ManagedFolder(id: stored.id, kind: stored.kind, displayName: stored.displayName, locator: locator, url: url))
     }
+}
+
+/// A folder on the list, found or not.
+public struct FolderEntry: Sendable, Identifiable {
+    public let id: ManagedFolder.ID
+
+    public let kind: ManagedFolder.Kind
+
+    /// The name the user gave a custom folder. Nil for a standard folder.
+    public let storedName: String?
+
+    /// Where the folder is now, or why it cannot be used.
+    public let state: Result<ManagedFolder, FolderLocationError>
+
+    /// The folder, when it was found and may be managed.
+    public var folder: ManagedFolder? { try? state.get() }
 }

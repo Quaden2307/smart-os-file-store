@@ -78,6 +78,16 @@ extension ActivityLog {
         }
     }
 
+    /// Gives a custom folder a new display name.
+    func renameFolder(id: ManagedFolder.ID, to name: String) throws(ActivityLogError) {
+        try write { db in
+            try db.execute(
+                sql: "UPDATE folders SET displayName = ? WHERE id = ? AND kind = ?",
+                arguments: [name, id.uuidString, ManagedFolder.Kind.custom.logCode]
+            )
+        }
+    }
+
     /// Keeps a bookmark the system made again because the old one had gone stale.
     func updateBookmark(_ bookmark: Data, ofFolder id: ManagedFolder.ID) throws(ActivityLogError) {
         try write { db in

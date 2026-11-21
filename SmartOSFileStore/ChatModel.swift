@@ -92,6 +92,12 @@ final class ChatModel {
     /// Gives the chat its only view of the folder: a copy of the list's rows, made when a lookup
     /// asks, and Find Duplicates, run when a question is about copies. `hashCache` is the one the
     /// Clean Up menu's searches share.
+    /// Points the chat at the folder on screen. A waiting card keeps the plan it was made with.
+    func show(files: FileListModel) {
+        guard files !== self.files else { return }
+        self.files = files
+    }
+
     func connect(files: FileListModel, activity: ActivityLogModel, hashCache: ContentHashCache) {
         guard engine == nil else { return }
         self.files = files
@@ -121,7 +127,7 @@ final class ChatModel {
     /// for a question in the chat. It reads files and changes none. Nil when it cannot run: the
     /// window is gone, the log is not open, or the turn ended.
     private func findDuplicates(hashCache: ContentHashCache) async -> DuplicateScan? {
-        guard let files, let log = activity?.log, let folder = activity?.downloads else { return nil }
+        guard let files, let log = activity?.log, let folder = files.logFolder else { return nil }
         let records = files.records
         let eligibility = files.eligibility
         let installers = InstallerSources.standard(applicationFolders: files.applicationFolders, cache: log)
@@ -161,7 +167,7 @@ final class ChatModel {
     private func plan(
         _ request: CleanupRequest, only ids: Set<URL>?, hashCache: ContentHashCache, inTurn: Bool
     ) async -> TidyNowPlan? {
-        guard let files, let log = activity?.log, let folder = activity?.downloads else { return nil }
+        guard let files, let log = activity?.log, let folder = files.logFolder else { return nil }
         let actions = CleanupAction.allCases.filter { request.actions.contains($0.definition.identifier) }
         let records = files.records
         let eligibility = files.eligibility

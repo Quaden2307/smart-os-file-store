@@ -37,7 +37,7 @@ struct ActivityLogSchemaTests {
             #expect(try raw.text("SELECT count(*) FROM keptItems") == "0")
             #expect(try raw.text("SELECT count(*) FROM totals") == "1")
             #expect(try raw.text("SELECT count(*) FROM maintenance") == "1")
-            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6,v7")
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6,v7,v8")
         }
     }
 
@@ -72,7 +72,7 @@ struct ActivityLogSchemaTests {
             try await upgraded.close()
 
             let raw = try RawDatabase(databaseURL)
-            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6,v7")
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6,v7,v8")
             #expect(try raw.text("SELECT count(*) FROM runs WHERE origin IS NULL") == "1")
         }
     }
@@ -92,7 +92,7 @@ struct ActivityLogSchemaTests {
             try await upgraded.close()
 
             let raw = try RawDatabase(databaseURL)
-            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6,v7")
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6,v7,v8")
             #expect(try raw.text("SELECT count(*) FROM changes WHERE isFolder = 0") == "2")
             // Only 0 and 1 are a value it may hold.
             #expect(throws: (any Error).self) {
@@ -163,7 +163,7 @@ struct ActivityLogSchemaTests {
             try await upgraded.close()
 
             let raw = try RawDatabase(databaseURL)
-            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6,v7")
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6,v7,v8")
             // One folder, Downloads, under an ID that is a UUID and not its path.
             #expect(try raw.text("SELECT count(*) FROM folders") == "1")
             let downloads = try #require(try raw.text("SELECT id FROM folders WHERE kind = 'downloads' AND removedAt IS NULL"))
@@ -214,7 +214,7 @@ struct ActivityLogSchemaTests {
             }
 
             let raw = try RawDatabase(databaseURL)
-            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6,v7,v999")
+            #expect(try raw.text("SELECT group_concat(identifier, ',') FROM grdb_migrations") == "v1,v2,v3,v4,v5,v6,v7,v8,v999")
             #expect(try raw.text("SELECT count(*) FROM runs") == "1")
         }
     }

@@ -19,6 +19,9 @@ struct StoredFolder: Sendable, Hashable {
 
     /// True when the folder was taken off the list. Its row stays for the runs made in it.
     let isRemoved: Bool
+
+    /// The folder's own rules. Nil for its kind's defaults, and for rules this version cannot read.
+    var rules: FolderRules? = nil
 }
 
 /// The managed folders the log holds. `FolderRegistry` finds them on disk and applies the safety
@@ -78,6 +81,19 @@ extension ActivityLog {
         }
     }
 
+    /// Keeps a folder's own rules, or with nil goes back to its kind's defaults.
+    func setRules(_ rules: FolderRules?, ofFolder id: ManagedFolder.ID) throws(ActivityLogError) {
+        let json = try rules.map { rules throws(ActivityLogError) -> String in
+            guard let data = try? JSONEncoder().encode(rules), let text = String(data: data, encoding: .utf8) else {
+                throw ActivityLogError.inconsistent
+            }
+            return text
+        }
+        try write { db in
+            try db.execute(sql: "UPDATE folders SET rules = ? WHERE id = ?", arguments: [json, id.uuidString])
+        }
+    }
+
     /// Gives a custom folder a new display name.
     func renameFolder(id: ManagedFolder.ID, to name: String) throws(ActivityLogError) {
         try write { db in
@@ -107,6 +123,7 @@ private struct FolderRow: Decodable, FetchableRecord {
     let volumeUUID: String?
     let fileNumber: Int64?
     let removedAt: Double?
+    let rules: String?
 
     /// Nil for a kind this version does not know, whose folder is left alone, and for an ID that
     /// is not one, which no version wrote.
@@ -125,7 +142,8 @@ private struct FolderRow: Decodable, FetchableRecord {
             displayName: displayName,
             bookmark: bookmark,
             identity: identity,
-            isRemoved: removedAt != nil
+            isRemoved: removedAt != nil,
+            rules: rules.flatMap { try? JSONDecoder().decode(FolderRules.self, from: Data($0.utf8)) }
         )
     }
 }

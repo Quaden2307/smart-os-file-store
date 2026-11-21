@@ -20,11 +20,15 @@ struct PlaceholderTests {
     private static let decidedByContent: Set<CleanupAction> = [.findDuplicates, .reviewNearDuplicates, .removeUnpackedZips, .removeUsedInstallers]
 
     private func plan(_ action: CleanupAction, _ records: [FileRecord], in folder: ManagedFolder, applications: URL) async throws -> CleanupPlan {
-        try #require(
+        // Every planner is run in every kind of folder, whatever its rules offer: reading is what is tested.
+        var rules = folder.rules
+        rules.offered = Set(CleanupAction.allCases)
+        let everyAction = ManagedFolder(id: folder.id, kind: folder.kind, url: folder.url, rules: rules)
+        return try #require(
             try await CleanupPlanners.plan(
                 action,
                 records: records,
-                in: folder,
+                in: everyAction,
                 eligibility: CandidateEligibility(),
                 keptItems: KeptItems(),
                 installers: .testing(applications: [applications])

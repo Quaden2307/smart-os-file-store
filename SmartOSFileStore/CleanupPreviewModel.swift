@@ -75,7 +75,7 @@ final class CleanupPreviewModel {
         self.executor = CleanupExecutor(recorder: log, eligibility: eligibility, applicationFolders: applicationFolders)
         self.activity = activity
         self.onExecuted = onExecuted
-        let defaultTicks = Set(plan.changes.filter(\.reason.isTickedByCode).map(\.id))
+        let defaultTicks = plan.defaultTickedIDs
         self.ticked = initialTicked.map { $0.intersection(plan.changes.map(\.id)) } ?? defaultTicks
     }
 

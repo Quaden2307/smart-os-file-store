@@ -15,6 +15,9 @@ final class FileListModel {
     /// Where this list sits in the sidebar.
     let place: FolderPlace
 
+    /// The folder's rules as the log has them now, so marks use its own thresholds.
+    var rules: FolderRules { logFolder?.rules ?? folder?.rules ?? .defaults(for: .downloads) }
+
     /// The folder's name as the sidebar shows it.
     var displayName: String {
         guard let folder, folder.kind == .custom else { return (folder?.kind ?? .downloads).standardName }
@@ -204,7 +207,7 @@ final class FileListModel {
         isLoading = true
         let scanner = scanner
         // Read again on every scan, so a threshold changed with `defaults write` applies on ⌘R.
-        let settings = CleanupSettings.load(from: UserDefaults.standard)
+        let settings = rules.settings(over: CleanupSettings.load(from: UserDefaults.standard))
         let keptItems = keptItems
         let eligibility = eligibility.keeping(keptItems)
         let installedIDs = installedIDs
@@ -367,7 +370,7 @@ final class FileListModel {
     /// Works the marks out again with the thresholds as they are now, after Settings changed one.
     func applySettings() {
         guard let markInputs else { return }
-        let settings = CleanupSettings.load(from: UserDefaults.standard)
+        let settings = rules.settings(over: CleanupSettings.load(from: UserDefaults.standard))
         guard settings != markInputs.settings else { return }
         // Now, not the scan's time: the planner marks with the time it runs, and so must the list.
         self.markInputs = (now: .now, settings: settings)

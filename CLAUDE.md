@@ -40,6 +40,7 @@ A native macOS file browser that will replace Finder, starting with a self-clean
 - A folder named "Old downloads" at the top level of the scanned folder is the archive. No action treats it or its contents as a candidate.
 - Every executed change is recorded in the activity log with enough information to undo it.
 - Files the user marked Keep never appear as a proposed change in any plan.
+- Each folder has `FolderRules` (`ManagedFolder.rules`): offered actions, Tidy Now actions, whether previews tick, and its own thresholds. `CleanupPlanners` and `TidyNowPlanner` enforce them, so no caller plans an action a folder does not offer. A preview's default ticks come only from `CleanupPlan.defaultTickedIDs`; Documents and custom folders tick nothing.
 - Code ticks only changes whose reason is `isTickedByCode`: the preview's default, Select All and Tidy Now. Review-only changes (near-duplicates, large downloads) and possible installer matches are ticked by the user, one by one.
 - In one Tidy Now run, the item a trashed zip was unpacked to and the kept copy of a duplicate group are never trashed by a lower-priority action (`TidyNowPlan.resolve`).
 - Each segment adds a short decision record under `docs/decisions/` (what was decided, the alternatives, why).
@@ -118,7 +119,8 @@ And from version 0.3 so far:
 13. Shared components for every result, sheet, progress line and state (`Card`, `SheetScaffold`, `ProgressLine`, `StateView`), a welcome shown once (`FirstRun`), an About line and an app icon. Settings is on the tokens but not yet redesigned.
 14. Managed folders in the engine (Folders, segment 1): `ManagedFolder`, `FolderRegistry`, `FolderSafetyRules`, a folder ID on every run, change and Kept mark, undo into the run's own folder, and the `-DemoHome` override.
 15. Desktop, Documents and folders the user adds, in the app (Folders, segment 2): a Folders sidebar section, turning Desktop and Documents on, permission states, Add Folder (button, File menu, drag from Finder), rename and remove, unavailable folders, and a folder name and filter in Activity.
+16. Per-folder cleanup rules (Folders, segment 3): `FolderRules` with tested defaults per kind, stored in the log, enforced by the planners, and a Folders pane in Settings.
 
-Out of scope until the owner asks: watching Downloads automatically, user-defined rules, schedules, cloud-drive folders, per-folder settings, an archive name of its own for each kind of folder, undo that follows a folder that has moved, subfolders, the full storage view, search, tags, sharing, AI that makes a change without the user's Confirm, changing a card by talking (`reviseCleanup`), AI that reads file contents, custom theme.
+Out of scope until the owner asks: watching Downloads automatically, user-defined rules, schedules, cloud-drive folders, automatic or scheduled rules, an archive name of its own for each kind of folder, undo that follows a folder that has moved, subfolders, the full storage view, search, tags, sharing, AI that makes a change without the user's Confirm, changing a card by talking (`reviseCleanup`), AI that reads file contents, custom theme.
 
 Features the owner has noted for later are in `docs/backlog.md`: opening an Activity entry for its details (2026-11-14), and undoing more than the last cleanup with repeated ⌘Z (2026-11-15). None is part of any segment yet; ask before starting one. When the owner notes a new idea for later, add it there.

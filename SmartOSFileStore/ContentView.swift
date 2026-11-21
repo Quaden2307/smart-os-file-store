@@ -420,12 +420,12 @@ struct ContentView: View {
                         ? Text("Check the folder with every cleanup at once (⌘T)")
                         : Text("Nothing can be cleaned up until the activity log works")
                 )
-                .disabled(!canStartCleanup)
+                .disabled(!canStartTidyNow)
             }
             ToolbarItem(placement: .primaryAction) {
                 // Every action, as in the menu bar's Clean Up menu, which holds their shortcuts.
                 Menu {
-                    ForEach(CleanupAction.menuActions, id: \.self) { action in
+                    ForEach(offeredActions, id: \.self) { action in
                         let display = action.display
                         Button {
                             startCleanup(action)
@@ -595,7 +595,21 @@ struct ContentView: View {
 
     /// The Clean Up menu: every action, under the same rule as the toolbar's menu.
     private var cleanUpCommands: CleanUpCommandTarget {
-        CleanUpCommandTarget(canStart: canStartCleanup, start: startCleanup, startTidyNow: startTidyNow)
+        CleanUpCommandTarget(
+            canStart: canStartCleanup, offered: Set(offeredActions), canTidyNow: canStartTidyNow, start: startCleanup,
+            startTidyNow: startTidyNow
+        )
+    }
+
+    /// The actions the folder on screen offers, in menu order.
+    private var offeredActions: [CleanupAction] {
+        let rules = model.logFolder?.rules ?? FolderRules.defaults(for: model.folder?.kind ?? .downloads)
+        return CleanupAction.menuActions.filter(rules.offers)
+    }
+
+    /// Tidy Now, where the folder's rules put any action in it.
+    private var canStartTidyNow: Bool {
+        canStartCleanup && model.logFolder?.rules.tidyNowActions.isEmpty == false
     }
 
     /// `.sheet(item:)` keeps showing the plan while the sheet animates away; setting it to nil
@@ -677,9 +691,10 @@ struct ContentView: View {
 
     /// Starts Tidy Now over the listed files, under the same rule as any cleanup.
     private func startTidyNow() {
-        guard canStartCleanup, let log = activity.log, let folder = model.logFolder else { return }
+        guard canStartTidyNow, let log = activity.log, let folder = model.logFolder else { return }
         let model = model
         let tidy = TidyNowModel(
+            actions: folder.rules.tidyNowActions,
             eligibility: model.eligibility,
             applicationFolders: model.applicationFolders,
             log: log,

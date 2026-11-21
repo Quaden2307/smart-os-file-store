@@ -7,6 +7,12 @@ struct CleanUpCommandTarget {
     /// activity log does not work.
     let canStart: Bool
 
+    /// The actions the folder on screen offers. The others are left out of the menu.
+    let offered: Set<CleanupAction>
+
+    /// False where the folder's rules put no action in Tidy Now.
+    let canTidyNow: Bool
+
     let start: @MainActor (CleanupAction) -> Void
 
     /// Starts Tidy Now: every action at once, in one overview.
@@ -32,9 +38,9 @@ struct CleanUpCommands: Commands {
                 Label("Tidy Now", systemImage: "checklist")
             }
             .keyboardShortcut("t", modifiers: .command)
-            .disabled(target?.canStart != true)
+            .disabled(target?.canTidyNow != true)
             Divider()
-            ForEach(CleanupAction.menuActions, id: \.self) { action in
+            ForEach(CleanupAction.menuActions.filter { target?.offered.contains($0) ?? true }, id: \.self) { action in
                 let display = action.display
                 Button {
                     target?.start(action)

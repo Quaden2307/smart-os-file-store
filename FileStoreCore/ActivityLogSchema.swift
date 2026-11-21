@@ -38,6 +38,9 @@ internal import GRDB
 /// row the migration makes. The column cannot be `NOT NULL`, since SQLite adds a column only with
 /// one default for every database, so triggers refuse a row without it (decision record 0026).
 ///
+/// `v8` adds `folders.rules`: the folder's own cleanup rules as JSON, NULL for its kind's defaults
+/// (decision record 0028).
+///
 /// Every time is a `Date.timeIntervalSinceReferenceDate`, the number a `Date` itself holds, so a
 /// modification date read back is bit for bit the one the scan saw. Paths are stored as text;
 /// file content never is.
@@ -193,6 +196,10 @@ enum ActivityLogSchema {
                     BEGIN SELECT RAISE(ABORT, '\(table).folderID is required'); END;
                     """)
             }
+        }
+        migrator.registerMigration("v8") { db in
+            // A folder's own rules, as JSON (`FolderRules`). NULL is its kind's defaults.
+            try db.execute(sql: "ALTER TABLE folders ADD COLUMN rules TEXT")
         }
         return migrator
     }

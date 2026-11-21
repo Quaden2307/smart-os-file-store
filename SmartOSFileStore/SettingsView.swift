@@ -24,6 +24,18 @@ struct SettingsView: View {
     }
 
     var body: some View {
+        TabView {
+            Tab("General", systemImage: "gearshape") {
+                general
+            }
+            Tab("Folders", systemImage: "folder") {
+                FolderRulesSettings()
+            }
+        }
+        .frame(width: 560)
+    }
+
+    private var general: some View {
         Form {
             Section {
                 Picker("Treat files as unused after", selection: Binding(get: { effective.unusedAfterDays }, set: { unusedAfterDays = $0 })) {

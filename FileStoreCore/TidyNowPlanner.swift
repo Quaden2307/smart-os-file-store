@@ -36,15 +36,16 @@ public struct TidyNowPlanner: Sendable {
     public let now: Date
     public let eligibility: CandidateEligibility
     public let keptItems: KeptItems
-    /// The actions planned. Every action unless the planner was made for some.
+    /// The actions planned: those asked for, or the folder's Tidy Now actions, that the folder offers.
     public let actions: [CleanupAction]
     private let planAction: PlanAction
     private static let logger = Logger(subsystem: "com.quaden2307.FileStoreCore", category: "TidyNow")
 
     /// - Parameters: as for `CleanupPlanners.plan`, which plans each action.
-    ///   - actions: The actions to plan, in any order. Every action by default.
+    ///   - actions: The actions to plan, in any order. By default the ones the folder's rules put
+    ///     in Tidy Now. Either way, only actions the folder offers are planned.
     public init(
-        actions: [CleanupAction] = TidyNowPlan.order,
+        actions: [CleanupAction]? = nil,
         eligibility: CandidateEligibility,
         keptItems: KeptItems,
         installers: InstallerSources,
@@ -71,10 +72,10 @@ public struct TidyNowPlanner: Sendable {
 
     /// A planner with its own way of planning each action, for tests.
     public init(
-        actions: [CleanupAction] = TidyNowPlan.order, folder: ManagedFolder, now: Date, eligibility: CandidateEligibility,
+        actions: [CleanupAction]? = nil, folder: ManagedFolder, now: Date, eligibility: CandidateEligibility,
         keptItems: KeptItems, planAction: @escaping PlanAction
     ) {
-        self.actions = actions
+        self.actions = (actions ?? folder.rules.tidyNowActions).filter(folder.rules.offers)
         self.folder = folder
         self.now = now
         self.eligibility = eligibility

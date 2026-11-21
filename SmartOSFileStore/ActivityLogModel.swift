@@ -281,6 +281,15 @@ final class ActivityLogModel {
         }
     }
 
+    /// Keeps a folder's own rules; nil goes back to its kind's defaults. Nothing on disk changes,
+    /// and nothing goes in the activity log's history.
+    func setRules(_ rules: FolderRules?, of id: ManagedFolder.ID) async {
+        _ = await change { log, folders throws(ActivityLogError) in
+            try await folders.setRules(rules, of: id, in: log)
+            return nil
+        }
+    }
+
     /// Takes a folder off the list. Nothing on disk changes, and its runs stay in Activity.
     func remove(_ entry: FolderEntry) async {
         _ = await change { log, folders throws(ActivityLogError) in

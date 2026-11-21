@@ -33,7 +33,8 @@ public enum CleanupPlanners {
     ///     Near-Duplicates only files with the same cleaned name, and Archive Old Downloads only files
     ///     with the name of one in the archive; none of them reports any. Review Large Downloads reads
     ///     nothing, nor does Remove Empty Folders: the scan read what they need.
-    /// - Returns: The plan, or nil while the action has no planner yet.
+    /// - Returns: The plan, or nil while the action has no planner yet, or the folder's rules do not
+    ///   offer it. `settings` gives way to the folder's own thresholds where it has any.
     /// - Throws: `.cancelled` when the task is cancelled.
     @concurrent
     public static func plan(
@@ -49,9 +50,11 @@ public enum CleanupPlanners {
         onProgress: (@Sendable (CleanupPlanningProgress) -> Void)? = nil
     ) async throws(CleanupPlanningError) -> CleanupPlan? {
         let eligibility = eligibility.keeping(keptItems)
-        guard let planner = planner(for: action) else {
+        // An action the folder does not offer is never planned there, whoever asks.
+        guard let planner = planner(for: action), folder.rules.offers(action) else {
             return nil
         }
+        let settings = folder.rules.settings(over: settings)
         switch planner {
         case .duplicates:
             var hashingProgress: (@Sendable (DuplicateScanProgress) -> Void)?

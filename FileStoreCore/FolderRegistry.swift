@@ -127,6 +127,13 @@ public struct FolderRegistry: Sendable {
         try log.renameFolder(id: id, to: trimmed)
     }
 
+    /// Keeps a folder's own rules; nil goes back to its kind's defaults. Nothing on disk changes, and
+    /// nothing is recorded in the activity log's history.
+    @concurrent
+    public func setRules(_ rules: FolderRules?, of id: ManagedFolder.ID, in log: ActivityLog) async throws(ActivityLogError) {
+        try log.setRules(rules, ofFolder: id)
+    }
+
     /// The folder with `id`, whether it is on the list or was taken off it, where it is now. Undo
     /// asks this for the folder a run was made in. Nil when the log holds no such folder, it cannot
     /// be found, or the rules refuse where it is.
@@ -158,7 +165,7 @@ public struct FolderRegistry: Sendable {
             return .failure(.refused(refusal))
         }
         let stored = try log.addStandardFolder(kind)
-        return .success(ManagedFolder(id: stored.id, kind: kind, url: url))
+        return .success(ManagedFolder(id: stored.id, kind: kind, url: url, rules: stored.rules))
     }
 
     /// Puts a folder the user chose on the list, with a bookmark to find it again.
@@ -300,7 +307,7 @@ public struct FolderRegistry: Sendable {
         if let refusal = refusal(at: url, kind: stored.kind, managed: managed) {
             return .failure(.refused(refusal))
         }
-        return .success(ManagedFolder(id: stored.id, kind: stored.kind, displayName: stored.displayName, locator: locator, url: url))
+        return .success(ManagedFolder(id: stored.id, kind: stored.kind, displayName: stored.displayName, locator: locator, url: url, rules: stored.rules))
     }
 }
 

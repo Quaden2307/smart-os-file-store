@@ -39,13 +39,20 @@ public struct ManagedFolder: Sendable, Identifiable {
     /// resolved: the activity log stores paths with this spelling, and undo compares them.
     public let url: URL
 
+    /// What the folder allows: its actions, Tidy Now, ticks and thresholds. Its kind's defaults
+    /// until the user changes them (`FolderRules.defaults(for:)`).
+    public let rules: FolderRules
+
     /// The archive: a folder with this name at the top level of the folder. Neither it nor anything
     /// in it is ever a candidate. One name for every kind for now (decision record 0026).
     public var archiveFolderName: String { CandidateEligibility.archiveFolderName }
 
     /// Describes a folder that is already known. The app gets its folders from `FolderRegistry`;
     /// tests describe a temporary folder.
-    public init(id: UUID = UUID(), kind: Kind, displayName: String? = nil, locator: Locator = .standard, url: URL) {
+    public init(
+        id: UUID = UUID(), kind: Kind, displayName: String? = nil, locator: Locator = .standard, url: URL, rules: FolderRules? = nil
+    ) {
+        self.rules = rules ?? .defaults(for: kind)
         self.id = id
         self.kind = kind
         self.url = url.standardizedFileURL

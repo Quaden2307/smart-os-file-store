@@ -247,7 +247,7 @@ final class ChatModel {
             rows: found.map { plan in
                 CleanupProposal.Row(
                     action: plan.action.definition.identifier, count: plan.changes.count, bytes: plan.bytesToFree,
-                    tickedCount: plan.changes.count { $0.reason.isTickedByCode }
+                    tickedCount: plan.defaultTickedIDs.count
                 )
             },
             sampleNames: found.flatMap(\.changes).prefix(CleanupProposal.sampleNamesShown).map(\.record.displayName)

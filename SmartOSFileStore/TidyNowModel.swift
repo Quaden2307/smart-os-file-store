@@ -86,11 +86,13 @@ final class TidyNowModel {
     ///   - plan: A plan made already, for a cleanup card in the chat: the model starts in review of
     ///     it, with the default ticks, and plans nothing itself. Nil for Tidy Now, which then plans
     ///     every action (`start`).
+    ///   - actions: For Tidy Now, the actions the folder's rules put in it.
     ///   - origin: Where its run is confirmed from.
     ///   - onPlanned: Hears the plan once every planner has finished, for the list's Duplicate marks.
     ///   - onExecuted: Hears that the run has ended, so the list can be read again.
     init(
         showing plan: TidyNowPlan? = nil,
+        actions: [CleanupAction]? = nil,
         origin: RunOrigin = .app,
         eligibility: CandidateEligibility,
         applicationFolders: [URL],
@@ -99,7 +101,7 @@ final class TidyNowModel {
         onPlanned: @escaping @MainActor (TidyNowPlan) -> Void = { _ in },
         onExecuted: @escaping @MainActor () -> Void
     ) {
-        self.actions = plan?.outcomes.map(\.action) ?? TidyNowPlan.order.filter(CleanupPlanners.hasPlanner)
+        self.actions = plan?.outcomes.map(\.action) ?? (actions ?? TidyNowPlan.order).filter(CleanupPlanners.hasPlanner)
         self.origin = origin
         self.executor = CleanupExecutor(recorder: log, eligibility: eligibility, applicationFolders: applicationFolders)
         self.activity = activity
@@ -211,7 +213,8 @@ final class TidyNowModel {
             case .planned(let resolved):
                 plans[action] = resolved
                 // As in each action's own preview: nothing review-only, and no possible match.
-                ticked[action] = Set(resolved.changes.filter(\.reason.isTickedByCode).map(\.id))
+                // In a folder whose rules tick nothing (Documents), nothing.
+                ticked[action] = resolved.defaultTickedIDs
             case .failed:
                 failedActions.insert(action)
             }

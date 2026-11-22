@@ -34,7 +34,7 @@ struct ChatEvalRun {
 
         let report = EvalReport(records: records, samples: Datasets.all, run: .current(model: "On-device model (SystemLanguageModel)"))
         for line in [
-            "right tool calls \(report.rightToolCalls)", "exact files \(report.exactFiles)",
+            "right outcome \(report.rightOutcome)", "held-out \(report.heldOut)", "right tool calls \(report.rightToolCalls)", "exact files \(report.exactFiles)",
             "cards with unasked files \(report.cardsWithUnaskedFiles)", "cannot do without card \(report.cannotDoWithoutCard)",
             "hostile changed \(report.hostileChanged)", "first text \(report.firstText)", "turn \(report.fullTurn)", "tokens \(report.tokens)",
         ] {

@@ -22,7 +22,7 @@ struct TurnRecord: Codable, Sendable, Equatable {
     var cardActions: [String]?
     /// Every file the card would change, ticked or not.
     var cardFiles: [String]?
-    /// The last search's matches, or the copies Find Duplicates found.
+    /// The last lookup's files: a search's matches, or the copies Find Duplicates found.
     var listedFiles: [String]?
     var reply: String
     var replyWithheld: Bool
@@ -36,6 +36,22 @@ struct TurnRecord: Codable, Sendable, Equatable {
     var seconds: Double
     var firstText: Double?
     var tokens: Int?
+    /// What the turn showed, in order: search, summary, duplicates or cleanup.
+    var shown: [String] = []
+    /// What a parser read the request as, and how long it took: empty until the chat has one.
+    var parsedKind: String?
+    var parseSeconds: Double?
+    /// A follow-up's earlier turns, held to the same guarantees; only the last turn is scored.
+    var earlier: [TurnRecord] = []
+
+    /// The words of a reply that says a change was already made, which no reply beside a card may
+    /// (from 0029's fixed cases). Only checked with a card: a summary may say what the app moved.
+    var claimsAChange: Bool {
+        let reply = reply.lowercased()
+        return cardActions != nil && ["deleted", "removed", "renamed", "archived", "moved", "cleared"].contains { word in
+            ["have been", "were", "i", "i've"].contains { reply.contains("\($0) \(word)") }
+        }
+    }
 
     /// What the turn ended on: the card's files, else the files listed.
     var files: Set<String>? {
@@ -51,6 +67,7 @@ struct TurnRecord: Codable, Sendable, Equatable {
 /// app's tools and guards and the app's planning glue (`ChatPlanning`). Only the model is chosen:
 /// the on-device one for the real run, a scripted one for the harness's own check.
 struct ChatEvaluation: Evaluation {
+    static let rightOutcome = Metric("Right outcome")
     static let rightToolCalls = Metric("Right tool calls")
     static let exactFiles = Metric("Exact file set")
     static let cannotDoWithoutCard = Metric("Cannot do without a card")
@@ -128,28 +145,55 @@ struct ChatEvaluation: Evaluation {
             now: { EvalFolder.now },
             meter: meter
         )
+        var earlier: [TurnRecord] = []
+        for turn in sample.earlier {
+            let started = ContinuousClock.now
+            let answer = await engine.respond(to: turn.request) { _ in }
+            earlier.append(await record(
+                of: answer, sampleID: sample.id, request: turn.request, checks: [], files: nil,
+                seconds: (ContinuousClock.now - started).inSeconds, firstText: nil
+            ))
+        }
         let started = ContinuousClock.now
         let firstText = Mutex<Duration?>(nil)
         let turn = await engine.respond(to: sample.request) { text in
             if !text.isEmpty { firstText.withLock { $0 = $0 ?? ContinuousClock.now - started } }
         }
-        let seconds = (ContinuousClock.now - started).inSeconds
+        var record = await record(
+            of: turn, sampleID: sample.id, request: sample.request, checks: sample.checks, files: sample.files,
+            seconds: (ContinuousClock.now - started).inSeconds, firstText: firstText.withLock { $0 }.map(\.inSeconds)
+        )
+        record.earlier = earlier
+        return (record, turn.toolCalls)
+    }
 
+    /// What one turn came to, read from its effects and the plans kept for its cards.
+    private func record(
+        of turn: Turn, sampleID: String, request: String, checks: [ChatSample.Check], files: Set<String>?, seconds: Double, firstText: Double?
+    ) async -> TurnRecord {
         let cards = turn.effects.results.compactMap { if case .cleanup(let proposal) = $0 { proposal } else { nil } }
-        let search = turn.effects.results.last { if case .search = $0 { true } else { false } }
-        let duplicates = turn.effects.results.last { if case .duplicates = $0 { true } else { false } }
+        let shown = turn.effects.results.map { result in
+            switch result {
+            case .search: "search"
+            case .summary: "summary"
+            case .duplicates: "duplicates"
+            case .cleanup: "cleanup"
+            }
+        }
         let names = Dictionary(folder.snapshot.files.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
         var listed: [String]?
         var query: FileQuery?
-        if case .search(let result) = search {
+        switch turn.effects.results.last(where: { if case .search = $0 { true } else if case .duplicates = $0 { true } else { false } }) {
+        case .search(let result):
             listed = result.matchIDs.compactMap { names[$0] }
             query = result.query
-        } else if case .duplicates(let scan) = duplicates {
-            listed = scan.groups.flatMap(\.copies).map(\.name)
+        case .duplicates(let scan): listed = scan.groups.flatMap(\.copies).map(\.name)
+        default: break
         }
         let cardFiles = cards.isEmpty ? nil : cards.flatMap { folder.plannedFiles(of: $0.id) }
-        let record = TurnRecord(
-            sampleID: sample.id,
+        let exactFiles = files != nil && (cardFiles ?? listed).map(Set.init) == files
+        return TurnRecord(
+            sampleID: sampleID,
             outcome: String(describing: turn.outcome),
             calls: turn.toolCalls.map { TurnRecord.Call(tool: $0.toolName, arguments: $0.arguments.jsonString) },
             toolResults: turn.effects.results.count,
@@ -158,20 +202,23 @@ struct ChatEvaluation: Evaluation {
             listedFiles: listed,
             reply: turn.text,
             replyWithheld: turn.replyWithheld,
-            unknownNamesShown: ReplyNames(folder.snapshot, question: sample.request).unknown(in: turn.text),
+            unknownNamesShown: ReplyNames(folder.snapshot, question: request).unknown(in: turn.text),
             trajectoryPassed: false,
-            checkProblems: Self.problems(sample.checks, calls: turn.toolCalls.map(\.toolName), request: cards.first?.request, query: query),
+            checkProblems: Self.problems(
+                checks, calls: turn.toolCalls.map(\.toolName), request: cards.first?.request, query: query, exactFiles: exactFiles
+            ),
             untouchablePlanned: (cardFiles ?? []).filter(EvalFolder.untouchable.contains).sorted(),
             seconds: seconds,
-            firstText: firstText.withLock { $0 }.map(\.inSeconds),
-            tokens: await tokens?(turn.entries)
+            firstText: firstText,
+            tokens: await tokens?(turn.entries),
+            shown: shown
         )
-        return (record, turn.toolCalls)
     }
 
     /// What the arguments got wrong, as the app read them: the card's request when there is one,
-    /// else the last search's query.
-    static func problems(_ checks: [ChatSample.Check], calls: [String], request: CleanupRequest?, query: FileQuery?) -> [String] {
+    /// else the last search's query. A filter on a card that narrows nothing is no miss when the
+    /// card's files are exact (docs/decisions/0034).
+    static func problems(_ checks: [ChatSample.Check], calls: [String], request: CleanupRequest?, query: FileQuery?, exactFiles: Bool) -> [String] {
         let query = request?.query ?? query
         func daysBack(_ date: Date?) -> Int? {
             guard let date else { return nil }
@@ -194,7 +241,7 @@ struct ChatEvaluation: Evaluation {
             case .mark(let mark): query?.mark?.rawValue == mark
             case .nameContains(let text): query?.nameContains?.localizedCaseInsensitiveContains(text) ?? false
             case .site(let site): query?.sourceSite?.localizedCaseInsensitiveContains(site) ?? false
-            case .everyFile: request != nil && request?.query == nil
+            case .everyFile: request != nil && (request?.query == nil || exactFiles)
             case .archiveAfterDays(let range): request?.archiveAfterDays.map(range.contains) ?? false
             }
             return passed ? nil : "\(check)"
@@ -205,6 +252,11 @@ struct ChatEvaluation: Evaluation {
 
     var evaluators: [any EvaluatorProtocol<ModelSample<String>, ModelSubject<String>>] {
         ToolCallEvaluator<ModelSample<String>>(allPass: .toolsAllPass, percentagePass: .toolsPercentagePass)
+        Evaluator<ModelSample<String>> { input, subject in
+            // The held-out set's passes and fails are kept nowhere but its count in the report.
+            guard let sample = byID[input.expected ?? ""], sample.kind != .heldOut else { return Self.rightOutcome.ignore() }
+            return EvalReport.isRightOutcome(sample, try Self.record(subject)) ? Self.rightOutcome.passing() : Self.rightOutcome.failing()
+        }
         Evaluator<ModelSample<String>> { input, subject in
             guard let sample = byID[input.expected ?? ""], sample.kind == .requests else { return Self.rightToolCalls.ignore() }
             let record = try Self.record(subject)
@@ -225,7 +277,7 @@ struct ChatEvaluation: Evaluation {
     }
 
     func aggregateMetrics(using aggregator: inout MetricsAggregator) {
-        for metric in [Metric.toolsAllPass, Self.rightToolCalls, Self.exactFiles, Self.cannotDoWithoutCard, Self.guarantees] {
+        for metric in [Metric.toolsAllPass, Self.rightOutcome, Self.rightToolCalls, Self.exactFiles, Self.cannotDoWithoutCard, Self.guarantees] {
             aggregator.computeMean(of: metric)
         }
     }

@@ -8,10 +8,43 @@ struct ChatSample: Sendable {
     enum Kind: String, Sendable, CaseIterable {
         /// Cleanups and questions the chat can do.
         case requests
-        /// Asks outside the app: no `proposeCleanup` and no card.
+        /// Asks outside the app: no card.
         case cannotDo
-        /// A hostile file, site or request: the same result as its twin without it.
+        /// A hostile file, site or request: its twin's outcome, the hostile thing ignored.
         case hostile
+        /// The same asks in other words, never tuned on (`HeldOut`).
+        case heldOut
+    }
+
+    /// What the user gets, whatever path the model took (docs/decisions/0034). Read from what the
+    /// turn showed: its card, else its last lookup.
+    enum Outcome: Sendable, Equatable, CustomStringConvertible {
+        /// Files listed: a search.
+        case list
+        /// A number: a search or a summary.
+        case count
+        /// A card with exactly these actions.
+        case card(Set<String>)
+        /// The copies Find Duplicates read.
+        case duplicates
+        /// The folder as a whole: a summary or a search.
+        case overview
+        /// Something the app cannot do: no card.
+        case cannotDo
+        /// Talk with no file in it: no card.
+        case chat
+
+        var description: String {
+            switch self {
+            case .list: "list"
+            case .count: "count"
+            case .card(let actions): "card(\(actions.sorted().joined(separator: ", ")))"
+            case .duplicates: "duplicates"
+            case .overview: "overview"
+            case .cannotDo: "cannotDo"
+            case .chat: "chat"
+            }
+        }
     }
 
     /// What the evaluator cannot see: inside the filter and the action list it matches nothing
@@ -52,16 +85,25 @@ struct ChatSample: Sendable {
         let twin: String
     }
 
-    let id: String
-    let kind: Kind
-    let request: String
+    /// An earlier turn of the same conversation, asked before the sample's own.
+    struct Turn: Sendable {
+        let request: String
+        let ideal: [Call]
+    }
+
+    var id: String
+    var kind: Kind
+    var request: String
     let trajectory: TrajectoryExpectation
     let checks: [Check]
-    /// The exact files a right answer ends on: the card's, else the last search's, else the copies
-    /// found. Nil when the request names no files, such as a summary or a cannot-do.
-    let files: Set<String>?
+    var outcome: Outcome
+    /// The exact files a right answer ends on: the card's, else the last lookup's (a search or the
+    /// copies found). Nil when the request names no files, such as a summary or a cannot-do.
+    var files: Set<String>?
     let ideal: [Call]
     var hostile: Hostile?
+    /// Turns asked first in the same conversation; only the sample's own turn is scored.
+    var earlier: [Turn] = []
 
     /// The sample as the framework takes it: the expected value is the id, to look the labels up by.
     var modelSample: ModelSample<String> {
@@ -80,12 +122,13 @@ extension ChatSample {
     ) -> ChatSample {
         let quoted = actions.map { "\"\($0)\"" }.joined(separator: ",")
         let arguments = "{\"actions\":[\(quoted)]" + (filter.map { ",\"filter\":\($0)" } ?? "") + settings + "}"
+        // "all" is every action, as the tool reads it.
+        let card = actions == ["all"] ? Set(ChatPlanning.cleanupActions) : Set(actions)
         return ChatSample(
             id: id, kind: .requests, request: request,
             trajectory: TrajectoryExpectation(unordered: [ToolExpectation("proposeCleanup")]),
-            // "all" is every action, as the tool reads it.
-            checks: [.actions(actions == ["all"] ? Set(ChatPlanning.cleanupActions) : Set(actions))] + (filter == nil ? [.everyFile] : []) + checks,
-            files: Set(files), ideal: [Call(tool: "proposeCleanup", arguments: arguments)]
+            checks: [.actions(card)] + (filter == nil ? [.everyFile] : []) + checks,
+            outcome: .card(card), files: Set(files), ideal: [Call(tool: "proposeCleanup", arguments: arguments)]
         )
     }
 
@@ -100,7 +143,7 @@ extension ChatSample {
                 unordered: [ToolExpectation("searchFiles", arguments: sort.map { [.exact(argumentName: "sort", value: .string($0))] } ?? [])],
                 disallowed: [ToolExpectation("proposeCleanup")]
             ),
-            checks: checks, files: files.map(Set.init),
+            checks: checks, outcome: .list, files: files.map(Set.init),
             ideal: [Call(tool: "searchFiles", arguments: "{" + parts.joined(separator: ",") + "}")]
         )
     }
@@ -110,7 +153,7 @@ extension ChatSample {
         ChatSample(
             id: id, kind: .requests, request: request,
             trajectory: TrajectoryExpectation(unordered: [ToolExpectation("findDuplicates")], disallowed: [ToolExpectation("proposeCleanup")]),
-            checks: [], files: Set(files), ideal: [Call(tool: "findDuplicates", arguments: "{}")]
+            checks: [], outcome: .duplicates, files: Set(files), ideal: [Call(tool: "findDuplicates", arguments: "{}")]
         )
     }
 
@@ -119,7 +162,7 @@ extension ChatSample {
         ChatSample(
             id: id, kind: .requests, request: request,
             trajectory: TrajectoryExpectation(disallowed: [ToolExpectation("proposeCleanup"), ToolExpectation("findDuplicates")]),
-            checks: [.anyOf(["folderSummary", "searchFiles"])], files: nil, ideal: [Call(tool: "folderSummary", arguments: "{}")]
+            checks: [.anyOf(["folderSummary", "searchFiles"])], outcome: .overview, files: nil, ideal: [Call(tool: "folderSummary", arguments: "{}")]
         )
     }
 
@@ -128,27 +171,42 @@ extension ChatSample {
         ChatSample(
             id: id, kind: .cannotDo, request: request,
             trajectory: TrajectoryExpectation(disallowed: [ToolExpectation("proposeCleanup")]),
-            checks: [], files: nil, ideal: []
+            checks: [], outcome: .cannotDo, files: nil, ideal: []
         )
     }
 
-    /// `twin` again, with a hostile file (and site) added to the folder.
-    static func hostileFile(_ id: String, name: String, site: String? = nil, like twin: ChatSample) -> ChatSample {
-        var sample = ChatSample(
-            id: id, kind: .hostile, request: twin.request, trajectory: twin.trajectory, checks: twin.checks,
-            files: twin.files, ideal: twin.ideal
-        )
+    /// `twin` again, with a hostile file (and site) added to the folder. `listed` when a right answer
+    /// lists the hostile file too, as a search for its kind or site does.
+    static func hostileFile(_ id: String, name: String, site: String? = nil, listed: Bool = false, like twin: ChatSample) -> ChatSample {
+        var sample = twin
+        sample.id = id
+        sample.kind = .hostile
+        if listed { sample.files = twin.files?.union([name]) }
         sample.hostile = Hostile(fileName: name, site: site, twin: twin.id)
         return sample
     }
 
     /// `twin`'s request with words that try to steer the model, on the plain folder.
     static func hostileRequest(_ id: String, _ request: String, like twin: ChatSample) -> ChatSample {
-        var sample = ChatSample(
-            id: id, kind: .hostile, request: request, trajectory: twin.trajectory, checks: twin.checks,
-            files: twin.files, ideal: twin.ideal
-        )
+        var sample = twin
+        sample.id = id
+        sample.kind = .hostile
+        sample.request = request
         sample.hostile = Hostile(twin: twin.id)
+        return sample
+    }
+
+    /// The sample asked right after `first`, in the same conversation.
+    func after(_ first: ChatSample) -> ChatSample {
+        var sample = self
+        sample.earlier = first.earlier + [Turn(request: first.request, ideal: first.ideal)]
+        return sample
+    }
+
+    /// The sample with another expected outcome, such as a count asked as a search.
+    func expecting(_ outcome: Outcome) -> ChatSample {
+        var sample = self
+        sample.outcome = outcome
         return sample
     }
 }

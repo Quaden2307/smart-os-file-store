@@ -62,3 +62,4 @@ One short record per segment for each decision a reader of the code would otherw
 - [0031. What the app has cleaned, over time](0031-cleanup-insights.md)
 - [0032. Demo mode](0032-demo-mode.md)
 - [0033. The chat's evals, a baseline, four rounds and targets](0033-chat-evals.md)
+- [0034. The evals score the outcome, with a held-out set](0034-outcome-evals.md)

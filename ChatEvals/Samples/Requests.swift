@@ -27,7 +27,7 @@ enum Requests {
     static let installerFiles = ["Gizmo-1.5.pkg", "Locked-1.0.dmg", "SomeApp-2.1.dmg", "Tool.pkg", "disk-backup.img"]
     static let olderThanAYear = ["old-manual.pdf", "old-receipt.pdf", "tax-form-2024.pdf", "wallpaper.heic"]
 
-    static let all: [ChatSample] = cleanups + filteredCleanups + questions + copies + overviews
+    static let all: [ChatSample] = cleanups + filteredCleanups + questions + followUps + copies + overviews
 
     // MARK: - One action, or several, on every file
 
@@ -189,6 +189,29 @@ enum Requests {
         .search("sort-4", "Sort my audio files by size", filter: #"{"typeGroup":"audio"}"#, sort: "largest", checks: [.type("audio")],
                 files: ["podcast-episode-12.m4a", "song.mp3"]),
         .search("sort-5", "List my images, newest first", filter: #"{"typeGroup":"images"}"#, sort: "newest", checks: [.type("images")], files: images),
+        // From 0029's fixed cases (docs/decisions/0034).
+        // Leaves out what cannot be told: the in-progress download.
+        .search("never-1", "Which files have I never opened?", filter: #"{"neverOpened":true}"#, files: [
+            "Chapter (2) notes.pdf", "Gizmo-1.5.pkg", "IMG_4021.jpg", "LICENSE", "Locked-1.0.dmg", "OtherApp-1.4.zip",
+            "SomeApp-2.1.dmg", "Tool.pkg", "Widget-3.2-arm64.zip", "agenda (1).docx", "agenda copy.docx", "archive-2023.zip",
+            "backup-2025.tar.gz", "beach.jpg", "big-video.mov", "brochure.pdf_dl=1", "budget copy.xlsx", "conference-talk.mov",
+            "contract.docx", "contract.zip", "dataset.csv", "disk-backup.img", "empty-a.txt", "empty-b.txt",
+            "file%20name%20with%20junk.txt", "invoice (1).pdf", "invoice.pdf", "just-downloaded.pdf", "locked.txt", "manual (2).pdf",
+            "movie.mp4", "mystery.xyz", "notes (1).txt", "notes.txt", "old-manual.pdf", "photos.zip", "podcast-episode-12.m4a",
+            "project.zip", "receipt (1).pdf", "receipt.pdf", "report (1).pdf", "report (2).pdf", "report (3).pdf", "report copy.pdf",
+            "report.pdf", "résumé – final ✓.pdf", "same-size-a.bin", "same-size-b.bin", "screenshot-2026-11-15.png", "slides.pdf.pdf",
+            "statement.pdf", "tax-return-2025.pdf", "todo.md", "todo.txt", "wallpaper.heic",
+        ]),
+    ]
+
+    // MARK: - Follow-ups, from 0029's fixed cases (docs/decisions/0034)
+
+    static let followUps: [ChatSample] = [
+        .search("follow-1", "just the large ones", filter: #"{"mark":"lastResult","largerThanMB":100}"#, checks: [.largerThanMB(99...101)],
+                files: ["backup-2025.tar.gz", "conference-talk.mov", "disk-backup.img", "family-video.mp4"])
+            .after(.search("", "Which files are larger than 50 MB?", filter: #"{"largerThanMB":50}"#, files: nil)),
+        .search("follow-2", "sort those by size", filter: #"{"mark":"lastResult"}"#, sort: "largest", files: images)
+            .after(.search("", "Which images are here?", filter: #"{"typeGroup":"images"}"#, files: nil)),
     ]
 
     // MARK: - Copies, read from the files
@@ -210,5 +233,7 @@ enum Requests {
         .overview("overview-3", "Give me an overview of my downloads."),
         .overview("overview-4", "What kinds of files are here?"),
         .overview("overview-5", "How much has the app moved to the Trash?"),
+        // From 0029's fixed cases (docs/decisions/0034).
+        .overview("space-1", "What's taking the most space?"),
     ]
 }

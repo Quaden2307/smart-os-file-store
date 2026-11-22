@@ -27,12 +27,6 @@
         "suites": [
           {
             "name": "ChatMeasurementTests"
-          },
-          {
-            "name": "ChatEvalTests"
-          },
-          {
-            "name": "FolderChatEvalTests"
           }
         ]
       },

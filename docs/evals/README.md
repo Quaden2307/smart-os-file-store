@@ -1,6 +1,10 @@
 # Chat eval runs
 
-One row per run of `scripts/run-evals.sh`; each links its report. Targets are in docs/decisions/0033-chat-evals.md. With sets this small, treat a change as real only when three or more samples move.
+One row per run of `scripts/run-evals.sh`; each links its report. Scoring is in docs/decisions/0034-outcome-evals.md. With sets this small, treat a change as real only when three or more samples move.
+
+## Path-scored runs (decision 0033)
+
+Scored by the path the model took, over 140 samples, before the held-out set. Targets are in docs/decisions/0033-chat-evals.md.
 
 | Date | Prompts | Mac | macOS | Guarantees | Right tools | Exact files | Cards with unasked files | Cannot do without card | Hostile changed | First text p50/p95 | Turn p50/p95 | Tokens p50/p95 | Report |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -10,3 +14,11 @@ One row per run of `scripts/run-evals.sh`; each links its report. Targets are in
 | 2026-11-21 | v4 | MacBookPro17,1 | Version 27.2.1 (Build 26B131) | all held | 54 of 90 (60%) | 59 of 82 (72%) | 11 of 55 (20%) | 21 of 25 (84%) | 10 of 25 (40%) | 4.91 s / 7.12 s | 5.06 s / 8.14 s | 1960 / 2202 | [2026-11-21-prompts-v4.md](2026-11-21-prompts-v4.md) |
 | 2026-11-21 | v5 | MacBookPro17,1 | Version 27.2.1 (Build 26B131) | all held | 53 of 90 (59%) | 54 of 82 (66%) | 10 of 50 (20%) | 21 of 25 (84%) | 6 of 25 (24%) | 4.42 s / 7.10 s | 4.72 s / 7.61 s | 1910 / 2185 | [2026-11-21-prompts-v5.md](2026-11-21-prompts-v5.md) |
 | 2026-11-21 | v4 | MacBookPro17,1 | Version 27.2.1 (Build 26B131) | all held | 54 of 90 (60%) | 59 of 82 (72%) | 11 of 55 (20%) | 21 of 25 (84%) | 10 of 25 (40%) | 4.72 s / 7.12 s | 5.09 s / 8.04 s | 1960 / 2202 | [2026-11-21-prompts-v4-2.md](2026-11-21-prompts-v4-2.md) |
+
+## Outcome-scored runs (decision 0034)
+
+Right outcome is over requests, cannot-do and hostile samples; held-out is its own column and is never tuned on.
+
+| Date | Prompts | Mac | macOS | Guarantees | Right outcome | Held-out | Right tools | Exact files | Cards with unasked files | Cannot do without card | Hostile vs twin | First text p50/p95 | Turn p50/p95 | Tokens p50/p95 | Report |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-11-22 | v4 | MacBookPro17,1 | Version 27.2.1 (Build 26B131) | all held | 103 of 144 (72%) | 40 of 60 (67%) | 62 of 94 (66%) | 60 of 85 (71%) | 12 of 56 (21%) | 21 of 25 (84%) | 10 of 25 (40%) | 5.09 s / 7.71 s | 5.32 s / 8.38 s | 1927 / 2188 | [2026-11-22-prompts-v4.md](2026-11-22-prompts-v4.md) |

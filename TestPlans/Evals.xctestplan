@@ -19,24 +19,6 @@
       "selectedTests": {
         "suites": [
           {
-            "name": "ChatEvalTests"
-          },
-          {
-            "name": "FolderChatEvalTests"
-          }
-        ]
-      },
-      "parallelizable": false,
-      "target": {
-        "containerPath": "container:SmartOSFileStore.xcodeproj",
-        "identifier": "271D398C2BAB92A4CF3E9BAC",
-        "name": "FileStoreIntelligenceTests"
-      }
-    },
-    {
-      "selectedTests": {
-        "suites": [
-          {
             "name": "ChatEvalRun"
           }
         ]

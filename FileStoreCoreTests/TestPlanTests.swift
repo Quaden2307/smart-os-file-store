@@ -27,7 +27,7 @@ struct TestPlanTests {
     static let targets = [
         "SmartOSFileStore": ["FileStoreCoreTests", "FileStoreIntelligenceTests", "ChatEvals"],
         "Benchmark": ["FileStoreCoreTests", "FileStoreIntelligenceTests"],
-        "Evals": ["FileStoreIntelligenceTests", "ChatEvals"],
+        "Evals": ["ChatEvals"],
     ]
 
     @Test func plansPointAtTheGeneratedTestTargets() throws {
@@ -52,9 +52,9 @@ struct TestPlanTests {
     /// real-model evals; the Benchmark plan runs only the first two, the Evals plan only the evals.
     @Test func eachPlanRunsItsOwnSuitesAndTheDefaultPlanNoneOfThem() throws {
         let benchmark = [["BenchmarkTests"], ["ChatMeasurementTests"]]
-        let evals = [["ChatEvalTests", "FolderChatEvalTests"], ["ChatEvalRun"]]
+        let evals = [["ChatEvalRun"]]
         let normal = try plan(named: "SmartOSFileStore").testTargets
-        #expect(normal.map { $0.skippedTests?.suites.map(\.name) } == [["BenchmarkTests"], ["ChatMeasurementTests", "ChatEvalTests", "FolderChatEvalTests"], ["ChatEvalRun"]])
+        #expect(normal.map { $0.skippedTests?.suites.map(\.name) } == [["BenchmarkTests"], ["ChatMeasurementTests"], ["ChatEvalRun"]])
         #expect(normal.allSatisfy { $0.selectedTests == nil })
         for (name, selected) in [("Benchmark", benchmark), ("Evals", evals)] {
             let targets = try plan(named: name).testTargets
@@ -63,10 +63,7 @@ struct TestPlanTests {
         }
         #expect(String(describing: BenchmarkTests.self) == "BenchmarkTests")
         // The other bundles' suites cannot be named from here; their sources can be read.
-        for (folder, suite) in [
-            ("FileStoreIntelligenceTests", "ChatMeasurementTests"), ("FileStoreIntelligenceTests", "ChatEvalTests"),
-            ("FileStoreIntelligenceTests", "FolderChatEvalTests"), ("ChatEvals", "ChatEvalRun"),
-        ] {
+        for (folder, suite) in [("FileStoreIntelligenceTests", "ChatMeasurementTests"), ("ChatEvals", "ChatEvalRun")] {
             let source = try SafetyTests.projectRoot().appending(path: "\(folder)/\(suite).swift")
             #expect(try String(contentsOf: source, encoding: .utf8).contains("\nstruct \(suite) {"), "\(folder)/\(suite).swift")
         }

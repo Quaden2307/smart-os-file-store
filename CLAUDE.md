@@ -125,7 +125,7 @@ And from version 0.3 so far:
 18. A storage view (Visualizations, segment 1): what is taking space per folder and kind, what each cleanup could get back (counted as previews tick, each file once), and the largest files, with Swift Charts.
 19. Cleanup insights (Visualizations, segment 2): daily totals from the log (undo subtracted on its day), kept through pruning in `dailyTotals`, shown at the top of Activity as headlines, a twelve-week chart and breakdowns.
 20. Demo mode: `scripts/make-demo-home.sh`, `scripts/run-demo.sh` (with `--reset`), seeded history, docs/demo.md and docs/recording-checklist.md.
-21. Chat evals (segment 3 of the plan): the `ChatEvals` harness on Apple's Evaluations framework, about 140 labelled samples, reports in docs/evals, targets in decision 0033, and a reply naming a file that does not exist is withheld.
+21. Chat evals (segment 3 of the plan): the `ChatEvals` harness on Apple's Evaluations framework, about 140 labelled samples, reports in docs/evals, targets in decision 0033, and a reply naming a file that does not exist is withheld. Scored by the outcome the user gets, with a held-out set of 60 never tuned on (decision 0034).
 
 Out of scope until the owner asks: watching Downloads automatically, user-defined rules, schedules, cloud-drive folders, automatic or scheduled rules, an archive name of its own for each kind of folder, undo that follows a folder that has moved, subfolders, search, tags, sharing, AI that makes a change without the user's Confirm, changing a card by talking (`reviseCleanup`), AI that reads file contents, custom theme.
 

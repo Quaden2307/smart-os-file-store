@@ -46,15 +46,15 @@ struct ChatToolTests {
     @Test(arguments: [
         (#"{"filter":{"typeGroup":"images"},"sort":"largest"}"#, ["holiday.jpg", "old-photo.heic", "screenshot.png"]),
         (#"{"filter":{"nameContains":"REPORT"},"sort":"name"}"#, ["Annual Report 2025.pdf", "report copy.pdf", "report.pdf"]),
-        (#"{"filter":{"addedOnOrAfter":"2 days ago"},"sort":"earliest"}"#, ["movie.mov", "mystery.xyz", "screenshot.png"]),
-        (#"{"filter":{"addedOnOrAfter":"2026-11-10","addedOnOrBefore":"2026-11-12"},"sort":"newest"}"#, ["holiday.jpg", "song.mp3", "Tool.pkg"]),
-        (#"{"filter":{"openedOnOrBefore":"30 days ago"},"sort":"recentlyOpened"}"#, ["clip.mp4", "Annual Report 2025.pdf"]),
-        (#"{"filter":{"openedOnOrAfter":"5 days ago"},"sort":"leastRecentlyOpened"}"#, ["song.mp3", "movie.mov", "report.pdf"]),
+        (#"{"filter":{"addedSince":"2 days ago"},"sort":"earliest"}"#, ["movie.mov", "mystery.xyz", "screenshot.png"]),
+        (#"{"filter":{"addedSince":"2026-11-10","addedBefore":"2026-11-13"},"sort":"newest"}"#, ["holiday.jpg", "song.mp3", "Tool.pkg"]),
+        (#"{"filter":{"openedBefore":"29 days ago"},"sort":"recentlyOpened"}"#, ["clip.mp4", "Annual Report 2025.pdf"]),
+        (#"{"filter":{"openedSince":"5 days ago"},"sort":"leastRecentlyOpened"}"#, ["song.mp3", "movie.mov", "report.pdf"]),
         (#"{"filter":{"neverOpened":true,"largerThanMB":10},"sort":"smallest"}"#, ["podcast.m4a", "Tool.pkg", "backup.tar.gz"]),
         (#"{"filter":{"largerThanMB":50,"smallerThanMB":700},"sort":"largest"}"#, ["movie.mov", "backup.tar.gz", "clip.mp4", "Tool.pkg"]),
         (#"{"filter":{"sourceSite":"example.com"},"sort":"name"}"#, ["holiday.jpg", "report.pdf"]),
         (#"{"filter":{"mark":"neverOpened"},"sort":"largest"}"#, ["backup.tar.gz", "podcast.m4a", "old-photo.heic", "budget.xlsx"]),
-        (#"{"filter":{"typeGroup":"documents","neverOpened":true,"addedOnOrBefore":"5 days ago"},"sort":"earliest"}"#, ["budget.xlsx", "notes.txt"]),
+        (#"{"filter":{"typeGroup":"documents","neverOpened":true,"addedBefore":"4 days ago"},"sort":"earliest"}"#, ["budget.xlsx", "notes.txt"]),
         (#"{"filter":{"typeGroup":"video","mark":"kept"}}"#, []),
     ])
     func aFilteredSearchFindsExactlyTheseInThisOrder(arguments: String, expected: [String]) async throws {
@@ -71,7 +71,7 @@ struct ChatToolTests {
         #expect(never.matchCount == never.files.count)
         #expect(never.files.allSatisfy { $0.lastOpened == nil && $0.recordsOpens && !$0.isDownloading })
         #expect(!never.files.map(\.name).contains("setup.dmg.crdownload"))
-        #expect(try await search(#"{"filter":{"openedOnOrAfter":"5 days ago"}}"#).unknownOpenCount == 2)
+        #expect(try await search(#"{"filter":{"openedSince":"5 days ago"}}"#).unknownOpenCount == 2)
         // Only the unknown items that fit the rest of the filter, and none for a question that is not about opens.
         #expect(try await search(#"{"filter":{"neverOpened":true,"typeGroup":"documents"}}"#).unknownOpenCount == 0)
         #expect(try await search(#"{"filter":{"neverOpened":true,"nameContains":"Photos"}}"#).unknownOpenCount == 1)

@@ -23,10 +23,11 @@ struct ChatEngineTests {
     }
 
     @Test func theDataMarksTheModelCopiesIntoItsReplyAreNotShown() async {
-        let model = ScriptedModel([.text(["The largest is ⟦big-", "video.mov⟧, then ⟦a.pdf⟧."])])
+        // Names the fixture has: a reply naming files that do not exist is not shown at all.
+        let model = ScriptedModel([.text(["The largest is ⟦Xcode", ".dmg⟧, then ⟦movie.mov⟧."])])
         let seen = Collected<String>()
         let turn = await ChatEngine.scripted(model).respond(to: "Largest?") { seen.add($0) }
-        #expect(turn.text == "The largest is big-video.mov, then a.pdf.")
+        #expect(turn.text == "The largest is Xcode.dmg, then movie.mov.")
         #expect(seen.all.allSatisfy { !$0.contains(PromptLibrary.dataOpen) && !$0.contains(PromptLibrary.dataClose) })
     }
 
@@ -264,6 +265,63 @@ struct ChatEngineTests {
         let next = await engine.ask()
         #expect(next.outcome == .answered)
         #expect(next.text == "Never reached.")
+    }
+
+    /// The evals read every call the model made, also in a turn the session put back as it was.
+    @Test func everyToolCallIsKeptInOrderRefusedOnesToo() async {
+        let names = ["report", "photo", "song", "clip", "notes"]
+        let model = ScriptedModel(rounds: names.map { ScriptedModel.call("searchFiles", #"{"filter":{"nameContains":"\#($0)"}}"#) })
+        let turn = await ChatEngine.scripted(model).ask()
+        #expect(turn.outcome == .toolLimitReached)
+        #expect(turn.toolCalls.map(\.toolName) == Array(repeating: "searchFiles", count: 5))
+        #expect(turn.toolCalls.map(\.arguments.jsonString).allSatisfy { $0.contains("nameContains") })
+        // Reverted with the turn: nothing of it stays in the transcript.
+        #expect(turn.entries.isEmpty)
+
+        let answered = await ChatEngine.scripted(ScriptedModel(ScriptedModel.call("folderSummary"), [.text(["Fine."])])).ask()
+        #expect(answered.toolCalls.map(\.toolName) == ["folderSummary"])
+        // The question, the call, its output and the reply.
+        #expect(answered.entries.count == 4)
+    }
+
+    // MARK: - Names that do not exist
+
+    @Test func aReplyNamingAFileThatDoesNotExistIsWithheldAndWhatTheToolsFoundStays() async {
+        let model = ScriptedModel(ScriptedModel.call("searchFiles", #"{"filter":{"typeGroup":"documents"}}"#), [.text(["The newest is ", "invoice-2026.pdf."])])
+        let texts = Collected<String>()
+        let turn = await ChatEngine.scripted(model).respond(to: "Which documents are here?") { texts.add($0) }
+        #expect(turn.outcome == .answered)
+        #expect(turn.replyWithheld)
+        #expect(turn.text.isEmpty)
+        #expect(turn.effects.results.count == 1)
+        // Taken back once the made-up name arrived, and the name itself never shown.
+        #expect(texts.all.last == "")
+        #expect(!texts.all.contains { $0.contains("invoice-2026.pdf") })
+    }
+
+    @Test func afterAWithheldReplyTheModelNoLongerReadsIt() async {
+        let model = ScriptedModel([.text(["See invoice-2026.pdf."])], [.text(["Fine."])])
+        let engine = ChatEngine.scripted(model)
+        #expect(await engine.ask("First").replyWithheld)
+        _ = await engine.ask("Second")
+        // As after Stop: the next turn goes on from before the withheld one.
+        #expect(!(model.script.requests.last?.transcript.contains { entry in
+            if case .response(let response) = entry { "\(response)".contains("invoice-2026") } else { false }
+        } ?? true))
+        #expect(model.promptsInLatestRequest == 1)
+    }
+
+    @Test(arguments: [
+        "Your biggest file is Xcode.dmg.",
+        "Annual Report 2025.pdf was added first.",
+        "Most came from photos.example.com, e.g. holiday.jpg.",
+        "That is 1.5 MB in total.",
+        "You have 3 PDFs.",
+    ])
+    func aReplyNamingOnlyFilesThatExistIsShown(reply: String) async {
+        let turn = await ChatEngine.scripted(ScriptedModel([.text([reply])])).ask()
+        #expect(!turn.replyWithheld)
+        #expect(turn.text == reply)
     }
 
     @Test func toolCallsThatArriveTogetherShareTheSameBudget() async {

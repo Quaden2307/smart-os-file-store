@@ -58,8 +58,10 @@ struct ToolOutputTests {
         for line in lines {
             #expect(line.count { $0 == PromptLibrary.dataOpen } == line.count { $0 == PromptLibrary.dataClose })
         }
-        // The only line breaks are the ones the app wrote.
-        #expect(output.split(separator: "\n").count == 2 + lines.count)
+        // The only line breaks are the ones the app wrote: the header's two, the files', and the
+        // line on how to answer, which the cap leaves room for.
+        #expect(output.split(separator: "\n").count == 3 + lines.count)
+        #expect(output.hasSuffix("\n" + PromptLibrary.searchReply.text))
         #expect(!output.unicodeScalars.contains { isInvisible($0) && $0 != "\n" })
     }
 
@@ -122,7 +124,8 @@ struct ToolOutputTests {
         var query = FileQuery()
         query.nameContains = "report"
         let result = FileSearchResult(query: query, sort: .newest, limit: 20, in: Fixtures.snapshot)
-        let lines = ToolOutput.search(result, now: Fixtures.now).split(separator: "\n").dropFirst(2)
+        // After the header, before the line on how to answer.
+        let lines = ToolOutput.search(result, now: Fixtures.now).split(separator: "\n").dropFirst(2).dropLast()
         // Days back, which the model need not work out, and never the download site or a path.
         #expect(lines.map(String.init) == [
             "⟦report copy.pdf⟧ \(Int64(2_500_000).formatted(.byteCount(style: .file))), added 3 days ago",
@@ -130,7 +133,7 @@ struct ToolOutputTests {
             "⟦Annual Report 2025.pdf⟧ \(Int64(12_000_000).formatted(.byteCount(style: .file))), added 200 days ago",
         ])
         let today = FileSearchResult(query: FileQuery(), sort: .newest, limit: 2, in: Fixtures.snapshot)
-        let recent = ToolOutput.search(today, now: Fixtures.now).split(separator: "\n").dropFirst(2)
+        let recent = ToolOutput.search(today, now: Fixtures.now).split(separator: "\n").dropFirst(2).dropLast()
         #expect(recent.first?.hasSuffix(", added today") == true)
         #expect(recent.last?.hasSuffix(", added 1 day ago") == true)
     }

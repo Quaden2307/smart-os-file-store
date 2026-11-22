@@ -9,14 +9,16 @@ struct PromptLibraryTests {
     /// must get a new version (and a new line here); the old line then no longer matches anything.
     private static let pinned = [
         "chat-v3": "871e2db6a33e182057abf1478fcb092f19fe857db430b7cc03d59b513c6c20cf",
-        "tool-searchFiles-v2": "263a5fe78e6471696f89add8b74bc3d4efe691a26d90175ce2a789ac3d538817",
+        "tool-searchFiles-v3": "05ed467d10d816cff9be86dc1f1f47fc142e65f8b424b5a3fc20cb60eab1da46",
         "tool-folderSummary-v3": "f014fb00f7d3cb368a546fead69afb5d7ae1c78b64752e5b9e667f3069e9ba1f",
         "tool-findDuplicates-v2": "b91925d55cb6120e60b86edd0cf294f6896170a57496d6d10c2b9174f25bbcf4",
-        "tool-proposeCleanup-v2": "0f19134dd284927a375990a7082f42247c140444c1588492c65129614cebe3d3",
+        "tool-proposeCleanup-v3": "81d9c9fd10b189d289cdf4ce1da88ac73ed6f4d15a653182201a79262789276d",
         "output-cleanupReady-v1": "4135653eb0ce042ef355279657db5a3dec4bb733da2f6c9dc0a5e0c118d09234",
         "output-cleanupReply-v1": "1521144fc000171a645c5c0480052d3d272369b031b1d37db7b2b52256bc04be",
         "output-nothingToCleanUp-v1": "e4985465b752e6d9977242d75d249576fba8e61df57c346f1ffb56858e3ddf1c",
         "output-cleanupUnavailable-v1": "278d700ac708806a38a350f9ff3be701e75c8d9536aa997be9129122b4d9c405",
+        "output-searchReply-v2": "011161c91eed635dbf5f29d9aaf3d27ffa3f2933a59c5c3c200a1f2de885017d",
+        "output-notAFolder-v1": "4fbd506d58d446431b6dc9a0970de3dadda79c42623fbe0540c8cd8b9ed426c8",
         "output-repeatedLookup-v1": "8ec87c519f42203a13d2f97addf578758cd8a15cdb3a8d6c2449bbf96a978b15",
         "output-duplicatesUnavailable-v1": "c4b511687b29a3eb6ea93bca9a766eb82c96ee232f660301f522f42c1512dbd3",
         "note-v1": "93eb3a18dcc6e6e7fad774d9ca60c0f96bd75f99f349086dd329e98e7983d11a",
@@ -35,6 +37,21 @@ struct PromptLibraryTests {
             let digest = SHA256.hash(data: Data(template.text.utf8)).map { String(format: "%02x", $0) }.joined()
             #expect(Self.pinned[template.id] == digest, "\(template.id) changed: give it a new version (its text now hashes to \(digest))")
         }
+    }
+
+    /// The whole set under one version: every template id and the tool definitions. A change to
+    /// either must raise `PromptLibrary.version` (and this line), so no two eval reports with the
+    /// same version were made with different wording.
+    private static let pinnedSet = (version: 4, digest: "c9f642f50566c540aee6ce33ab724d3886f95125a5c089f1de9434fb3d8dfc43")
+
+    @Test func theWholeSetIsPinnedByOneVersion() throws {
+        let tools = try ChatEngine.toolDefinitions(cleanupActions: Fixtures.cleanupActions)
+        let text = PromptLibrary.all.map(\.id).sorted().joined(separator: "\n") + "\n" + tools
+        let digest = SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+        #expect(
+            PromptLibrary.version == Self.pinnedSet.version && digest == Self.pinnedSet.digest,
+            "the templates or the tools changed: raise PromptLibrary.version and pin it here (the set now hashes to \(digest))"
+        )
     }
 
     @Test func theInstructionsSayACleanupIsOnlyAPreviewAndWhatCannotBeDone() {
@@ -58,7 +75,7 @@ struct PromptLibraryTests {
         // The Gregorian year, whatever calendar this Mac shows dates in.
         let instructions = PromptLibrary.chatInstructions(today: Fixtures.now)
         #expect(instructions.hasSuffix("Today is 2026-11-18."))
-        let query = try FileFilter(addedOnOrAfter: "2026-11-18").validated(now: Fixtures.now)
+        let query = try FileFilter(addedSince: "2026-11-18").validated(now: Fixtures.now)
         #expect(query.added.from == Fixtures.calendar.startOfDay(for: Fixtures.now))
     }
 }

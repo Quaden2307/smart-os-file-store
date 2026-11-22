@@ -71,6 +71,7 @@ enum Fixtures {
 
     /// The app's cleanup actions by name, as its registry spells them today. The module is handed
     /// the list when the app runs; this copy is for the tests and the token measurement.
+    /// `ChatEvalPromptTests` checks it against the registry.
     static let cleanupActions = [
         "findDuplicates", "clearFailedDownloads", "removeUnpackedZips", "removeUsedInstallers", "fixMessyNames",
         "reviewNearDuplicates", "archiveOldDownloads", "reviewLargeDownloads", "removeEmptyFolders",

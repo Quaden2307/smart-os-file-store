@@ -209,9 +209,12 @@ struct FakeDownloadsFolder {
 
     private let root: TemporaryFolder
 
-    /// - Parameter path: Where the folder is under the fixture's root. A fake home puts it at
-    ///   `Home/Downloads` (`FakeHome`).
-    static func make(includingDiskImage: Bool = false, at path: String = "FakeDownloads") throws -> FakeDownloadsFolder {
+    /// - Parameters:
+    ///   - path: Where the folder is under the fixture's root. A fake home puts it at
+    ///     `Home/Downloads` (`FakeHome`).
+    ///   - now: What every relative date is counted back from. The evals give a fixed day, so the
+    ///     folder is the same on every run (docs/decisions/0033); the fresh download is left as made.
+    static func make(includingDiskImage: Bool = false, at path: String = "FakeDownloads", now: Date = .now) throws -> FakeDownloadsFolder {
         let root = try TemporaryFolder.make(prefix: "FakeDownloads")
         let fixture = FakeDownloadsFolder(
             url: root.url.appending(path: path, directoryHint: .isDirectory),
@@ -219,7 +222,7 @@ struct FakeDownloadsFolder {
             root: root
         )
         do {
-            try fixture.populate(includingDiskImage: includingDiskImage)
+            try fixture.populate(includingDiskImage: includingDiskImage, now: now)
         } catch {
             // `remove()` unlocks the locked files first, so a half-built folder never leaks.
             fixture.remove()
@@ -247,7 +250,7 @@ struct FakeDownloadsFolder {
 
     /// Builds the folder in the script's order. Every item made is remembered in that order, so it
     /// can be dated in that order at the end.
-    private func populate(includingDiskImage: Bool) throws {
+    private func populate(includingDiskImage: Bool, now: Date) throws {
         let fileManager = FileManager.default
         let staging = root.url.appending(path: "Staging", directoryHint: .isDirectory)
         for folder in [url, applicationsURL, staging] {
@@ -452,16 +455,16 @@ struct FakeDownloadsFolder {
         try fileManager.removeItem(at: staging)
 
         // Dates, after everything exists: two hours back in the order made, older for the age cases.
-        try FileDates.settle(settled)
-        try FileDates.settle(stale, base: Date(timeIntervalSinceNow: -Self.staleDownloadAge))
+        try FileDates.settle(settled, base: now.addingTimeInterval(-FileDates.settledAge))
+        try FileDates.settle(stale, base: now.addingTimeInterval(-Self.staleDownloadAge))
         try FileDates.set(url(for: Names.oldReceipt), to: Self.oldReceiptDate)
         try FileDates.set(url(for: Names.taxForm), to: Self.oldReceiptDate.addingTimeInterval(1))
         try FileDates.set(url(for: Names.oldManual), to: Self.oldManualDate)
         try ExtendedAttributes.setLastUsedDate(Self.oldReceiptLastOpened, on: url(for: Names.oldReceipt))
-        try ExtendedAttributes.setLastUsedDate(Date(timeIntervalSinceNow: -Self.taxFormLastOpenedAge), on: url(for: Names.taxForm))
+        try ExtendedAttributes.setLastUsedDate(now.addingTimeInterval(-Self.taxFormLastOpenedAge), on: url(for: Names.taxForm))
         try ExtendedAttributes.setWhereFroms(Self.statementSources, on: url(for: Names.statement))
         try ExtendedAttributes.setQuarantine(
-            ExtendedAttributes.quarantineValue(app: Self.statementDownloadingApp, downloadedAt: Date(timeIntervalSinceNow: -FileDates.settledAge)),
+            ExtendedAttributes.quarantineValue(app: Self.statementDownloadingApp, downloadedAt: now.addingTimeInterval(-FileDates.settledAge)),
             on: url(for: Names.statement)
         )
 

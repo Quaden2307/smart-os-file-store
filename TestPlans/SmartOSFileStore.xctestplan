@@ -41,6 +41,20 @@
         "identifier": "271D398C2BAB92A4CF3E9BAC",
         "name": "FileStoreIntelligenceTests"
       }
+    },
+    {
+      "skippedTests": {
+        "suites": [
+          {
+            "name": "ChatEvalRun"
+          }
+        ]
+      },
+      "target": {
+        "containerPath": "container:SmartOSFileStore.xcodeproj",
+        "identifier": "EBF481DFBB6DD4C77BBEA1CB",
+        "name": "ChatEvals"
+      }
     }
   ],
   "version": 1

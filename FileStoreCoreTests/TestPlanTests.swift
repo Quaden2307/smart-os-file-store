@@ -23,13 +23,20 @@ struct TestPlanTests {
         return try JSONDecoder().decode(Plan.self, from: Data(contentsOf: url))
     }
 
+    /// Each plan's test bundles, in order.
+    static let targets = [
+        "SmartOSFileStore": ["FileStoreCoreTests", "FileStoreIntelligenceTests", "ChatEvals"],
+        "Benchmark": ["FileStoreCoreTests", "FileStoreIntelligenceTests"],
+        "Evals": ["FileStoreIntelligenceTests", "ChatEvals"],
+    ]
+
     @Test func plansPointAtTheGeneratedTestTargets() throws {
         let project = try SafetyTests.projectRoot().appending(path: "SmartOSFileStore.xcodeproj/project.pbxproj")
         let generated = try String(contentsOf: project, encoding: .utf8)
-        for name in ["SmartOSFileStore", "Benchmark"] {
+        for (name, names) in Self.targets {
             let targets = try plan(named: name).testTargets.map(\.target)
-            // Both test bundles, or one of them would never run.
-            #expect(targets.map(\.name) == ["FileStoreCoreTests", "FileStoreIntelligenceTests"])
+            // Every bundle the plan is for, or one of them would never run.
+            #expect(targets.map(\.name) == names, "\(name).xctestplan")
             for target in targets {
                 // XcodeGen writes each target as `<identifier> /* <name> */ = {` followed by its `isa`.
                 #expect(
@@ -41,20 +48,27 @@ struct TestPlanTests {
     }
 
     /// Swift Testing honours only the structured `{"suites": [{"name": …}]}` form, by type name.
-    @Test func defaultPlanLeavesTheBenchmarksOutAndTheBenchmarkPlanRunsOnlyThem() throws {
-        // The engine's benchmark, and the chat's measurements and evals on the real model.
-        let measured = [["BenchmarkTests"], ["ChatMeasurementTests", "ChatEvalTests", "FolderChatEvalTests"]]
+    /// The default plan runs everything but the benchmark, the chat's measurements and its
+    /// real-model evals; the Benchmark plan runs only the first two, the Evals plan only the evals.
+    @Test func eachPlanRunsItsOwnSuitesAndTheDefaultPlanNoneOfThem() throws {
+        let benchmark = [["BenchmarkTests"], ["ChatMeasurementTests"]]
+        let evals = [["ChatEvalTests", "FolderChatEvalTests"], ["ChatEvalRun"]]
         let normal = try plan(named: "SmartOSFileStore").testTargets
-        #expect(normal.map { $0.skippedTests?.suites.map(\.name) } == measured)
+        #expect(normal.map { $0.skippedTests?.suites.map(\.name) } == [["BenchmarkTests"], ["ChatMeasurementTests", "ChatEvalTests", "FolderChatEvalTests"], ["ChatEvalRun"]])
         #expect(normal.allSatisfy { $0.selectedTests == nil })
-        let benchmark = try plan(named: "Benchmark").testTargets
-        #expect(benchmark.map { $0.selectedTests?.suites.map(\.name) } == measured)
-        #expect(benchmark.allSatisfy { $0.skippedTests == nil })
+        for (name, selected) in [("Benchmark", benchmark), ("Evals", evals)] {
+            let targets = try plan(named: name).testTargets
+            #expect(targets.map { $0.selectedTests?.suites.map(\.name) } == selected, "\(name).xctestplan")
+            #expect(targets.allSatisfy { $0.skippedTests == nil })
+        }
         #expect(String(describing: BenchmarkTests.self) == "BenchmarkTests")
-        // The other bundle's suites cannot be named from here; their sources can be read.
-        for suite in ["ChatMeasurementTests", "ChatEvalTests"] {
-            let chat = try SafetyTests.projectRoot().appending(path: "FileStoreIntelligenceTests/\(suite).swift")
-            #expect(try String(contentsOf: chat, encoding: .utf8).contains("\nstruct \(suite) {"))
+        // The other bundles' suites cannot be named from here; their sources can be read.
+        for (folder, suite) in [
+            ("FileStoreIntelligenceTests", "ChatMeasurementTests"), ("FileStoreIntelligenceTests", "ChatEvalTests"),
+            ("FileStoreIntelligenceTests", "FolderChatEvalTests"), ("ChatEvals", "ChatEvalRun"),
+        ] {
+            let source = try SafetyTests.projectRoot().appending(path: "\(folder)/\(suite).swift")
+            #expect(try String(contentsOf: source, encoding: .utf8).contains("\nstruct \(suite) {"), "\(folder)/\(suite).swift")
         }
     }
 }

@@ -13,6 +13,20 @@ public struct PromptTemplate: Sendable {
 /// Every prompt template of the app, in this one file. The short `@Guide` texts on tool arguments
 /// stay beside their fields, where the macro needs them.
 public enum PromptLibrary {
+    /// One number for the whole set the model reads: the templates here and the tools' arguments
+    /// and guides. Any change to either gets a new number; the eval reports are named after it
+    /// (docs/evals), and `PromptLibraryTests` fails until it is raised.
+    // v2: the date fields named for age (addedSince, addedBefore), the search example without
+    // neverOpened, and a cleanup's filter only when the user said which files: the model copied
+    // its searches into cleanups (docs/decisions/0033, round 1).
+    // v3: a search's last line says how to answer, and a folder that is not one points to
+    // typeGroup: questions drew cards, and kinds of file were written as folders (round 2).
+    // v4: that last line no longer names a cleanup, which drew more cards, not fewer (round 3).
+    // (v5, "never for a question" in proposeCleanup, was measured and not kept: round 4 in 0033.)
+    // The folder message moved here unchanged as `output-notAFolder`: the model reads the same
+    // text, so the set keeps its number.
+    public static let version = 4
+
     /// The marks around text that came from the disk (file names, download sites). The instructions
     /// call what sits between them data, and `ToolOutput` removes both characters from the text itself.
     public static let dataOpen: Character = "⟦"
@@ -31,11 +45,13 @@ public enum PromptLibrary {
         """)
 
     // v2: any managed folder (0029).
-    public static let searchFilesTool = PromptTemplate(name: "tool-searchFiles", version: 2, text: """
+    // v3: the second example is about age, not "never opened", which the model copied into
+    // filters nobody asked for (0033).
+    public static let searchFilesTool = PromptTemplate(name: "tool-searchFiles", version: 3, text: """
         Finds and counts files. Put what the question asks for in filter. \
         A day is YYYY-MM-DD, "today" or "7 days ago". Examples: named report \
-        {"filter":{"nameContains":"report"}}; downloaded last week and never opened \
-        {"filter":{"addedOnOrAfter":"7 days ago","neverOpened":true}}.
+        {"filter":{"nameContains":"report"}}; older than a year \
+        {"filter":{"addedBefore":"365 days ago"}}.
         """)
 
     // v2: shorter, to keep instructions and the three tools within a quarter of the context (0021).
@@ -51,12 +67,13 @@ public enum PromptLibrary {
         """)
 
     // v2: "changes nothing" left to the instructions, which say it, for room for folders (0029).
-    public static let proposeCleanupTool = PromptTemplate(name: "tool-proposeCleanup", version: 2, text: """
+    // v3: the example's filter in the renamed field (0033).
+    public static let proposeCleanupTool = PromptTemplate(name: "tool-proposeCleanup", version: 3, text: """
         For a request to clean up, remove, tidy, archive or rename. Prepares a preview the user \
         confirms. Give the actions asked for, or ["all"] to tidy everything, and a \
         filter only when the user says which files. Examples: remove duplicates \
         {"actions":["findDuplicates"]}; archive what was added before June \
-        {"actions":["archiveOldDownloads"],"filter":{"addedOnOrBefore":"2026-05-31"}}.
+        {"actions":["archiveOldDownloads"],"filter":{"addedBefore":"2026-06-01"}}.
         """)
 
     /// The first line the model reads for a planned cleanup, and all a later turn keeps of it.
@@ -68,6 +85,20 @@ public enum PromptLibrary {
     /// the instructions, where it leaked into the answer to every question (measured: 0023).
     public static let cleanupReply = PromptTemplate(name: "output-cleanupReply", version: 1, text: """
         Say that a preview is ready, never that a file was changed. If the user asked for more than these cleanups do, say which part was left out.
+        """)
+
+    /// The last line the model reads after a search: a question was often answered and then given
+    /// a cleanup card nobody asked for. v1 said "prepare a cleanup only if the user asked for one",
+    /// and naming the cleanup drew more cards (measured: docs/decisions/0033, rounds 2 and 3).
+    public static let searchReply = PromptTemplate(name: "output-searchReply", version: 2, text: """
+        Now answer the user from this result.
+        """)
+
+    /// What the model reads for a folder the app does not manage. The model wrote kinds of file
+    /// and places as folders ("videos", "Trash"); the way back is in the answer, at no cost to the
+    /// fixed prompt (docs/decisions/0033, round 2).
+    public static let notAFolder = PromptTemplate(name: "output-notAFolder", version: 1, text: """
+        {name} is not a folder the app manages. It manages {folders}. For a kind of file, leave folder out and use typeGroup in filter; otherwise say so to the user.
         """)
 
     /// What the model reads when the cleanups it named have nothing to do.
@@ -129,7 +160,7 @@ public enum PromptLibrary {
         """)
 
     public static let all = [
-        chat, searchFilesTool, folderSummaryTool, findDuplicatesTool, proposeCleanupTool, repeatedLookup,
+        chat, searchFilesTool, folderSummaryTool, findDuplicatesTool, proposeCleanupTool, repeatedLookup, searchReply, notAFolder,
         duplicatesUnavailable, cleanupReady, cleanupReply, nothingToCleanUp, cleanupUnavailable, note, noteEarlier, noteStopped, noteLastResult,
         duplicatesPerFolder, turnedOff,
     ]

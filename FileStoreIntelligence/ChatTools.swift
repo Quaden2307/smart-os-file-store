@@ -220,7 +220,9 @@ struct ProposeCleanupTool: Tool {
                     minimumElements: 1, maximumElements: context.cleanupActions.count
                 )
             ),
-            .init(name: "filter", description: "Only matching files.", schema: DynamicGenerationSchema(type: FileFilter.self), isOptional: true),
+            // Not "Only matching files.": the model copied the filter of a search it made first,
+            // narrowing a cleanup nobody had narrowed (docs/decisions/0033, round 1).
+            .init(name: "filter", description: "Only if the user said which files.", schema: DynamicGenerationSchema(type: FileFilter.self), isOptional: true),
             .init(name: "archiveAfterDays", description: "Archive what was unopened this many days.", schema: DynamicGenerationSchema(type: Int.self), isOptional: true),
             .init(name: "largeFileMB", description: "Large is this many MB or more.", schema: DynamicGenerationSchema(type: Int.self), isOptional: true),
             .init(name: "folder", schema: DynamicGenerationSchema(type: String.self), isOptional: true),

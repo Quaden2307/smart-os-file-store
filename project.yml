@@ -131,6 +131,34 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.quaden2307.FileStoreIntelligenceTests
         GENERATE_INFOPLIST_FILE: YES
 
+  # The chat's evals (docs/decisions/0033): the real chat engine, tools and guards over a fixed fake
+  # Downloads folder planned by the real planners, so it needs both frameworks. It compiles the
+  # app's own glue (`ChatPlanning.swift`) and the engine tests' fixture builder rather than copies.
+  # The real-model run is the Evals plan's only; the default plan runs the scripted check of the harness.
+  ChatEvals:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - ChatEvals
+      - SmartOSFileStore/ChatPlanning.swift
+      - FileStoreCoreTests/Support/FakeDownloadsFolder.swift
+      - FileStoreCoreTests/Support/FileDates.swift
+      - FileStoreCoreTests/Support/ExtendedAttributes.swift
+      - FileStoreCoreTests/Support/TemporaryFolder.swift
+      - FileStoreCoreTests/Support/CommandLineTool.swift
+      - FileStoreCoreTests/Support/BulkFiles.swift
+      - FileStoreCoreTests/Support/Installers.swift
+      - FileStoreIntelligenceTests/Support/ScriptedModel.swift
+    dependencies:
+      - target: FileStoreCore
+        embed: false
+      - target: FileStoreIntelligence
+        embed: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.quaden2307.ChatEvals
+        GENERATE_INFOPLIST_FILE: YES
+
 schemes:
   SmartOSFileStore:
     build:
@@ -140,15 +168,18 @@ schemes:
         FileStoreIntelligence: all
         FileStoreCoreTests: [test]
         FileStoreIntelligenceTests: [test]
+        ChatEvals: [test]
     run:
       config: Debug
     test:
       config: Debug
-      # The default plan runs every test but the benchmark; the Benchmark plan runs only that
-      # (README.md has the command).
+      # The default plan runs every test but the benchmark and the real-model evals; the Benchmark
+      # plan runs only the benchmark and the chat measurements, the Evals plan only the evals
+      # (README.md has the commands).
       testPlans:
         - path: TestPlans/SmartOSFileStore.xctestplan
           defaultPlan: true
         - path: TestPlans/Benchmark.xctestplan
+        - path: TestPlans/Evals.xctestplan
     archive:
       config: Release

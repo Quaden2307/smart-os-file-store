@@ -120,7 +120,7 @@ final class ChatModel {
                 await self?.findDuplicates(in: scope, hashCache: hashCache)
             },
             // From the action registry: an action added there is offered here with no other change.
-            cleanupActions: CleanupAction.allCases.filter(CleanupPlanners.hasPlanner).map(\.definition.identifier),
+            cleanupActions: ChatPlanning.cleanupActions,
             proposeCleanup: { [weak self] request, ids in
                 await self?.proposeCleanup(request, only: ids, hashCache: hashCache)
             },
@@ -176,9 +176,9 @@ final class ChatModel {
         let scan = Task {
             do {
                 let keptItems = try await log.keptItems(for: folder)
-                return try await CleanupPlanners.plan(
-                    .findDuplicates, records: records, in: folder, eligibility: eligibility, keptItems: keptItems,
-                    installers: installers, hashCache: hashCache
+                return try await ChatPlanning.findDuplicates(
+                    records: records, folder: folder, eligibility: eligibility, keptItems: keptItems,
+                    installers: installers, hashCache: hashCache, now: .now
                 )
             } catch {
                 // The kind of error only: its text could hold a path.
@@ -190,9 +190,9 @@ final class ChatModel {
         guard let plan = await withTaskCancellationHandler(operation: { await scan.value }, onCancel: { scan.cancel() }) else {
             return nil
         }
-        let now = Date.now
-        let recent = records.filter { $0.kind == .file && eligibility.refusal(for: $0, in: folder, now: now) == .insideGracePeriod }.count
-        return DuplicateScan(plan, files: files, recentCount: recent, folderName: folderName)
+        return ChatPlanning.duplicateScan(
+            plan, records: records, folder: folder, eligibility: eligibility, marks: files.marks(for:), folderName: folderName, now: .now
+        )
     }
 
     // MARK: - Cleanup cards
@@ -206,27 +206,19 @@ final class ChatModel {
         _ request: CleanupRequest, only ids: Set<URL>?, hashCache: ContentHashCache, inTurn: Bool
     ) async -> TidyNowPlan? {
         guard let files = list(named: request.folder), let log = activity?.log, let folder = files.logFolder else { return nil }
-        let actions = CleanupAction.allCases.filter { request.actions.contains($0.definition.identifier) }
         let records = files.records
         let eligibility = files.eligibility
         let installers = InstallerSources.standard(applicationFolders: files.applicationFolders, cache: log)
         let stored = CleanupSettings.load(from: UserDefaults.standard)
-        // The request's own numbers stand in for the settings, for this plan only.
-        let settings = CleanupSettings(
-            unusedAfterDays: request.archiveAfterDays ?? stored.unusedAfterDays,
-            oldAfterDays: stored.oldAfterDays,
-            largeDownloadMegabytes: request.largeFileMB ?? stored.largeDownloadMegabytes
-        )
         let logger = logger
         hashCache.keepOnly(records, in: folder)
         let planning = Task { () -> TidyNowPlan? in
             do {
                 let keptItems = try await log.keptItems(for: folder)
-                let planner = TidyNowPlanner(
-                    actions: actions, eligibility: eligibility, keptItems: keptItems, installers: installers,
-                    settings: settings, records: records, folder: folder
+                let plan = try await ChatPlanning.plan(
+                    request, only: ids, records: records, folder: folder, eligibility: eligibility, keptItems: keptItems,
+                    installers: installers, stored: stored, hashCache: hashCache, now: .now
                 )
-                let plan = try await planner.plan(only: ids, hashCache: hashCache)
                 // As Tidy Now does: what was read from installers is kept, so the next search
                 // reads none of them again.
                 let read = plan.plans.flatMap(\.installerFactsRead)
@@ -249,11 +241,7 @@ final class ChatModel {
         }
         let plan = await withTaskCancellationHandler(operation: { await planning.value }, onCancel: { planning.cancel() })
         files.reloadInstalledMarks()
-        // No plan when nothing was found and an action could not be checked: "nothing to clean
-        // up" would then be a guess. With something found, the card says which action failed.
-        guard let plan, plan.plans.contains(where: { !$0.isEmpty }) || !plan.outcomes.contains(where: { $0.outcome == .failed }) else {
-            return nil
-        }
+        guard let plan, ChatPlanning.isWorthACard(plan) else { return nil }
         return plan
     }
 
@@ -280,27 +268,13 @@ final class ChatModel {
     private func proposeCleanup(_ request: CleanupRequest, only ids: Set<URL>?, hashCache: ContentHashCache) async -> CleanupProposal? {
         // What the folder's rules turn off is never planned there (the planners refuse it); the
         // reply says so instead.
-        let rules = list(named: request.folder)?.logFolder?.rules
-        let notOffered = CleanupAction.allCases
-            .filter { request.actions.contains($0.definition.identifier) && rules?.offers($0) == false }
-            .map(\.definition.identifier)
+        let notOffered = ChatPlanning.notOffered(request, rules: list(named: request.folder)?.logFolder?.rules)
         if notOffered.count == request.actions.count {
             return CleanupProposal(request: request, rows: [], sampleNames: [], notOffered: notOffered)
         }
         guard let plan = await plan(request, only: ids, hashCache: hashCache, inTurn: true) else { return nil }
-        let found = plan.plans.filter { !$0.isEmpty }
-        let proposal = CleanupProposal(
-            request: request,
-            rows: found.map { plan in
-                CleanupProposal.Row(
-                    action: plan.action.definition.identifier, count: plan.changes.count, bytes: plan.bytesToFree,
-                    tickedCount: plan.defaultTickedIDs.count
-                )
-            },
-            sampleNames: found.flatMap(\.changes).prefix(CleanupProposal.sampleNamesShown).map(\.record.displayName),
-            notOffered: notOffered
-        )
-        if !found.isEmpty {
+        let proposal = ChatPlanning.proposal(plan, for: request, notOffered: notOffered)
+        if !proposal.rows.isEmpty {
             keep(plan, as: proposal.id)
         }
         return proposal
@@ -425,6 +399,10 @@ final class ChatModel {
         logger.info("Reply ended: \(String(describing: turn.outcome), privacy: .public)")
         guard let index = messages.firstIndex(where: { $0.id == id }) else { return }
         messages[index].text = turn.text
+        var turn = turn
+        // The calls and the transcript are for the evals; a conversation need not keep them.
+        turn.toolCalls = []
+        turn.entries = []
         messages[index].turn = turn
         let shownNow = turn.cleanupCards.map(\.id)
         if !shownNow.isEmpty {

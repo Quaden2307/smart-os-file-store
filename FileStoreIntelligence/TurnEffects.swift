@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModels
 import Synchronization
 
 /// What `searchFiles` found: every match counted and summed, and the first `limit` of them in order.
@@ -151,7 +152,8 @@ enum ToolRefusal: Error {
 final class TurnRecorder: Sendable {
     private struct State {
         var turn = 0
-        var calls = 0
+        /// Every call the hook saw this turn, refused ones too, in the order they arrived.
+        var calls: [Transcript.ToolCall] = []
         var lookups: [Lookup] = []
         var effects = TurnEffects()
         var earlierTurnsShown = Int.max
@@ -206,13 +208,18 @@ final class TurnRecorder: Sendable {
     }
 
     /// Counts a tool call, or refuses it: only a registered tool, and only `limit` calls a turn.
-    func admit(_ toolName: String, registered: Set<String>, limit: Int) throws(ToolRefusal) {
-        guard registered.contains(toolName) else { throw .notRegistered }
+    /// Every call is kept, refused or not, for the evals (`Turn.toolCalls`).
+    func admit(_ call: Transcript.ToolCall, registered: Set<String>, limit: Int) throws(ToolRefusal) {
         let allowed = state.withLock { state in
-            state.calls += 1
-            return state.calls <= limit
+            state.calls.append(call)
+            return state.calls.count(where: { registered.contains($0.toolName) }) <= limit
         }
+        guard registered.contains(call.toolName) else { throw .notRegistered }
         guard allowed else { throw .overLimit }
+    }
+
+    var toolCalls: [Transcript.ToolCall] {
+        state.withLock { $0.calls }
     }
 
     /// Keeps a result, unless it comes from a call of an earlier turn that finished late. A search

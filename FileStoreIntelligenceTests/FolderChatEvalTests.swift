@@ -7,12 +7,12 @@ import UniformTypeIdentifiers
 /// Which folder the real on-device model asks about for folder wording ("on my desktop", "in
 /// docs", "everywhere", no folder at all), over three folders with Downloads on screen. Each
 /// question is asked in a fresh conversation. Results go to the test log as `CHAT EVAL FOLDER`
-/// warnings with the pass rate; a wrong folder or tool also fails the test. Benchmark plan only.
+/// warnings with the pass rate; a wrong folder or tool also fails the test. Evals plan only.
 @Suite(
     "Chat folder evals",
     .serialized,
     .timeLimit(.minutes(20)),
-    .enabled(if: ProcessInfo.processInfo.environment["SMARTOS_RUN_BENCHMARK"] == "1", "runs from the Benchmark test plan only")
+    .enabled(if: ProcessInfo.processInfo.environment["SMARTOS_RUN_EVALS"] == "1", "runs from the Evals test plan only")
 )
 struct FolderChatEvalTests {
     struct Case: Sendable, CustomStringConvertible {

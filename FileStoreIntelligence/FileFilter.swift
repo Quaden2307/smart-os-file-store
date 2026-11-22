@@ -13,17 +13,19 @@ public struct FileFilter: Sendable, Equatable {
     @Guide(description: "Kind of file.", .anyOf(["documents", "images", "installers", "archives", "video", "audio", "other"]))
     public var typeGroup: String?
 
+    // Named for how people speak of age ("older than", "before September", "since last week"). As
+    // `addedOnOrAfter` and `addedOnOrBefore` the model wrote "after" for "older than a year" (0033).
     @Guide(description: "Added on or after this day.")
-    public var addedOnOrAfter: String?
+    public var addedSince: String?
 
-    @Guide(description: "Added on or before this day.")
-    public var addedOnOrBefore: String?
+    @Guide(description: "Added before this day.")
+    public var addedBefore: String?
 
     @Guide(description: "Last opened on or after this day.")
-    public var openedOnOrAfter: String?
+    public var openedSince: String?
 
-    @Guide(description: "Last opened on or before this day.")
-    public var openedOnOrBefore: String?
+    @Guide(description: "Last opened before this day.")
+    public var openedBefore: String?
 
     @Guide(description: "true for files never opened.")
     public var neverOpened: Bool?
@@ -44,17 +46,17 @@ public struct FileFilter: Sendable, Equatable {
     public var mark: String?
 
     public init(
-        nameContains: String? = nil, typeGroup: String? = nil, addedOnOrAfter: String? = nil,
-        addedOnOrBefore: String? = nil, openedOnOrAfter: String? = nil, openedOnOrBefore: String? = nil,
+        nameContains: String? = nil, typeGroup: String? = nil, addedSince: String? = nil,
+        addedBefore: String? = nil, openedSince: String? = nil, openedBefore: String? = nil,
         neverOpened: Bool? = nil, largerThanMB: Double? = nil, smallerThanMB: Double? = nil,
         sourceSite: String? = nil, mark: String? = nil
     ) {
         self.nameContains = nameContains
         self.typeGroup = typeGroup
-        self.addedOnOrAfter = addedOnOrAfter
-        self.addedOnOrBefore = addedOnOrBefore
-        self.openedOnOrAfter = openedOnOrAfter
-        self.openedOnOrBefore = openedOnOrBefore
+        self.addedSince = addedSince
+        self.addedBefore = addedBefore
+        self.openedSince = openedSince
+        self.openedBefore = openedBefore
         self.neverOpened = neverOpened
         self.largerThanMB = largerThanMB
         self.smallerThanMB = smallerThanMB
@@ -78,7 +80,6 @@ extension FileFilter {
     /// The filter with every field read and checked, or the first problem found. `lastResultIDs`
     /// are the files the turn before ended on, for a filter that asks for them.
     public func validated(now: Date, lastResultIDs: [URL]? = nil) throws(FilterError) -> FileQuery {
-        let calendar = DayText.calendar
         var query = FileQuery()
         query.nameContains = nameContains.flatMap { $0.isEmpty ? nil : $0 }
         query.typeGroup = try Self.choice(typeGroup, named: "typeGroup")
@@ -104,22 +105,22 @@ extension FileFilter {
             }
             return date
         }
-        /// Both ends of a range of days, the last day counted in full.
-        func days(after: (String?, String), before: (String?, String)) throws(FilterError) -> FileQuery.DateRange {
-            let from = try day(after.0, named: after.1)
-            let last = try day(before.0, named: before.1)
-            if let from, let last, from > last {
-                throw FilterError(message: "\(after.1) is later than \(before.1). Swap them or drop one.")
+        /// A range of days: from the start of the first, up to the start of the one it is before.
+        func days(since: (String?, String), before: (String?, String)) throws(FilterError) -> FileQuery.DateRange {
+            let from = try day(since.0, named: since.1)
+            let end = try day(before.0, named: before.1)
+            if let from, let end, from >= end {
+                throw FilterError(message: "\(since.1) must be earlier than \(before.1). Swap them or drop one.")
             }
-            return FileQuery.DateRange(from: from, before: last.flatMap { calendar.date(byAdding: .day, value: 1, to: $0) })
+            return FileQuery.DateRange(from: from, before: end)
         }
-        query.added = try days(after: (addedOnOrAfter, "addedOnOrAfter"), before: (addedOnOrBefore, "addedOnOrBefore"))
-        query.opened = try days(after: (openedOnOrAfter, "openedOnOrAfter"), before: (openedOnOrBefore, "openedOnOrBefore"))
+        query.added = try days(since: (addedSince, "addedSince"), before: (addedBefore, "addedBefore"))
+        query.opened = try days(since: (openedSince, "openedSince"), before: (openedBefore, "openedBefore"))
         // Only `true` narrows. A model that writes `false` for "not asked" must not hide every
         // file that was never opened.
         query.neverOpened = neverOpened == true
         if query.neverOpened, !query.opened.isOpen {
-            throw FilterError(message: "neverOpened is true, so openedOnOrAfter and openedOnOrBefore cannot be used with it. Drop one.")
+            throw FilterError(message: "neverOpened is true, so openedSince and openedBefore cannot be used with it. Drop one.")
         }
 
         func bytes(_ megabytes: Double?, named name: String) throws(FilterError) -> Int64? {

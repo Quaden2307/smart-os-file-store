@@ -13,7 +13,7 @@ A native macOS file browser that will replace Finder, starting with a self-clean
 
 - Swift 6 language mode with complete strict concurrency. SwiftUI for the app; AppKit only where SwiftUI falls short (for example a large, fast file table).
 - XcodeGen: `project.yml` is the source of truth. The generated `.xcodeproj` is not committed. Never edit it by hand.
-- Targets: `SmartOSFileStore` (app), `FileStoreCore` (framework: the engine), `FileStoreCoreTests` (unit tests for the engine), `FileStoreIntelligence` (framework: the Apple Intelligence chat, with no dependency on any other target of ours) and `FileStoreIntelligenceTests`. Add targets only when asked.
+- Targets: `SmartOSFileStore` (app), `FileStoreCore` (framework: the engine), `FileStoreCoreTests` (unit tests for the engine), `FileStoreIntelligence` (framework: the Apple Intelligence chat, with no dependency on any other target of ours), `FileStoreIntelligenceTests` and `ChatEvals` (the chat's evals: links both frameworks and compiles the app's `ChatPlanning.swift`). Add targets only when asked.
 - Deployment target macOS 27.0, Apple silicon. Bundle id `com.quaden2307.SmartOSFileStore`.
 - No App Sandbox (direct download, not the Mac App Store). Hardened Runtime on, so the app can be notarized later.
 - CryptoKit for hashing, Quick Look for previews, UniformTypeIdentifiers for file types.
@@ -77,6 +77,7 @@ A native macOS file browser that will replace Finder, starting with a self-clean
 ## Testing
 
 - Engine code gets unit tests in `FileStoreCoreTests` using Swift Testing. Chat code gets them in `FileStoreIntelligenceTests`.
+- The chat is measured by `ChatEvals` on the real model (`scripts/run-evals.sh`, the Evals plan; decision 0033). Every sample carries the call a right answer makes, and the default plan plays them all with a scripted model, so a new sample's labels are proved before it counts. After a change to a template, a tool or an argument, raise `PromptLibrary.version` and run the evals.
 - Tests only touch temporary folders they create and remove themselves. Never the real Downloads, Desktop, Documents or any other user folder. Use the `cleanup-test-fixtures` skill for the shared fixture helper and the hand-testing folder.
 - Never delete, skip or weaken a test to get a pass.
 
@@ -124,6 +125,7 @@ And from version 0.3 so far:
 18. A storage view (Visualizations, segment 1): what is taking space per folder and kind, what each cleanup could get back (counted as previews tick, each file once), and the largest files, with Swift Charts.
 19. Cleanup insights (Visualizations, segment 2): daily totals from the log (undo subtracted on its day), kept through pruning in `dailyTotals`, shown at the top of Activity as headlines, a twelve-week chart and breakdowns.
 20. Demo mode: `scripts/make-demo-home.sh`, `scripts/run-demo.sh` (with `--reset`), seeded history, docs/demo.md and docs/recording-checklist.md.
+21. Chat evals (segment 3 of the plan): the `ChatEvals` harness on Apple's Evaluations framework, about 140 labelled samples, reports in docs/evals, targets in decision 0033, and a reply naming a file that does not exist is withheld.
 
 Out of scope until the owner asks: watching Downloads automatically, user-defined rules, schedules, cloud-drive folders, automatic or scheduled rules, an archive name of its own for each kind of folder, undo that follows a folder that has moved, subfolders, search, tags, sharing, AI that makes a change without the user's Confirm, changing a card by talking (`reviseCleanup`), AI that reads file contents, custom theme.
 

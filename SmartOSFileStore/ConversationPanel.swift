@@ -220,6 +220,16 @@ private struct ChatReplyView: View {
                     Text(message.text)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
+                } else if let turn = message.turn, turn.replyWithheld {
+                    // The model named a file that does not exist; what the tools found is still right.
+                    Group {
+                        if turn.effects.shownResults.isEmpty && turn.cleanupCards.isEmpty {
+                            Text("The reply named a file that isn’t here, so it isn’t shown. Try asking again.")
+                        } else {
+                            Text("Here’s what I found.")
+                        }
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .transition(.opacity)

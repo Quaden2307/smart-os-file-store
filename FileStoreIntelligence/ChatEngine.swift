@@ -31,6 +31,14 @@ public struct Turn: Sendable {
     /// it was shown, the app's note and the question. Counted with the longest note the turn could
     /// have carried, so it is at most this many. Nil when not counted.
     public var tokensBeforeReply: Int?
+    /// True when the reply named a file that no managed folder has, so it is not shown: `text` is
+    /// empty and the app says so in its own words above what the tools found (docs/decisions/0033).
+    public var replyWithheld = false
+    /// Every tool call the model made in the turn, refused ones too, in order. For the evals.
+    public var toolCalls: [Transcript.ToolCall] = []
+    /// What the turn added to the transcript: the question, the calls, their outputs and the reply.
+    /// Empty when the turn ended in an error and the transcript went back to before it.
+    public var entries: [Transcript.Entry] = []
 }
 
 /// How the engine measures what the model will read, to keep a conversation inside its context.
@@ -190,6 +198,10 @@ public actor ChatEngine {
         }
 
         switch attempt.outcome {
+        case .answered where attempt.withheld:
+            // The made-up name must not stay in what the model reads next: as after Stop, the
+            // conversation goes on from before this turn.
+            self.conversation = makeConversation(history: attempt.history)
         case .answered, .toolLimitReached, .refused, .unavailable:
             // The session put its transcript back as it was before a turn that threw.
             self.conversation = attempt.conversation
@@ -209,9 +221,12 @@ public actor ChatEngine {
             \(attempt.effects.results.count) tool results, \(startedOver ? "started over, " : "", privacy: .public)\
             \((ContinuousClock.now - started).formatted(), privacy: .public)
             """)
-        var turn = Turn(text: attempt.text, outcome: attempt.outcome, effects: attempt.effects)
+        var turn = Turn(text: attempt.withheld ? "" : attempt.text, outcome: attempt.outcome, effects: attempt.effects)
         turn.startedOver = startedOver
         turn.tokensBeforeReply = attempt.tokensBeforeReply
+        turn.replyWithheld = attempt.withheld
+        turn.toolCalls = attempt.toolCalls
+        turn.entries = attempt.entries
         return turn
     }
 
@@ -224,6 +239,9 @@ public actor ChatEngine {
         let outcome: TurnOutcome
         let effects: TurnEffects
         let tokensBeforeReply: Int?
+        let withheld: Bool
+        let toolCalls: [Transcript.ToolCall]
+        let entries: [Transcript.Entry]
     }
 
     private func ask(
@@ -234,6 +252,9 @@ public actor ChatEngine {
         let fit = await earlierTurnsThatFit(history, question: text, shownLastTime: conversation.recorder.earlierTurnsShown)
         conversation.recorder.begin(showingEarlierTurns: fit.turns, note: fit.note, previous: memory.lastResult)
         let reply = Mutex("")
+        // Read once, the first time the reply holds something that looks like a file name.
+        let snapshot = tools.snapshot
+        let withheld = Mutex(false)
 
         enum Ending {
             case finished
@@ -244,11 +265,25 @@ public actor ChatEngine {
         let ending = await withTaskGroup(of: Ending.self) { group in
             group.addTask {
                 do {
-                    for try await snapshot in session.streamResponse(to: text) {
+                    var names: ReplyNames?
+                    // Each name is looked up once, however many times the reply so far is read.
+                    var checked: Set<String> = []
+                    for try await partial in session.streamResponse(to: text) {
                         // The model often copies the data marks around a name into its sentence.
                         // They mean something to it and nothing to the user.
-                        let content = snapshot.content.filter { $0 != PromptLibrary.dataOpen && $0 != PromptLibrary.dataClose }
+                        let content = partial.content.filter { $0 != PromptLibrary.dataOpen && $0 != PromptLibrary.dataClose }
                         reply.withLock { $0 = content }
+                        if withheld.withLock({ $0 }) { continue }
+                        let fresh = ReplyNames.fileNames(in: content).filter { checked.insert($0).inserted }
+                        if !fresh.isEmpty {
+                            if names == nil { names = ReplyNames(await snapshot(), question: text) }
+                            if let names, fresh.contains(where: { !names.isKnown($0) }) {
+                                // Once a name that does not exist was seen, nothing more is shown.
+                                withheld.withLock { $0 = true }
+                                onText("")
+                                continue
+                            }
+                        }
                         onText(content)
                     }
                     // A cancelled stream ends without an error (measured: docs/decisions/0020).
@@ -278,9 +313,12 @@ public actor ChatEngine {
         case .outOfTime: Task.isCancelled ? .stopped : .timedOut
         case .threw(let error): Task.isCancelled ? .stopped : self.outcome(for: error)
         }
+        let transcript = Array(session.transcript)
         return Attempt(
             conversation: conversation, history: history, text: reply.withLock { $0 }, outcome: outcome,
-            effects: conversation.recorder.effects, tokensBeforeReply: fit.tokens
+            effects: conversation.recorder.effects, tokensBeforeReply: fit.tokens, withheld: withheld.withLock { $0 },
+            toolCalls: conversation.recorder.toolCalls,
+            entries: transcript.count > history.count && transcript.starts(with: history, by: { $0.id == $1.id }) ? Array(transcript.dropFirst(history.count)) : []
         )
     }
 
@@ -340,6 +378,23 @@ public actor ChatEngine {
         )
     }
 
+    /// Every tool definition the model reads, as sorted JSON: names, descriptions and argument
+    /// schemas with their guides. `PromptLibraryTests` pins its hash with `PromptLibrary.version`.
+    public static func toolDefinitions(cleanupActions: [String]) throws -> String {
+        struct Definition: Encodable {
+            let name: String
+            let description: String
+            let parameters: GenerationSchema
+        }
+        let tools = tools(ToolContext(
+            snapshot: { FolderSnapshot(files: []) }, findDuplicates: { _ in nil }, cleanupActions: cleanupActions, recorder: TurnRecorder()
+        ))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let definitions = tools.map { Definition(name: $0.name, description: $0.description, parameters: $0.parameters) }
+        return String(decoding: try encoder.encode(definitions), as: UTF8.self)
+    }
+
     /// The conversation to ask in. On a new day it moves to a session whose instructions name
     /// that day, with the same history: an app left open overnight must not tell the model that
     /// today is yesterday.
@@ -392,7 +447,7 @@ public actor ChatEngine {
         .onToolCall { call in
             // The name only, never the arguments: they can quote the question or a file name.
             logger.info("Tool call: \(call.toolName, privacy: .public)")
-            try recorder.admit(call.toolName, registered: registered, limit: toolCallLimit)
+            try recorder.admit(call, registered: registered, limit: toolCallLimit)
         }
         return Conversation(
             session: LanguageModelSession(profile: profile, history: history), recorder: recorder,

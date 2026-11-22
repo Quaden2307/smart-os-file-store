@@ -38,7 +38,8 @@ public enum FolderScope: Sendable, Hashable {
             }()
         guard let folder = match else {
             let names = snapshot.folders.map(\.name).map(ToolOutput.quoted).joined(separator: ", ")
-            throw FilterError(message: "\(ToolOutput.quoted(name ?? "")) is not a folder the app manages. It manages \(names). Say so to the user.")
+            throw FilterError(message: PromptLibrary.notAFolder.text
+                .replacingOccurrences(of: "{name}", with: ToolOutput.quoted(name ?? "")).replacingOccurrences(of: "{folders}", with: names))
         }
         switch folder.state {
         case .available:

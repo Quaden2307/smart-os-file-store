@@ -1,0 +1,53 @@
+{
+  "configurations": [
+    {
+      "id": "6F0B8E6C-3D51-4C1E-9B7A-2E5D4A9C8F10",
+      "name": "Default",
+      "options": {}
+    }
+  ],
+  "defaultOptions": {
+    "environmentVariableEntries": [
+      {
+        "key": "SMARTOS_RUN_EVALS",
+        "value": "1"
+      }
+    ]
+  },
+  "testTargets": [
+    {
+      "selectedTests": {
+        "suites": [
+          {
+            "name": "ChatEvalTests"
+          },
+          {
+            "name": "FolderChatEvalTests"
+          }
+        ]
+      },
+      "parallelizable": false,
+      "target": {
+        "containerPath": "container:SmartOSFileStore.xcodeproj",
+        "identifier": "271D398C2BAB92A4CF3E9BAC",
+        "name": "FileStoreIntelligenceTests"
+      }
+    },
+    {
+      "selectedTests": {
+        "suites": [
+          {
+            "name": "ChatEvalRun"
+          }
+        ]
+      },
+      "parallelizable": false,
+      "target": {
+        "containerPath": "container:SmartOSFileStore.xcodeproj",
+        "identifier": "EBF481DFBB6DD4C77BBEA1CB",
+        "name": "ChatEvals"
+      }
+    }
+  ],
+  "version": 1
+}

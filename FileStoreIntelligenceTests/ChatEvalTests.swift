@@ -7,13 +7,13 @@ import Testing
 /// fixture folder. Each question is asked in a fresh conversation. Results go to the test log as
 /// warnings starting `CHAT EVAL`; a wrong lookup also fails the test.
 ///
-/// It needs Apple Intelligence, so like the measurements it runs from the `Benchmark` plan only.
-/// These are a few fixed cases, not the evaluation harness planned for later.
+/// It needs Apple Intelligence, so it runs from the `Evals` plan only. These are a few fixed cases
+/// beside the scored harness (`ChatEvals`, docs/decisions/0033), whose report is what counts.
 @Suite(
     "Chat evals",
     .serialized,
     .timeLimit(.minutes(20)),
-    .enabled(if: ProcessInfo.processInfo.environment["SMARTOS_RUN_BENCHMARK"] == "1", "runs from the Benchmark test plan only")
+    .enabled(if: ProcessInfo.processInfo.environment["SMARTOS_RUN_EVALS"] == "1", "runs from the Evals test plan only")
 )
 struct ChatEvalTests {
     /// Ways of asking about copies. The answer must come from reading the files (`findDuplicates`),

@@ -59,7 +59,9 @@ public enum ToolOutput {
             if let added = file.dateAdded { line += ", added \(DayText.daysBack(from: added, to: now))" }
             return line
         }
-        return capped(header, lines)
+        // How to answer, last, where it is read only after a search (as the cleanup's reply line).
+        let reply = "\n" + PromptLibrary.searchReply.text
+        return capped(header, lines, reserving: reply.count) + reply
     }
 
     public static func summary(_ summary: FolderSummary) -> String {

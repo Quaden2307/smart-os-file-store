@@ -178,11 +178,15 @@ Memory figures depend on what ran earlier in the same process. To measure one be
 
 ### Chat measurements
 
-The chat's tests use a scripted stand-in for the model, so they and CI never need Apple Intelligence. Two suites do use the real on-device model. The measurements take how much of the model's context the instructions and tool definitions take, the time to the first text and for a whole answer over 20 questions (with and without prewarming), the size of a tool's output, how fast Stop is, and how much of the context a 30-question conversation uses. The evals check which lookup the model makes for a few questions whose right lookup is known, among them six ways of asking about duplicates, and for follow-ups in one conversation ("only the big ones", "sort those by size", "Continue" after Stop), for cleanups asked for in words, and for requests the app cannot do, which must make no card. Both run from the same Benchmark plan, take several minutes, and only on a Mac with Apple Intelligence turned on. Copy the `CHAT` lines into the decision record that holds the last ones ([0023](decisions/0023-cleanups-from-the-chat-bar.md)):
+The chat's tests use a scripted stand-in for the model, so they and CI never need Apple Intelligence. The measurements use the real on-device model: how much of the model's context the instructions and tool definitions take, the time to the first text and for a whole answer over 20 questions (with and without prewarming), the size of a tool's output, how fast Stop is, and how much of the context a 30-question conversation uses. They run from the Benchmark plan, take several minutes, and only on a Mac with Apple Intelligence turned on. Copy the `CHAT` lines into the decision record that holds the last ones ([0023](decisions/0023-cleanups-from-the-chat-bar.md)):
 
 ```bash
 xcodebuild -scheme SmartOSFileStore -destination 'platform=macOS' -configuration Release -derivedDataPath build test -testPlan Benchmark -only-testing:FileStoreIntelligenceTests 2>&1 | grep CHAT
 ```
+
+### Chat evals
+
+The evals run labelled samples through the real chat on the on-device model and score it ([decision 0033](decisions/0033-chat-evals.md)). They live in the `ChatEvals` test target, which links the engine and the chat module and compiles the app's `ChatPlanning.swift` and the engine tests' fixture builder, so a card is planned exactly as in the app. The samples are Swift files in `ChatEvals/Samples/`; each has the call a right answer makes, and the default plan plays every one of those calls with a scripted model (`ChatEvalHarnessTests`), which proves each label against the real planners and the metric code against planted mistakes. The real run is the Evals plan's (`scripts/run-evals.sh`, README.md); the older fixed cases (`ChatEvalTests`, `FolderChatEvalTests`) run from the same plan. A change to any template, tool description or argument guide must raise `PromptLibrary.version` (`PromptLibraryTests` pins it), and the report is named after it.
 
 One suite, Design tokens, reads the app's view files as text and fails when a view writes its own font, colour, spacing, radius or animation instead of taking it from `SmartOSFileStore/DesignTokens.swift` ([docs/design.md](design.md)).
 

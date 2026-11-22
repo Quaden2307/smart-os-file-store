@@ -29,12 +29,15 @@ struct FileFilterTests {
     }
 
     @Test func invertedDateRangesAreRejected() {
-        #expect(message(FileFilter(addedOnOrAfter: "2026-11-10", addedOnOrBefore: "2026-11-01"))
-            == "addedOnOrAfter is later than addedOnOrBefore. Swap them or drop one.")
-        #expect(message(FileFilter(openedOnOrAfter: "3 days ago", openedOnOrBefore: "30 days ago"))
-            == "openedOnOrAfter is later than openedOnOrBefore. Swap them or drop one.")
+        #expect(message(FileFilter(addedSince: "2026-11-10", addedBefore: "2026-11-01"))
+            == "addedSince must be earlier than addedBefore. Swap them or drop one.")
+        #expect(message(FileFilter(openedSince: "3 days ago", openedBefore: "30 days ago"))
+            == "openedSince must be earlier than openedBefore. Swap them or drop one.")
+        // Before is the day after the last one: the same day at both ends holds no day at all.
+        #expect(message(FileFilter(addedSince: "2026-11-10", addedBefore: "2026-11-10"))
+            == "addedSince must be earlier than addedBefore. Swap them or drop one.")
         // The same day at both ends is one whole day, not an inverted range.
-        #expect(message(FileFilter(addedOnOrAfter: "2026-11-10", addedOnOrBefore: "2026-11-10")) == nil)
+        #expect(message(FileFilter(addedSince: "2026-11-10", addedBefore: "2026-11-11")) == nil)
     }
 
     @Test func negativeAndInvertedSizesAreRejected() {
@@ -57,8 +60,8 @@ struct FileFilterTests {
 
     @Test(arguments: ["last tuesday", "2026-13-01", "2026-02-31", "11/18/2026", "", "-3 days ago", "soon"])
     func textThatIsNotADayIsRejected(text: String) throws {
-        let message = try #require(message(FileFilter(addedOnOrAfter: text)))
-        #expect(message.hasPrefix("addedOnOrAfter "))
+        let message = try #require(message(FileFilter(addedSince: text)))
+        #expect(message.hasPrefix("addedSince "))
         #expect(message.hasSuffix("is not a day. Use YYYY-MM-DD or a number of days back such as \"7 days ago\"."))
     }
 
@@ -70,30 +73,30 @@ struct FileFilterTests {
     }
 
     @Test func neverOpenedCannotBeCombinedWithAnOpenedRange() {
-        #expect(message(FileFilter(openedOnOrAfter: "7 days ago", neverOpened: true))
-            == "neverOpened is true, so openedOnOrAfter and openedOnOrBefore cannot be used with it. Drop one.")
-        #expect(message(FileFilter(openedOnOrAfter: "7 days ago", neverOpened: false)) == nil)
+        #expect(message(FileFilter(openedSince: "7 days ago", neverOpened: true))
+            == "neverOpened is true, so openedSince and openedBefore cannot be used with it. Drop one.")
+        #expect(message(FileFilter(openedSince: "7 days ago", neverOpened: false)) == nil)
     }
 
     // MARK: - What a checked filter means
 
     @Test func daysAreReadInEveryAcceptedForm() throws {
         let start = Fixtures.calendar.startOfDay(for: Fixtures.now)
-        #expect(try query(FileFilter(addedOnOrAfter: "today")).added.from == start)
-        #expect(try query(FileFilter(addedOnOrAfter: "Yesterday")).added.from == Fixtures.calendar.date(byAdding: .day, value: -1, to: start))
-        #expect(try query(FileFilter(addedOnOrAfter: "1 day ago")).added.from == Fixtures.calendar.date(byAdding: .day, value: -1, to: start))
-        #expect(try query(FileFilter(addedOnOrAfter: " 7 days ago ")).added.from == Fixtures.calendar.date(byAdding: .day, value: -7, to: start))
-        #expect(try query(FileFilter(addedOnOrAfter: "2026-11-18")).added.from == start)
+        #expect(try query(FileFilter(addedSince: "today")).added.from == start)
+        #expect(try query(FileFilter(addedSince: "Yesterday")).added.from == Fixtures.calendar.date(byAdding: .day, value: -1, to: start))
+        #expect(try query(FileFilter(addedSince: "1 day ago")).added.from == Fixtures.calendar.date(byAdding: .day, value: -1, to: start))
+        #expect(try query(FileFilter(addedSince: " 7 days ago ")).added.from == Fixtures.calendar.date(byAdding: .day, value: -7, to: start))
+        #expect(try query(FileFilter(addedSince: "2026-11-18")).added.from == start)
         // "On or before" a day includes all of that day.
-        #expect(try query(FileFilter(addedOnOrBefore: "2026-11-17")).added.before == start)
+        #expect(try query(FileFilter(addedBefore: "2026-11-18")).added.before == start)
     }
 
-    @Test func aDateRangeIncludesBothOfItsDays() throws {
-        // Added 3, 4 and 6 days back; the range runs from 6 days back to 3 days back.
-        #expect(try names(FileFilter(addedOnOrAfter: "6 days ago", addedOnOrBefore: "3 days ago"))
+    @Test func aDateRangeRunsFromItsFirstDayUpToTheDayItIsBefore() throws {
+        // Added 3, 4 and 6 days back; the range runs from 6 days back to the day before 2 days back.
+        #expect(try names(FileFilter(addedSince: "6 days ago", addedBefore: "2 days ago"))
             == ["report.pdf", "report copy.pdf", "setup.dmg.crdownload", "holiday.jpg"])
         // A file with no Date Added is in no dated range.
-        #expect(try !names(FileFilter(addedOnOrBefore: "today")).contains("undated.pdf"))
+        #expect(try !names(FileFilter(addedBefore: "today")).contains("undated.pdf"))
     }
 
     @Test func neverOpenedMeansNoRecordedOpenWhereOneWouldBeRecorded() throws {

@@ -72,7 +72,7 @@ struct ProposeCleanupTests {
 
     @Test(arguments: [
         (#"{"typeGroup":"installers"}"#, ["Xcode.dmg", "Tool.pkg"]),
-        (#"{"addedOnOrBefore":"2026-08-31","neverOpened":true}"#, ["old-photo.heic", "backup.tar.gz"]),
+        (#"{"addedBefore":"2026-09-01","neverOpened":true}"#, ["old-photo.heic", "backup.tar.gz"]),
         (#"{"largerThanMB":200}"#, ["Xcode.dmg", "movie.mov", "backup.tar.gz"]),
         (#"{"mark":"old","typeGroup":"documents"}"#, ["Annual Report 2025.pdf"]),
     ])
@@ -89,7 +89,7 @@ struct ProposeCleanupTests {
     @Test func whatWasUnderstoodIsTheCheckedArgumentsNotTheModelsWords() async throws {
         let (turn, _, _) = await propose("""
             {"actions":["removeUsedInstallers","archiveOldDownloads"],\
-            "filter":{"typeGroup":"archives","addedOnOrBefore":"2026-09-01","neverOpened":true},\
+            "filter":{"typeGroup":"archives","addedBefore":"2026-09-02","neverOpened":true},\
             "archiveAfterDays":60,"largeFileMB":250}
             """)
         let request = try #require(Self.card(turn)?.request)

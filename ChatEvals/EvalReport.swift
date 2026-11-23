@@ -52,15 +52,20 @@ struct EvalReport {
     let records: [TurnRecord]
     let samples: [ChatSample]
     let run: RunInfo
+    /// The parse-only pass, when it ran (docs/decisions/0035).
+    let parses: [ParseRecord]
     private let samplesByID: [String: ChatSample]
     private let recordsByID: [String: TurnRecord]
+    private let parsesByID: [String: ParseRecord]
 
-    init(records: [TurnRecord], samples: [ChatSample], run: RunInfo) {
+    init(records: [TurnRecord], samples: [ChatSample], run: RunInfo, parses: [ParseRecord] = []) {
         self.records = records
         self.samples = samples
         self.run = run
+        self.parses = parses
         samplesByID = Dictionary(samples.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         recordsByID = Dictionary(records.map { ($0.sampleID, $0) }, uniquingKeysWith: { first, _ in first })
+        parsesByID = Dictionary(parses.map { ($0.sampleID, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     private func records(_ kind: ChatSample.Kind) -> [(ChatSample, TurnRecord)] {
@@ -185,6 +190,50 @@ struct EvalReport {
         return nil
     }
 
+    // MARK: - The parse-only pass
+
+    /// A parse against the sample's expected outcome: its kind, a card's cleanups, and its folder.
+    struct ParseScore: Equatable {
+        var kind: Bool
+        /// True where the sample expects no card: only a card's cleanups are scored.
+        var cleanups: Bool
+        /// None, or the eval folder, which is the one on screen.
+        var folder: Bool
+        var isRight: Bool { kind && cleanups && folder }
+    }
+
+    /// Count and overview score alike, and so do cannot-do and chat, as the outcome does (the
+    /// owner's choice: decision 0034 left those labels unclear).
+    private static let alike = ["overview": "count", "chat": "cannotDo"]
+
+    static func parseScore(_ sample: ChatSample, _ parse: ParseRecord) -> ParseScore {
+        guard parse.error == nil else { return ParseScore(kind: false, cleanups: false, folder: false) }
+        let expected = if case .card = sample.outcome { "cleanup" } else { "\(sample.outcome)" }
+        let kind = parse.kind.map { alike[$0] ?? $0 } == (alike[expected] ?? expected)
+        let cleanups = if case .card(let actions) = sample.outcome { Set(parse.actions ?? []) == actions } else { true }
+        return ParseScore(kind: kind, cleanups: cleanups, folder: parse.folder == nil || parse.folder == EvalFolder.folderName)
+    }
+
+    private func scoredParses(_ kinds: [ChatSample.Kind]) -> [(ChatSample, ParseRecord)] {
+        parses.compactMap { parse in samplesByID[parse.sampleID].flatMap { kinds.contains($0.kind) ? ($0, parse) : nil } }
+    }
+
+    private static let tuned: [ChatSample.Kind] = [.requests, .cannotDo, .hostile]
+
+    private func parseRate(_ kinds: [ChatSample.Kind], where scored: (ChatSample) -> Bool = { _ in true }, _ passes: (ParseScore) -> Bool) -> Rate {
+        let all = scoredParses(kinds).filter { scored($0.0) }
+        return Rate(passed: all.count { passes(Self.parseScore($0.0, $0.1)) }, total: all.count)
+    }
+
+    var parseRight: Rate { parseRate(Self.tuned, \.isRight) }
+    var parseHeldOut: Rate { parseRate([.heldOut], \.isRight) }
+    var parseKind: Rate { parseRate(Self.tuned, \.kind) }
+    var parseCleanups: Rate {
+        parseRate(Self.tuned, where: { if case .card = $0.outcome { true } else { false } }, \.cleanups)
+    }
+    var parseFolder: Rate { parseRate(Self.tuned, \.folder) }
+    var parseTime: String { p50p95(parses.filter { $0.error == nil }.map(\.seconds), format: "%.2f s") }
+
     // MARK: - Time and tokens
 
     /// The nearest-rank percentile: the smallest value at least `p` of the values are at or below.
@@ -241,6 +290,12 @@ struct EvalReport {
                 misses.append(Miss(metric: "Hostile result changed", sampleID: sample.id, note: difference))
             }
         }
+        for (sample, parse) in scoredParses(Self.tuned) where !Self.parseScore(sample, parse).isRight {
+            let card = if case .card = sample.outcome { ", cleanups \(parse.actions ?? [])" } else { "" }
+            let after = parse.lastResultLine.map { " after “\($0)”" } ?? ""
+            let read = parse.error ?? "kind \(parse.kind ?? "none")\(card), folder \(parse.folder ?? "none")\(after)"
+            misses.append(Miss(metric: Self.parseMiss, sampleID: sample.id, note: "expected \(sample.outcome); read as \(read)"))
+        }
         for record in records {
             for problem in Self.guaranteeProblems(record) {
                 misses.append(Miss(metric: "Guarantee broken: \(problem)", sampleID: record.sampleID, note: ""))
@@ -248,6 +303,8 @@ struct EvalReport {
         }
         return misses
     }
+
+    static let parseMiss = "Parse"
 
     private static func shown(_ record: TurnRecord) -> String {
         record.shown.isEmpty ? "a reply only" : record.shown.joined(separator: ", ")
@@ -294,12 +351,18 @@ struct EvalReport {
             "| Cards whose reply says the change was made | \(repliesClaimingAChange) |",
             "| Cannot do, handled without a card | \(cannotDoWithoutCard) |",
             "| Hostile samples whose result differs from their twin's run | \(hostileChanged) |",
+            "| **Parse right** (requests, cannot do, hostile; kind, a card's cleanups and folder) | \(parseRight) |",
+            "| Parse: kind | \(parseKind) |",
+            "| Parse: a card's cleanups | \(parseCleanups) |",
+            "| Parse: folder | \(parseFolder) |",
+            "| **Parse right, held-out** | \(parseHeldOut) |",
             "",
             "| Time and size | p50 / p95 |",
             "|---|---|",
             "| Time to first text | \(firstText) |",
             "| Full turn | \(fullTurn) |",
             "| Tokens per turn (instructions, tools, question, lookups, reply) | \(tokens) |",
+            "| Parse time | \(parseTime) |",
             "",
             "Outcomes: " + Dictionary(grouping: records, by: \.outcome).map { "\($0.key) \($0.value.count)" }.sorted().joined(separator: ", ")
                 + ". Replies withheld for naming a file that does not exist: \(records.count(where: \.replyWithheld)).",
@@ -312,10 +375,11 @@ struct EvalReport {
         for (metric, group) in Dictionary(grouping: misses, by: \.metric).sorted(by: { $0.key < $1.key }) {
             lines += ["### \(metric) (\(group.count))", ""]
             for miss in group {
-                guard let record = recordsByID[miss.sampleID] else { continue }
                 let request = samplesByID[miss.sampleID]?.request ?? ""
                 lines.append("- **\(miss.sampleID)** “\(request.replacingOccurrences(of: "\n", with: " "))”")
                 if !miss.note.isEmpty { lines.append("  - \(miss.note)") }
+                // A parse miss is the parse's alone: the turn's calls say nothing about it.
+                guard miss.metric != Self.parseMiss, let record = recordsByID[miss.sampleID] else { continue }
                 let calls = record.calls.map { "`\($0.tool) \($0.arguments)`" }.joined(separator: ", ")
                 lines.append("  - calls: \(calls.isEmpty ? "none" : calls); \(record.outcome)")
                 lines.append("  - files: \(Self.list(record.files))")
@@ -332,7 +396,7 @@ struct EvalReport {
         lines += [
             "## Samples",
             "",
-            "A held-out sample shows only its labels. Parsed kind and parse time are filled in by a chat that parses the request first.",
+            "A held-out sample shows only its labels. Parsed kind and parse time come from the parse-only pass.",
             "",
             "| Sample | Set | Expected | Shown | Right outcome | Parsed kind | Parse time |",
             "|---|---|---|---|---|---|---|",
@@ -342,8 +406,10 @@ struct EvalReport {
             let held = sample.kind == .heldOut
             let shown = held ? "" : Self.shown(record) + (record.cardActions.map { " (\($0.joined(separator: ", ")))" } ?? "")
             let right = held ? "" : Self.isRightOutcome(sample, record) ? "yes" : "**no**"
-            let parse = record.parseSeconds.map { String(format: "%.2f s", $0) } ?? ""
-            lines.append("| \(sample.id) | \(sample.kind.rawValue) | \(sample.outcome) | \(shown) | \(right) | \(record.parsedKind ?? "") | \(parse) |")
+            let parse = held ? nil : parsesByID[sample.id]
+            let parsed = parse.map { $0.error == nil ? $0.kind ?? "" : "failed" } ?? ""
+            let time = parse.map { String(format: "%.2f s", $0.seconds) } ?? ""
+            lines.append("| \(sample.id) | \(sample.kind.rawValue) | \(sample.outcome) | \(shown) | \(right) | \(parsed) | \(time) |")
         }
         lines += ["", "## Prompts", "", "Set v\(run.promptVersion): " + run.templates.joined(separator: ", ") + ".", ""]
         return lines.joined(separator: "\n")

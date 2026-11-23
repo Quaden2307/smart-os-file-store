@@ -10,6 +10,9 @@ import Synchronization
 /// hands the chat, so a card holds what the app would plan. Built once per run; a hostile sample
 /// adds its one file and takes it away again.
 final class EvalFolder: Sendable {
+    /// The one folder, on screen, by the name the app shows.
+    static let folderName = "Downloads"
+
     /// Noon on a fixed day, so every date is a whole number of days back and the results never drift.
     static let now: Date = {
         var calendar = Calendar(identifier: .gregorian)
@@ -194,11 +197,11 @@ final class EvalFolder: Sendable {
                     for: record, in: folder, now: Self.now, settings: Self.settings, eligibility: eligibility,
                     isInstalled: installed.contains(record.id)
                 ),
-                folder: "Downloads"
+                folder: Self.folderName
             )
         }
         let snapshot = FolderSnapshot(
-            files: files, folders: [FolderSnapshot.Folder(name: "Downloads", isCurrent: true)], bytesMovedToTrash: 0, now: Self.now
+            files: files, folders: [FolderSnapshot.Folder(name: Self.folderName, isCurrent: true)], bytesMovedToTrash: 0, now: Self.now
         )
         state.withLock { state in
             state.records = records
@@ -217,7 +220,7 @@ final class EvalFolder: Sendable {
 
     /// Find Duplicates for the chat: this one folder, or none for a folder it does not have.
     func findDuplicates(_ scope: FolderScope) async -> DuplicateScan? {
-        if case .folder(let name) = scope, name != "Downloads" { return nil }
+        if case .folder(let name) = scope, name != Self.folderName { return nil }
         let (records, keptItems) = state.withLock { ($0.records, $0.keptItems) }
         let eligibility = CandidateEligibility(keptItems: keptItems)
         guard let plan = try? await ChatPlanning.findDuplicates(
@@ -233,7 +236,7 @@ final class EvalFolder: Sendable {
 
     /// `proposeCleanup` as the app runs it: planned, its files kept by the card's id, rows handed back.
     func propose(_ request: CleanupRequest, only ids: Set<URL>?) async -> CleanupProposal? {
-        if let name = request.folder, name != "Downloads" { return nil }
+        if let name = request.folder, name != Self.folderName { return nil }
         let notOffered = ChatPlanning.notOffered(request, rules: folder.rules)
         if notOffered.count == request.actions.count {
             return CleanupProposal(request: request, rows: [], sampleNames: [], notOffered: notOffered)

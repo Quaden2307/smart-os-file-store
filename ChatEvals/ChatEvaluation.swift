@@ -38,9 +38,6 @@ struct TurnRecord: Codable, Sendable, Equatable {
     var tokens: Int?
     /// What the turn showed, in order: search, summary, duplicates or cleanup.
     var shown: [String] = []
-    /// What a parser read the request as, and how long it took: empty until the chat has one.
-    var parsedKind: String?
-    var parseSeconds: Double?
     /// A follow-up's earlier turns, held to the same guarantees; only the last turn is scored.
     var earlier: [TurnRecord] = []
 

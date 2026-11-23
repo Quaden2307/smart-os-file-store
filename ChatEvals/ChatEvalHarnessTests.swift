@@ -1,4 +1,5 @@
 import Evaluations
+import FileStoreCore
 import FileStoreIntelligence
 import Foundation
 import FoundationModels
@@ -19,11 +20,7 @@ struct ChatEvalHarnessTests {
     /// The ideal calls of each earlier turn and then the sample's, each followed by a reply. A
     /// cannot-do calls nothing.
     static func ideal(_ sample: ChatSample) -> ScriptedModel {
-        let rounds = (sample.earlier.map(\.ideal) + [sample.ideal]).flatMap { ideal -> [[ScriptedModel.Step]] in
-            let calls = ideal.map { ScriptedModel.ToolCall(name: $0.tool, arguments: $0.arguments) }
-            return calls.isEmpty ? [[.text([reply])]] : [[.toolCalls(calls)], [.text([reply])]]
-        }
-        return ScriptedModel(rounds: rounds)
+        .playing(sample.earlier.map(\.ideal) + [sample.ideal], reply: reply)
     }
 
     static func run(_ samples: [ChatSample], in folder: EvalFolder, model: @escaping @Sendable (ChatSample) -> any LanguageModel) async throws -> EvalReport {
@@ -117,6 +114,64 @@ struct ChatEvalHarnessTests {
         #expect(markdown.contains("### Hostile result changed (1)"))
     }
 
+    /// Every sample's ideal parse, written from its expected outcome alone, read back through the
+    /// parser's real schema: every parse rate must be perfect, the held-out set's too.
+    @Test func everyIdealParseGivesItsLabels() async throws {
+        let folder = try await EvalFolder.make()
+        defer { folder.remove() }
+        let parses = await ParsePass.run(Datasets.all, in: folder) { ScriptedModel([.text([ParsePass.ideal($0)])]) }
+        let report = EvalReport(records: [], samples: Datasets.all, run: .current(model: "Scripted"), parses: parses)
+        let wrong = parses.compactMap { parse in
+            Datasets.all.first { $0.id == parse.sampleID }.flatMap { EvalReport.parseScore($0, parse).isRight ? nil : "\($0.id): \(parse)" }
+        }
+        #expect(wrong == [])
+        #expect(report.parseRight == EvalReport.Rate(passed: Datasets.all.count - 60, total: Datasets.all.count - 60))
+        #expect(report.parseHeldOut == EvalReport.Rate(passed: 60, total: 60))
+        #expect(report.parseCleanups.passed == report.parseCleanups.total && report.parseCleanups.total > 40)
+        #expect(report.misses == [])
+        #expect(parses.allSatisfy { $0.error == nil })
+        // A follow-up after a lookup reads a line about its files; after a card, as in the app, none.
+        let followUps = Set(Datasets.all.filter { $0.earlier.last?.ideal.contains { $0.tool != "proposeCleanup" } == true }.map(\.id))
+        #expect(!followUps.isEmpty)
+        let withLine = Set(parses.filter { $0.lastResultLine != nil }.map(\.sampleID))
+        #expect(withLine == followUps, "no line: \(followUps.subtracting(withLine).sorted()), unexpected: \(withLine.subtracting(followUps).sorted())")
+    }
+
+    @Test func plantedParseMistakesAreCountedExactly() async throws {
+        let folder = try await EvalFolder.make()
+        defer { folder.remove() }
+        let ids = ["dup-1", "type-1", "overview-1", "mark-1", "cannot-17", "held-1"]
+        let samples = ids.compactMap { id in Datasets.all.first { $0.id == id } }
+        let parses = await ParsePass.run(samples, in: folder) { sample in
+            let reply = switch sample.id {
+            // The wrong cleanup.
+            case "dup-1": #"{"kind":"cleanup","cleanups":["messyNames"]}"#
+            // A question read as a cleanup.
+            case "type-1": #"{"kind":"cleanup"}"#
+            // A count for an overview, and chat for a cannot-do: both alike, so right.
+            case "overview-1": #"{"kind":"count"}"#
+            case "cannot-17": #"{"kind":"chat"}"#
+            // Another folder.
+            case "mark-1": #"{"kind":"list","folder":"Desktop"}"#
+            // A held-out miss: counted, never listed.
+            case "held-1": #"{"kind":"list"}"#
+            default: ParsePass.ideal(sample)
+            }
+            return ScriptedModel([.text([reply])])
+        }
+        let report = EvalReport(records: [], samples: samples, run: .current(model: "Scripted"), parses: parses)
+        #expect(report.parseRight == EvalReport.Rate(passed: 2, total: 5))
+        #expect(report.parseKind == EvalReport.Rate(passed: 4, total: 5))
+        #expect(report.parseCleanups == EvalReport.Rate(passed: 0, total: 1))
+        #expect(report.parseFolder == EvalReport.Rate(passed: 4, total: 5))
+        #expect(report.parseHeldOut == EvalReport.Rate(passed: 0, total: 1))
+        #expect(report.misses.map(\.sampleID).sorted() == ["dup-1", "mark-1", "type-1"])
+        let markdown = report.markdown
+        #expect(markdown.contains("| **Parse right** (requests, cannot do, hostile; kind, a card's cleanups and folder) | 2 of 5 (40%) |"))
+        #expect(markdown.contains("  - expected card(findDuplicates); read as kind cleanup, cleanups [\"fixMessyNames\"], folder none"))
+        #expect(!markdown.contains("held-1"))
+    }
+
     @Test func aBrokenGuaranteeIsReportedAsSuch() {
         let sample = ChatSample.cannotDo("c", "Empty the Trash.")
         var record = TurnRecord(
@@ -190,5 +245,24 @@ struct ChatEvalPromptTests {
             "findDuplicates", "clearFailedDownloads", "removeUnpackedZips", "removeUsedInstallers", "fixMessyNames",
             "reviewNearDuplicates", "archiveOldDownloads", "reviewLargeDownloads", "removeEmptyFolders",
         ])
+    }
+
+    @Test func theParsersIntentsCoverEveryRegistryActionOnce() {
+        let actions = CleanupIntent.allCases.compactMap(\.action)
+        #expect(actions.count == Set(actions).count)
+        #expect(Set(actions) == Set(ChatPlanning.cleanupActions))
+    }
+
+    /// Documents' rules offer four actions: the parser's schema built from them offers no intent of
+    /// the five they turn off.
+    @Test func theParsersSchemaLeavesOutWhatAFoldersRulesTurnOff() throws {
+        let rules = FolderRules.defaults(for: .documents)
+        let offered = CleanupAction.allCases.filter { CleanupPlanners.hasPlanner($0) && rules.offers($0) }.map(\.definition.identifier)
+        let schema = try ChatParser.definition(cleanupActions: offered, folders: [EvalFolder.folderName])
+        let turnedOff = CleanupIntent.allCases.filter { $0.action.map { !offered.contains($0) } ?? false }
+        #expect(!turnedOff.isEmpty)
+        for intent in CleanupIntent.allCases {
+            #expect(schema.contains("\"\(intent.rawValue)\"") == !turnedOff.contains(intent), "\(intent)")
+        }
     }
 }

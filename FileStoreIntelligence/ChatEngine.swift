@@ -167,6 +167,9 @@ public actor ChatEngine {
         self.meter = meter
     }
 
+    /// The files the conversation's last result holds: what "those" means next. Nil before one.
+    public var lastResultIDs: [URL]? { memory.lastResult?.ids }
+
     /// Loads the model ahead of the first question. Called when the chat bar gets focus.
     public func prewarm() {
         guard availability() == .available else { return }

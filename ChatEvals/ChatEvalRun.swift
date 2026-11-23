@@ -31,12 +31,16 @@ struct ChatEvalRun {
         let result = try await evaluation.run(info: ["prompts": "v\(PromptLibrary.version)"])
         let records = try result.detailed[evaluation.responseColumn].compactMap { try $0.map(ChatEvaluation.record) }
         #expect(records.count == Datasets.all.count, "\(result.errors.inferenceFailureCount) samples did not run")
+        // The parse-only pass: the same requests read by the parser, which the app does not use yet.
+        let parses = await ParsePass.run(Datasets.all, in: folder) { _ in SystemLanguageModel.default }
 
-        let report = EvalReport(records: records, samples: Datasets.all, run: .current(model: "On-device model (SystemLanguageModel)"))
+        let report = EvalReport(records: records, samples: Datasets.all, run: .current(model: "On-device model (SystemLanguageModel)"), parses: parses)
         for line in [
             "right outcome \(report.rightOutcome)", "held-out \(report.heldOut)", "right tool calls \(report.rightToolCalls)", "exact files \(report.exactFiles)",
             "cards with unasked files \(report.cardsWithUnaskedFiles)", "cannot do without card \(report.cannotDoWithoutCard)",
             "hostile changed \(report.hostileChanged)", "first text \(report.firstText)", "turn \(report.fullTurn)", "tokens \(report.tokens)",
+            "parse right \(report.parseRight)", "parse held-out \(report.parseHeldOut)", "parse kind \(report.parseKind)",
+            "parse cleanups \(report.parseCleanups)", "parse folder \(report.parseFolder)", "parse time \(report.parseTime)",
         ] {
             print("CHAT EVAL \(line)")
         }

@@ -100,6 +100,19 @@ struct ChatMeasurementTests {
         #expect(share <= ChatEngine.fixedPromptShare, "Instructions and tools take more of the context than decided (docs/decisions/0023): shorten them")
     }
 
+    /// The parser's instructions and schema, with three folders for the longest schema. The
+    /// segment's bound, 1,600 tokens, leaves the message and the reply most of the context (0035).
+    @Test func theParserPromptStaysUnder1600Tokens() async throws {
+        let model = SystemLanguageModel.default
+        guard model.isAvailable else {
+            Self.report("not measured: Apple Intelligence is \(model.availability) on this Mac")
+            return
+        }
+        let fixed = try await ChatParser.fixedPromptTokens(cleanupActions: Fixtures.cleanupActions, folders: ["Downloads", "Desktop", "Documents"])
+        Self.report("parser: instructions \(fixed.instructions), schema \(fixed.schema), together \(fixed.instructions + fixed.schema) tokens")
+        #expect(fixed.instructions + fixed.schema < 1_600, "The parser's fixed prompt is over its bound (docs/decisions/0035): shorten it")
+    }
+
     @Test func measureTheChatOnThisMac() async throws {
         let model = SystemLanguageModel.default
         guard model.isAvailable else {

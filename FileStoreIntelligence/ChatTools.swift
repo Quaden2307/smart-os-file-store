@@ -240,13 +240,9 @@ struct ProposeCleanupTool: Tool {
                 allowed: context.cleanupActions, now: snapshot.now, lastResultIDs: context.recorder.previous?.ids
             )
             let scope = try FolderScope.resolve(arguments.folder, in: snapshot, insideLastResult: asked.query?.withinIDs != nil)
-            // A card belongs to one folder: a request for several makes one card per folder.
-            let folders: [String?] = snapshot.folders.isEmpty ? [nil] : scope.folderNames(in: snapshot)
             var outputs: [String] = []
-            for folder in folders {
-                var request = asked
-                request.folder = folder
-                outputs.append(await propose(request, in: snapshot.narrowed(to: folder.map(FolderScope.folder) ?? .all), turn: turn))
+            for (request, ids) in asked.perFolder(scope, in: snapshot) {
+                outputs.append(await propose(request, only: ids, turn: turn))
             }
             let unread = scope == .all ? snapshot.unreadableFolders.map { ToolOutput.quoted($0.name) } : []
             if !unread.isEmpty {
@@ -260,10 +256,9 @@ struct ProposeCleanupTool: Tool {
     }
 
     /// One folder's card, or why there is none.
-    private func propose(_ request: CleanupRequest, in snapshot: FolderSnapshot, turn: Int) async -> String {
+    private func propose(_ request: CleanupRequest, only ids: Set<URL>?, turn: Int) async -> String {
         let prefix = request.folder.map { "\(ToolOutput.quoted($0)): " } ?? ""
         guard !context.recorder.isRepeat(.cleanup(request), turn: turn) else { return prefix + ToolOutput.repeated }
-        let ids = request.fileIDs(in: snapshot)
         // No file matches, so no planner needs to read any.
         if ids?.isEmpty == true { return prefix + ToolOutput.nothingToCleanUp }
         guard let proposal = await context.proposeCleanup(request, ids) else {

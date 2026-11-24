@@ -29,6 +29,7 @@ struct PromptLibraryTests {
         "note-lastResult-v2": "be7c1fd3f269fb4ada3f01edf041f0c40326cc73147f8557b90df6289a1948d4",
         "parse-v1": "b73e18afcb6a778933d16c874207fbd9b7f2d12624b7632f0b37299aa3e25f3c",
         "parse-lastResult-v1": "db410ea58bccc536c35ab489e84dafc18151bfa199d9820620331456b0c63fae",
+        "overviewReply-v1": "f2c87bb5efc0dd27c15a3f686124926b66dfe5acf69e3592a17f0add9a2c8f9d",
     ]
 
     @Test func everyTemplateIsPinnedByItsVersion() {
@@ -44,7 +45,7 @@ struct PromptLibraryTests {
     /// The whole set under one version: every template id, the tool definitions and the parser's
     /// schema. A change to any of them must raise `PromptLibrary.version` (and this line), so no two
     /// eval reports with the same version were made with different wording.
-    private static let pinnedSet = (version: 6, digest: "59e5240ca8ddbc75f8aa31e4d31074fca9beb23f24ba297db2d1ec2e95db6284")
+    private static let pinnedSet = (version: 7, digest: "c1ad0eeca403b5e688b066c41a82ae84bf97113093485c1f5db857b4edfd405b")
 
     @Test func theWholeSetIsPinnedByOneVersion() throws {
         let tools = try ChatEngine.toolDefinitions(cleanupActions: Fixtures.cleanupActions)

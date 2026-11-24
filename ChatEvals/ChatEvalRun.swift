@@ -31,24 +31,32 @@ struct ChatEvalRun {
         let result = try await evaluation.run(info: ["prompts": "v\(PromptLibrary.version)"])
         let records = try result.detailed[evaluation.responseColumn].compactMap { try $0.map(ChatEvaluation.record) }
         #expect(records.count == Datasets.all.count, "\(result.errors.inferenceFailureCount) samples did not run")
-        // The parse-only pass: the same requests read by the parser, which the app does not use yet.
+        // The parsed chat over the same samples, beside it in the report (docs/decisions/0036).
+        let parsedEvaluation = ChatEvaluation(samples: Datasets.all, folder: folder, model: { _ in SystemLanguageModel.default }, engine: .parsed)
+        let parsedResult = try await parsedEvaluation.run(info: ["prompts": "v\(PromptLibrary.version)", "engine": "parsed"])
+        let parsedChat = try parsedResult.detailed[parsedEvaluation.responseColumn].compactMap { try $0.map(ChatEvaluation.record) }
+        #expect(parsedChat.count == Datasets.all.count, "\(parsedResult.errors.inferenceFailureCount) parsed samples did not run")
+        // The parse-only pass: the same requests read by the parser alone, acted on by nothing.
         let parses = await ParsePass.run(Datasets.all, in: folder) { _ in SystemLanguageModel.default }
 
-        let report = EvalReport(records: records, samples: Datasets.all, run: .current(model: "On-device model (SystemLanguageModel)"), parses: parses)
+        let report = EvalReport(records: records, samples: Datasets.all, run: .current(model: "On-device model (SystemLanguageModel)"), parses: parses, parsedChat: parsedChat)
         for line in [
             "right outcome \(report.rightOutcome)", "held-out \(report.heldOut)", "right tool calls \(report.rightToolCalls)", "exact files \(report.exactFiles)",
             "cards with unasked files \(report.cardsWithUnaskedFiles)", "cannot do without card \(report.cannotDoWithoutCard)",
             "hostile changed \(report.hostileChanged)", "first text \(report.firstText)", "turn \(report.fullTurn)", "tokens \(report.tokens)",
             "parse right \(report.parseRight)", "parse held-out \(report.parseHeldOut)", "parse kind \(report.parseKind)",
             "parse cleanups \(report.parseCleanups)", "parse folder \(report.parseFolder)", "parse time \(report.parseTime)",
-        ] {
+        ] + (report.parsedReport.map { parsed in [
+            "parsed right outcome \(parsed.rightOutcome)", "parsed held-out \(parsed.heldOut)", "parsed exact files \(parsed.exactFiles)",
+            "parsed cannot do without card \(parsed.cannotDoWithoutCard)", "parsed turn \(parsed.fullTurn)",
+        ] } ?? []) {
             print("CHAT EVAL \(line)")
         }
         if let directory = ProcessInfo.processInfo.environment["SMARTOS_EVAL_REPORT_DIR"] {
             let written = try report.write(to: URL(filePath: directory, directoryHint: .isDirectory))
             print("CHAT EVAL report \(written.path(percentEncoded: false))")
         }
-        for (name, rate) in report.guarantees {
+        for (name, rate) in report.guarantees + (report.parsedReport?.guarantees ?? []) {
             #expect(rate.passed == rate.total, "guarantee broken: \(name), \(rate)")
         }
     }

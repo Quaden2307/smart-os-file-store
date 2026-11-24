@@ -26,6 +26,17 @@ public struct CleanupRequest: Sendable, Hashable {
     public func fileIDs(in snapshot: FolderSnapshot) -> Set<URL>? {
         query.map { query in Set(snapshot.files.filter(query.matches).map(\.id)) }
     }
+
+    /// The request once per folder of `scope`, with the files it is narrowed to there (nil for
+    /// all): a card belongs to one folder, so a request for several makes one card per folder.
+    func perFolder(_ scope: FolderScope, in snapshot: FolderSnapshot) -> [(request: CleanupRequest, ids: Set<URL>?)] {
+        let folders: [String?] = snapshot.folders.isEmpty ? [nil] : scope.folderNames(in: snapshot)
+        return folders.map { folder in
+            var request = self
+            request.folder = folder
+            return (request, request.fileIDs(in: snapshot.narrowed(to: folder.map(FolderScope.folder) ?? .all)))
+        }
+    }
 }
 
 /// A cleanup the app planned for a request, as plain rows. The plan itself stays with the app,

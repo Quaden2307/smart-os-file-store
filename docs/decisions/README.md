@@ -63,3 +63,5 @@ One short record per segment for each decision a reader of the code would otherw
 - [0032. Demo mode](0032-demo-mode.md)
 - [0033. The chat's evals, a baseline, four rounds and targets](0033-chat-evals.md)
 - [0034. The evals score the outcome, with a held-out set](0034-outcome-evals.md)
+- [0035. The chat request parser, and its parse-only eval](0035-chat-parser.md)
+- [0036. The parsed chat engine, beside the tool loop](0036-parsed-chat.md)

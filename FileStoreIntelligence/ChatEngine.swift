@@ -39,6 +39,8 @@ public struct Turn: Sendable {
     /// What the turn added to the transcript: the question, the calls, their outputs and the reply.
     /// Empty when the turn ended in an error and the transcript went back to before it.
     public var entries: [Transcript.Entry] = []
+    /// What the parser read the message as, for the evals. Nil for the tool-calling engine.
+    public var request: ChatRequest?
 }
 
 /// How the engine measures what the model will read, to keep a conversation inside its context.
@@ -468,7 +470,8 @@ public actor ChatEngine {
         return available == .available ? outcome : .unavailable(available)
     }
 
-    private static func outcome(for error: any Error) -> TurnOutcome {
+    /// Shared with `ParsedChatEngine`, whose parse and overview throw the same errors.
+    static func outcome(for error: any Error) -> TurnOutcome {
         // In the tool loop, macOS 27.2 lets the model's own "too many tokens" error through where a
         // plain session throws `contextSizeExceeded`. The type is private, so it is known by its
         // domain and code (measured: docs/decisions/0020).

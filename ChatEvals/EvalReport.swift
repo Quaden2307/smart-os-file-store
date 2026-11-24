@@ -54,15 +54,20 @@ struct EvalReport {
     let run: RunInfo
     /// The parse-only pass, when it ran (docs/decisions/0035).
     let parses: [ParseRecord]
+    /// The parsed chat's turns over the same samples, when it ran beside the tool loop (0036).
+    let parsedChat: [TurnRecord]
     private let samplesByID: [String: ChatSample]
     private let recordsByID: [String: TurnRecord]
     private let parsesByID: [String: ParseRecord]
+    private let parsedByID: [String: TurnRecord]
 
-    init(records: [TurnRecord], samples: [ChatSample], run: RunInfo, parses: [ParseRecord] = []) {
+    init(records: [TurnRecord], samples: [ChatSample], run: RunInfo, parses: [ParseRecord] = [], parsedChat: [TurnRecord] = []) {
         self.records = records
         self.samples = samples
         self.run = run
         self.parses = parses
+        self.parsedChat = parsedChat
+        parsedByID = Dictionary(parsedChat.map { ($0.sampleID, $0) }, uniquingKeysWith: { first, _ in first })
         samplesByID = Dictionary(samples.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         recordsByID = Dictionary(records.map { ($0.sampleID, $0) }, uniquingKeysWith: { first, _ in first })
         parsesByID = Dictionary(parses.map { ($0.sampleID, $0) }, uniquingKeysWith: { first, _ in first })
@@ -306,6 +311,75 @@ struct EvalReport {
 
     static let parseMiss = "Parse"
 
+    /// The parsed chat measured as its own report: the same metrics over its turns. Nil when it did not run.
+    var parsedReport: EvalReport? {
+        parsedChat.isEmpty ? nil : EvalReport(records: parsedChat, samples: samples, run: run)
+    }
+
+    /// Why the parsed chat missed a sample's outcome, as far as code can tell: the parse's kind,
+    /// its cleanups or folder (a slot), or neither, when a file slot or the planner is to blame and
+    /// the miss is sorted by hand from the request it shows.
+    static func parsedMissCause(_ sample: ChatSample, _ record: TurnRecord) -> String {
+        guard let kind = record.parsedKind else { return "Parse failed" }
+        let score = parseScore(sample, ParseRecord(sampleID: sample.id, kind: kind, actions: record.parsedActions, folder: record.parsedFolder, seconds: 0))
+        if !score.kind { return "Parse kind" }
+        if !score.cleanups || !score.folder { return "Parse slot (cleanups or folder)" }
+        return "File slot or planner"
+    }
+
+    /// The parsed chat's misses, held-out ones left out: wrong outcomes by cause, and replies that
+    /// say a change was made.
+    var parsedMisses: [Miss] {
+        guard let parsed = parsedReport else { return [] }
+        var misses: [Miss] = []
+        for (sample, record) in parsed.records(.requests) + parsed.records(.cannotDo) + parsed.records(.hostile) where !Self.isRightOutcome(sample, record) {
+            let card = record.cardActions.map { ", card \($0.joined(separator: ", "))" } ?? ""
+            let files = sample.files.map { " with \(Self.list($0))" } ?? ""
+            misses.append(Miss(
+                metric: Self.parsedMissCause(sample, record), sampleID: sample.id,
+                note: "expected \(sample.outcome)\(files); shown \(Self.shown(record))\(card) with \(Self.list(record.files)); read as \(record.parsed ?? record.outcome)"
+            ))
+        }
+        for (sample, record) in parsed.records(.requests) + parsed.records(.cannotDo) + parsed.records(.hostile) where record.claimsAChange {
+            misses.append(Miss(metric: "Reply", sampleID: sample.id, note: "says the change was made"))
+        }
+        for record in parsedChat {
+            for problem in Self.guaranteeProblems(record) {
+                misses.append(Miss(metric: "Guarantee broken: \(problem)", sampleID: record.sampleID, note: ""))
+            }
+        }
+        return misses
+    }
+
+    /// The tool loop and the parsed chat, metric by metric.
+    private func sideBySide(_ parsed: EvalReport) -> [String] {
+        let held = { (report: EvalReport) in report.guaranteesHeld ? "all held" : "**broken**" }
+        return [
+            "## Side by side",
+            "",
+            "The same samples, folder and model, through the tool-calling chat and the parsed chat (docs/decisions/0036).",
+            "",
+            "| Metric | Tool calling | Parsed |",
+            "|---|---|---|",
+            "| Guarantees | \(held(self)) | \(held(parsed)) |",
+            "| **Right outcome** (requests, cannot do, hostile) | \(rightOutcome) | \(parsed.rightOutcome) |",
+            "| Right outcome: requests | \(rightOutcome(in: [.requests])) | \(parsed.rightOutcome(in: [.requests])) |",
+            "| Right outcome: cannot do | \(rightOutcome(in: [.cannotDo])) | \(parsed.rightOutcome(in: [.cannotDo])) |",
+            "| Right outcome: hostile | \(rightOutcome(in: [.hostile])) | \(parsed.rightOutcome(in: [.hostile])) |",
+            "| **Right outcome, held-out** | \(heldOut) | \(parsed.heldOut) |",
+            "| Right tool calls | \(rightToolCalls) | n/a |",
+            "| Exact file set (requests with files) | \(exactFiles) | \(parsed.exactFiles) |",
+            "| Cards holding a file the request did not ask for | \(cardsWithUnaskedFiles) | \(parsed.cardsWithUnaskedFiles) |",
+            "| Cards whose reply says the change was made | \(repliesClaimingAChange) | \(parsed.repliesClaimingAChange) |",
+            "| Cannot do, handled without a card | \(cannotDoWithoutCard) | \(parsed.cannotDoWithoutCard) |",
+            "| Hostile samples whose result differs from their twin's run | \(hostileChanged) | \(parsed.hostileChanged) |",
+            "| Time to first text, p50 / p95 | \(firstText) | \(parsed.firstText) |",
+            "| Full turn, p50 / p95 | \(fullTurn) | \(parsed.fullTurn) |",
+            "| Replies withheld | \(records.count(where: \.replyWithheld)) | \(parsed.records.count(where: \.replyWithheld)) |",
+            "",
+        ]
+    }
+
     private static func shown(_ record: TurnRecord) -> String {
         record.shown.isEmpty ? "a reply only" : record.shown.joined(separator: ", ")
     }
@@ -367,6 +441,9 @@ struct EvalReport {
             "Outcomes: " + Dictionary(grouping: records, by: \.outcome).map { "\($0.key) \($0.value.count)" }.sorted().joined(separator: ", ")
                 + ". Replies withheld for naming a file that does not exist: \(records.count(where: \.replyWithheld)).",
             "",
+        ]
+        if let parsed = parsedReport { lines += sideBySide(parsed) }
+        lines += [
             "## Misses",
             "",
         ]
@@ -393,13 +470,32 @@ struct EvalReport {
             lines.append("")
         }
         if !records(.heldOut).isEmpty { lines += ["Held-out misses are not listed: no change may be chosen by reading them.", ""] }
+        if parsedReport != nil {
+            lines += ["## Misses of the parsed chat", "", "By cause, as far as code can tell. A file slot or planner miss is sorted by hand from the request it was read as.", ""]
+            let parsedMisses = parsedMisses
+            if parsedMisses.isEmpty { lines += ["None.", ""] }
+            for (cause, group) in Dictionary(grouping: parsedMisses, by: \.metric).sorted(by: { $0.key < $1.key }) {
+                lines += ["### \(cause) (\(group.count))", ""]
+                for miss in group {
+                    let request = samplesByID[miss.sampleID]?.request ?? ""
+                    lines.append("- **\(miss.sampleID)** “\(request.replacingOccurrences(of: "\n", with: " "))”")
+                    if !miss.note.isEmpty { lines.append("  - \(miss.note)") }
+                    guard let record = parsedByID[miss.sampleID] else { continue }
+                    if !record.reply.isEmpty { lines.append("  - reply: “\(record.reply.replacingOccurrences(of: "\n", with: " "))”") }
+                    for earlier in record.earlier {
+                        lines.append("  - after: read as \(earlier.parsed ?? earlier.outcome); files: \(Self.list(earlier.files))")
+                    }
+                }
+                lines.append("")
+            }
+        }
         lines += [
             "## Samples",
             "",
             "A held-out sample shows only its labels. Parsed kind and parse time come from the parse-only pass.",
             "",
-            "| Sample | Set | Expected | Shown | Right outcome | Parsed kind | Parse time |",
-            "|---|---|---|---|---|---|---|",
+            "| Sample | Set | Expected | Shown | Right outcome | Parsed kind | Parse time | Parsed chat |",
+            "|---|---|---|---|---|---|---|---|",
         ]
         for record in records {
             guard let sample = samplesByID[record.sampleID] else { continue }
@@ -409,7 +505,8 @@ struct EvalReport {
             let parse = held ? nil : parsesByID[sample.id]
             let parsed = parse.map { $0.error == nil ? $0.kind ?? "" : "failed" } ?? ""
             let time = parse.map { String(format: "%.2f s", $0.seconds) } ?? ""
-            lines.append("| \(sample.id) | \(sample.kind.rawValue) | \(sample.outcome) | \(shown) | \(right) | \(parsed) | \(time) |")
+            let parsedChat = held ? "" : parsedByID[sample.id].map { Self.isRightOutcome(sample, $0) ? "yes" : "**no**" } ?? ""
+            lines.append("| \(sample.id) | \(sample.kind.rawValue) | \(sample.outcome) | \(shown) | \(right) | \(parsed) | \(time) | \(parsedChat) |")
         }
         lines += ["", "## Prompts", "", "Set v\(run.promptVersion): " + run.templates.joined(separator: ", ") + ".", ""]
         return lines.joined(separator: "\n")

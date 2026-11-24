@@ -3,7 +3,7 @@ import FoundationModels
 
 /// Reads a message into a `ChatRequest` with one guided generation: no tools, no history, nothing
 /// to loop on. A fresh session each turn, so no earlier message can steer this one; what the app
-/// remembers reaches it as one line written by code (docs/decisions/0035). Not used by the app yet.
+/// remembers reaches it as one line written by code (docs/decisions/0035). `ParsedChatEngine` uses it.
 public struct ChatParser: Sendable {
     public enum ParseError: Error, Equatable {
         case timedOut
@@ -21,13 +21,20 @@ public struct ChatParser: Sendable {
         self.timeLimit = timeLimit
     }
 
-    /// The request in `message`. `lastResult` is the files the last turn ended on, if any.
-    public func parse(_ message: String, in snapshot: FolderSnapshot, lastResult: [URL]? = nil) async throws -> ChatRequest {
-        let schema = try Self.schema(cleanupActions: cleanupActions, folders: snapshot.folders.map(\.name))
+    /// A session for one parse, with the parser's instructions and nothing else. Made ahead of the
+    /// message to prewarm it, when the chat bar gets focus.
+    public func makeSession() -> LanguageModelSession {
         let profile = LanguageModelSession.Profile { Instructions(PromptLibrary.parse.text) }
             .model(model)
             .samplingMode(.greedy)
-        let session = LanguageModelSession(profile: profile)
+        return LanguageModelSession(profile: profile)
+    }
+
+    /// The request in `message`. `lastResult` is the files the last turn ended on, if any.
+    /// `session` is one from `makeSession()` that no parse has used yet; nil makes one.
+    public func parse(_ message: String, in snapshot: FolderSnapshot, lastResult: [URL]? = nil, session: LanguageModelSession? = nil) async throws -> ChatRequest {
+        let schema = try Self.schema(cleanupActions: cleanupActions, folders: snapshot.folders.map(\.name))
+        let session = session ?? makeSession()
         let prompt = [lastResult.flatMap { Self.lastResultLine($0, in: snapshot) }, message].compactMap(\.self).joined(separator: "\n")
         let limit = timeLimit
         return try await withThrowingTaskGroup(of: ChatRequest.self) { group in

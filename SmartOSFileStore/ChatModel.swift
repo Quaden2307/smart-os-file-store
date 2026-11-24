@@ -50,7 +50,8 @@ final class ChatModel {
     /// resized. Kept here and not in the window's state, so a resize redraws the chat only.
     var panelRoom: CGFloat = 0
 
-    private var engine: ChatEngine?
+    /// The tool loop, or the parsed chat behind a hidden defaults key (`ChatEngines`).
+    private var engine: (any ChatResponding)?
     private weak var files: FileListModel?
     /// Every folder's list, for a question about another folder or all of them.
     private weak var lists: FolderListsModel?
@@ -107,7 +108,7 @@ final class ChatModel {
         self.lists = lists
         self.activity = activity
         self.hashCache = hashCache
-        engine = ChatEngine(
+        engine = ChatEngines.make(
             snapshot: { [weak self] in
                 await MainActor.run {
                     guard let self, let files = self.files, let lists = self.lists, let activity = self.activity else {

@@ -172,6 +172,57 @@ struct ChatEvalHarnessTests {
         #expect(!markdown.contains("held-1"))
     }
 
+    /// The parsed chat played each sample's ideal parse: every cleanup with no narrowing, copies
+    /// question and cannot-do gets its outcome, with no tool call, and the report sets it beside
+    /// the tool loop. (A parse names no files, so samples whose files are narrowed are not played.)
+    @Test func theParsedChatOnIdealParsesGetsItsOutcomesBesideTheToolLoop() async throws {
+        let folder = try await EvalFolder.make()
+        defer { folder.remove() }
+        let samples = Datasets.all.filter { sample in
+            guard sample.earlier.isEmpty, sample.kind == .requests || sample.kind == .cannotDo else { return false }
+            return switch sample.outcome {
+            case .card: !["filter", "archiveAfterDays", "largeFileMB"].contains { name in sample.ideal.contains { $0.arguments.contains(name) } }
+            case .duplicates, .cannotDo: true
+            default: false
+            }
+        }
+        #expect(samples.count > 40)
+        let evaluation = ChatEvaluation(
+            samples: samples, folder: folder, model: { ScriptedModel([.text([ParsePass.ideal($0)])]) }, turnLimit: .seconds(20), engine: .parsed
+        )
+        let parsedChat = try await evaluation.run().detailed[evaluation.responseColumn].compactMap { try $0.map(ChatEvaluation.record) }
+        #expect(parsedChat.map(\.sampleID) == samples.map(\.id))
+        let wrong = parsedChat.compactMap { record in
+            samples.first { $0.id == record.sampleID }.flatMap { EvalReport.isRightOutcome($0, record) ? nil : "\($0.id): \(record.shown), \(record.cardActions ?? []), \(record.reply)" }
+        }
+        #expect(wrong == [])
+        #expect(parsedChat.allSatisfy { $0.calls.isEmpty && $0.parsedKind != nil && !$0.reply.isEmpty })
+        let toolLoop = try await Self.run(samples, in: folder, model: { Self.ideal($0) })
+        let report = EvalReport(records: toolLoop.records, samples: samples, run: .current(model: "Scripted"), parsedChat: parsedChat)
+        let parsed = try #require(report.parsedReport)
+        #expect(parsed.guaranteesHeld && parsed.rightOutcome.passed == parsed.rightOutcome.total)
+        #expect(report.parsedMisses == [])
+        #expect(report.markdown.contains("| **Right outcome** (requests, cannot do, hostile) | \(toolLoop.rightOutcome) | \(parsed.rightOutcome) |"))
+        #expect(report.markdown.contains("## Misses of the parsed chat"))
+    }
+
+    @Test func aParsedMissIsTaggedWithItsCause() throws {
+        let card = try #require(Requests.all.first { $0.id == "dup-1" })
+        var record = TurnRecord(
+            sampleID: card.id, outcome: "answered", calls: [], toolResults: 0, cardActions: nil, cardFiles: nil, listedFiles: nil,
+            reply: "", replyWithheld: false, unknownNamesShown: [], trajectoryPassed: false, checkProblems: [], untouchablePlanned: [],
+            seconds: 1, firstText: nil, tokens: nil
+        )
+        #expect(EvalReport.parsedMissCause(card, record) == "Parse failed")
+        record.parsedKind = "list"
+        #expect(EvalReport.parsedMissCause(card, record) == "Parse kind")
+        record.parsedKind = "cleanup"
+        record.parsedActions = ["fixMessyNames"]
+        #expect(EvalReport.parsedMissCause(card, record) == "Parse slot (cleanups or folder)")
+        record.parsedActions = ["findDuplicates"]
+        #expect(EvalReport.parsedMissCause(card, record) == "File slot or planner")
+    }
+
     @Test func aBrokenGuaranteeIsReportedAsSuch() {
         let sample = ChatSample.cannotDo("c", "Empty the Trash.")
         var record = TurnRecord(

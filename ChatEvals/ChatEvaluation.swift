@@ -40,6 +40,12 @@ struct TurnRecord: Codable, Sendable, Equatable {
     var shown: [String] = []
     /// A follow-up's earlier turns, held to the same guarantees; only the last turn is scored.
     var earlier: [TurnRecord] = []
+    /// What the parsed chat read the message as: the request as JSON, and its kind, cleanups (as
+    /// actions) and folder for scoring. Nil for the tool-calling chat.
+    var parsed: String?
+    var parsedKind: String?
+    var parsedActions: [String]?
+    var parsedFolder: String?
 
     /// The words of a reply that says a change was already made, which no reply beside a card may
     /// (from 0029's fixed cases). Only checked with a card: a summary may say what the app moved.
@@ -60,10 +66,16 @@ struct TurnRecord: Codable, Sendable, Equatable {
     }
 }
 
-/// The chat, as the app runs it, over the eval folder: a fresh `ChatEngine` per sample with the
-/// app's tools and guards and the app's planning glue (`ChatPlanning`). Only the model is chosen:
-/// the on-device one for the real run, a scripted one for the harness's own check.
+/// The chat, as the app runs it, over the eval folder: a fresh engine per sample with the app's
+/// tools and guards and the app's planning glue (`ChatPlanning`). The engine is the tool loop or the
+/// parsed chat (docs/decisions/0036); the model is the on-device one for the real run, a scripted
+/// one for the harness's own check.
 struct ChatEvaluation: Evaluation {
+    enum Engine: String, Sendable {
+        case toolCalling = "Tool calling"
+        case parsed = "Parsed"
+    }
+
     static let rightOutcome = Metric("Right outcome")
     static let rightToolCalls = Metric("Right tool calls")
     static let exactFiles = Metric("Exact file set")
@@ -77,6 +89,7 @@ struct ChatEvaluation: Evaluation {
     /// Tokens of what a turn's model read and wrote, when they can be counted.
     var tokens: (@Sendable ([Transcript.Entry]) async -> Int?)?
     var turnLimit: Duration = ChatEngine.turnLimit
+    var engine = Engine.toolCalling
 
     private let byID: [String: ChatSample]
     /// One turn at a time, so a turn's timing is its own. The runner was seen to go one at a time;
@@ -89,8 +102,10 @@ struct ChatEvaluation: Evaluation {
 
     init(
         samples: [ChatSample], folder: EvalFolder, model: @escaping @Sendable (ChatSample) -> any LanguageModel,
-        meter: ContextMeter? = nil, tokens: (@Sendable ([Transcript.Entry]) async -> Int?)? = nil, turnLimit: Duration = ChatEngine.turnLimit
+        meter: ContextMeter? = nil, tokens: (@Sendable ([Transcript.Entry]) async -> Int?)? = nil, turnLimit: Duration = ChatEngine.turnLimit,
+        engine: Engine = .toolCalling
     ) {
+        self.engine = engine
         self.samples = samples
         self.folder = folder
         self.model = model
@@ -100,7 +115,7 @@ struct ChatEvaluation: Evaluation {
         byID = Dictionary(samples.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
-    var name: String { "Chat" }
+    var name: String { engine == .toolCalling ? "Chat" : "Parsed chat" }
 
     var dataset: ArrayLoader<ModelSample<String>> {
         ArrayLoader(samples: samples.map(\.modelSample))
@@ -131,17 +146,30 @@ struct ChatEvaluation: Evaluation {
 
     private func ask(_ sample: ChatSample) async -> (record: TurnRecord, calls: [Transcript.ToolCall]) {
         let folder = folder
-        let engine = ChatEngine(
-            model: model(sample),
-            snapshot: { folder.snapshot },
-            findDuplicates: { await folder.findDuplicates($0) },
-            cleanupActions: ChatPlanning.cleanupActions,
-            proposeCleanup: { await folder.propose($0, only: $1) },
-            largeFileMegabytes: { EvalFolder.settings.largeDownloadMegabytes },
-            turnLimit: turnLimit,
-            now: { EvalFolder.now },
-            meter: meter
-        )
+        let engine: any ChatResponding = switch self.engine {
+        case .toolCalling:
+            ChatEngine(
+                model: model(sample),
+                snapshot: { folder.snapshot },
+                findDuplicates: { await folder.findDuplicates($0) },
+                cleanupActions: ChatPlanning.cleanupActions,
+                proposeCleanup: { await folder.propose($0, only: $1) },
+                largeFileMegabytes: { EvalFolder.settings.largeDownloadMegabytes },
+                turnLimit: turnLimit,
+                now: { EvalFolder.now },
+                meter: meter
+            )
+        case .parsed:
+            ParsedChatEngine(
+                model: model(sample),
+                snapshot: { folder.snapshot },
+                findDuplicates: { await folder.findDuplicates($0) },
+                cleanupActions: ChatPlanning.cleanupActions,
+                proposeCleanup: { await folder.propose($0, only: $1) },
+                turnLimit: turnLimit,
+                now: { EvalFolder.now }
+            )
+        }
         var earlier: [TurnRecord] = []
         for turn in sample.earlier {
             let started = ContinuousClock.now
@@ -189,7 +217,7 @@ struct ChatEvaluation: Evaluation {
         }
         let cardFiles = cards.isEmpty ? nil : cards.flatMap { folder.plannedFiles(of: $0.id) }
         let exactFiles = files != nil && (cardFiles ?? listed).map(Set.init) == files
-        return TurnRecord(
+        var record = TurnRecord(
             sampleID: sampleID,
             outcome: String(describing: turn.outcome),
             calls: turn.toolCalls.map { TurnRecord.Call(tool: $0.toolName, arguments: $0.arguments.jsonString) },
@@ -207,9 +235,17 @@ struct ChatEvaluation: Evaluation {
             untouchablePlanned: (cardFiles ?? []).filter(EvalFolder.untouchable.contains).sorted(),
             seconds: seconds,
             firstText: firstText,
-            tokens: await tokens?(turn.entries),
+            // The parsed chat's turn has no transcript to count; its parse is timed in the parse pass.
+            tokens: engine == .toolCalling ? await tokens?(turn.entries) : nil,
             shown: shown
         )
+        if let request = turn.request {
+            record.parsed = request.generatedContent.jsonString
+            record.parsedKind = "\(request.kind)"
+            record.parsedActions = request.actions(offered: ChatPlanning.cleanupActions)
+            record.parsedFolder = request.folder
+        }
+        return record
     }
 
     /// What the arguments got wrong, as the app read them: the card's request when there is one,
